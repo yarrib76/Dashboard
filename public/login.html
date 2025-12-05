@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acceso | Dashboard Comercial</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/login.css" />
+  </head>
+  <body>
+    <div class="login-bg">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="card">
+        <div class="brand">
+          <div class="logo">DC</div>
+          <div>
+            <h1>Dashboard Comercial</h1>
+            <p>Acceso seguro para equipo interno</p>
+          </div>
+        </div>
+        <form id="login-form" autocomplete="off">
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="tu@empresa.com" required />
+          </div>
+          <div class="field">
+            <label for="password">Contraseña</label>
+            <input type="password" id="password" name="password" placeholder="••••••••" required />
+          </div>
+          <button type="submit" id="login-button">Ingresar</button>
+          <p class="status" id="status"></p>
+        </form>
+      </div>
+    </div>
+
+    <script src="/login.js"></script>
+  </body>
+</html>

@@ -1,0 +1,560 @@
+Proyecto:
+Debe ser una aplicación WEB, utiliza lo que necesites para que se vea linda y lo mas moderna posible (ejemolo: html, css), podríamos considerar utilizar javaScripts o .py (python)
+
+Quiero un Dashboard profecional, que permita ver los siguientes datos:
+Sección encuestas:
+1. Grafico que muestre cuales fueron los resultados de las encuestas durante el año en curso. El grafico debe ser un histograma que mueste por cada mes la encuesta y cantidad
+Las encuestas son guardadas en la tabla del cliente, campo "encuesta", Una recomendación para determinar la fecha es utilizar el campo updated_at, en general no hay muchos
+cambios en la información de los clientes, ahora siempre que se asigna una encuesta, si se modifica el cliente.
+
+
+Sección Pedidos:
+1. Matris o grilla que muestre la productivad de los vendedores respecto a los pedidos del día actual:
+Adjunto consulta ejemplo "use samira;
+-- Eliminar tablas temporales si ya existen
+DROP TEMPORARY TABLE IF EXISTS temp_cantPedidos;
+DROP TEMPORARY TABLE IF EXISTS temp_dias;
+DROP TEMPORARY TABLE IF EXISTS temp_totalFacturado;
+DROP TEMPORARY TABLE IF EXISTS temp_cantArticulos;
+
+SET SESSION sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION';
+SET @ultActuDesde = '2024-06-01';
+SET @ultActuHasta = '2024-06-31';
+
+-- Crear tablas temporales para almacenar resultados intermedios
+CREATE TEMPORARY TABLE temp_cantPedidos AS
+SELECT vendedora, COUNT(*) AS cantPedidos
+FROM samira.controlpedidos
+WHERE ultactualizacion > @ultActuDesde
+  AND ultactualizacion < @ultActuHasta
+  AND total > 1
+  AND estado <> 2
+  AND ordenWeb > 0
+GROUP BY vendedora;
+
+CREATE TEMPORARY TABLE temp_dias AS
+SELECT vendedora, COUNT(*) AS Dias
+FROM (
+    SELECT vendedora, DAY(ultactualizacion) AS dia
+    FROM samira.controlpedidos
+    WHERE ultactualizacion > @ultActuDesde
+      AND ultactualizacion < @ultActuHasta
+      AND total > 1
+      AND estado <> 2
+      AND ordenWeb > 0
+    GROUP BY vendedora, dia
+) AS subquery
+GROUP BY vendedora;
+
+CREATE TEMPORARY TABLE temp_totalFacturado AS
+SELECT vendedora, ROUND(SUM(total), 2) AS TotalFacturado
+FROM samira.controlpedidos
+WHERE ultactualizacion > @ultActuDesde
+  AND ultactualizacion < @ultActuHasta
+  AND total > 1
+  AND estado <> 2
+  AND ordenWeb > 0
+GROUP BY vendedora;
+
+CREATE TEMPORARY TABLE temp_cantArticulos AS
+SELECT controlpedidos.vendedora, COUNT(pedidotmp.Cantidad) AS cantArticulos
+FROM samira.controlpedidos
+INNER JOIN samira.pedidotemp AS pedidotmp ON pedidotmp.nropedido = controlpedidos.nropedido
+WHERE controlpedidos.ultactualizacion > @ultActuDesde
+  AND controlpedidos.ultactualizacion < @ultActuHasta
+  AND controlpedidos.total > 1
+  AND controlpedidos.ordenWeb > 0
+  AND controlpedidos.estado <> 2
+GROUP BY controlpedidos.vendedora;
+
+-- Consulta final usando tablas temporales
+SELECT t1.vendedora AS ResulVendedora,
+       t1.cantPedidos,
+       t2.Dias,
+       ROUND(t1.cantPedidos / t2.Dias, 1) AS Promedio,
+       ROUND(t3.TotalFacturado / t1.cantPedidos, 1) AS PromedioFacturado,
+       ROUND(t4.cantArticulos / t1.cantPedidos, 1) AS PromedioCantArticulos
+FROM temp_cantPedidos AS t1
+INNER JOIN temp_dias AS t2 ON t1.vendedora = t2.vendedora
+INNER JOIN temp_totalFacturado AS t3 ON t1.vendedora = t3.vendedora
+INNER JOIN temp_cantArticulos AS t4 ON t1.vendedora = t4.vendedora;
+"
+2. Grafico que muestre la cantidad de pedidos por vendedora mes a mes, durante el año corriente.
+
+
+Extructura de la Base de datos:
+# TABLE_NAME	COLUMN_NAME	DATA_TYPE	COLUMN_KEY	EXTRA	FK_TABLE	FK_COLUMN
+articulos	Articulo	varchar	PRI			
+articulos	Detalle	varchar				
+articulos	Cantidad	int				
+articulos	PrecioOrigen	double				
+articulos	PrecioConvertido	double				
+articulos	Moneda	varchar				
+articulos	PrecioManual	double				
+articulos	Gastos	double				
+articulos	Ganancia	double				
+articulos	Proveedor	varchar				
+articulos	Observaciones	varchar				
+articulos	Web	tinyint				
+articulos	ImageName	varchar				
+articulos	websku	int				
+articulos	ProveedorSKU	varchar				
+articulos	CompraAuto	int				
+autorizacion_facturaweb	id_autorizacion_facturaweb	int	PRI	auto_increment		
+autorizacion_facturaweb	ip_autorizada	varchar				
+carritos_abandonados	id_carritos_abandonados	int	PRI	auto_increment		
+carritos_abandonados	id_tienda_nube	double				
+carritos_abandonados	nombre_contacto	varchar				
+carritos_abandonados	cel_contacto	varchar				
+carritos_abandonados	email_contacto	varchar				
+carritos_abandonados	total	varchar				
+carritos_abandonados	estado	int				
+carritos_abandonados	fecha	datetime				
+carritos_abandonados	vendedora	varchar				
+chatpedidosia	id_chatpedidosia	int	PRI	auto_increment		
+chatpedidosia	id_chatpedidosia	int	PRI	auto_increment		
+chatpedidosia	id_controlpedidos	int	MUL		controlpedidos	id
+chatpedidosia	id_users	int	MUL		users	id
+chatpedidosia	chat	varchar				
+chatpedidosia	fecha	datetime				
+clientes	id_clientes	int	PRI	auto_increment		
+clientes	nombre	varchar				
+clientes	apellido	varchar				
+clientes	direccion	varchar				
+clientes	mail	varchar	UNI			
+clientes	telefono	varchar				
+clientes	cuit	int				
+clientes	provincia	varchar				
+clientes	localidad	varchar				
+clientes	apodo	varchar				
+clientes	id_provincia	int	MUL		provincias	id
+clientes	updated_at	datetime				
+clientes	created_at	datetime				
+clientes	cant_ofertas	int				
+clientes	encuesta	varchar				
+clientes	codigopostal	varchar				
+clientes_fidelizacion	idclientes_fidelizacion	int	PRI	auto_increment		
+clientes_fidelizacion	id_clientes	int				
+clientes_fidelizacion	fecha_creacion	timestamp				
+clientes_fidelizacion	estado	int				
+clientes_fidelizacion	fecha_ultima_compra	datetime				
+clientes_fidelizacion	vendedora	varchar				
+clientes_fidelizacion	promedioTotal	double				
+clientes_fidelizacion	cant_compras	int				
+clientes_fidelizacion	id_clientes_fidel_etapas	int	MUL		clientes_fidel_etapas	id_clientes_fidel_etapas
+clientes_fidel_etapas	id_clientes_fidel_etapas	int	PRI	auto_increment		
+clientes_fidel_etapas	nombre_etapa	varchar				
+comentariospedidos	id	int	PRI	auto_increment		
+comentariospedidos	users_id	int	MUL		users	id
+comentariospedidos	controlpedidos_id	int	MUL		controlpedidos	id
+comentariospedidos	comentario	varchar				
+comentariospedidos	fecha	datetime				
+compraautomatica	idCompraAutomatica	int	PRI	auto_increment		
+compraautomatica	articulo	varchar	UNI			
+compraautomatica	articulo	varchar	UNI		articulos	Articulo
+compraautomatica	cant_alerta	int				
+compras	id_compra	int	PRI	auto_increment		
+compras	OrdenCompra	int				
+compras	Articulo	varchar				
+compras	Detalle	varchar				
+compras	Cantidad	int				
+compras	PrecioOrigen	double				
+compras	PrecioArgen	double				
+compras	PrecioVenta	double				
+compras	Gastos	double				
+compras	Proveedor	varchar				
+compras	Pais	varchar				
+compras	Telefono	varchar				
+compras	Contacto	varchar				
+compras	FechaCompra	datetime				
+compras	TipoOrden	int				
+compras	Observaciones	varchar				
+compras	fechaControl	datetime				
+compras	ordenControlada	int				
+controlpedidos	id	int	PRI	auto_increment		
+controlpedidos	id_cliente	int	MUL		clientes	id_clientes
+controlpedidos	nropedido	int	MUL			
+controlpedidos	vendedora	varchar				
+controlpedidos	cajera	varchar				
+controlpedidos	fecha	datetime				
+controlpedidos	estado	int				
+controlpedidos	nrofactura	int	MUL			
+controlpedidos	total	double				
+controlpedidos	ordenWeb	int				
+controlpedidos	empaquetado	int				
+controlpedidos	transporte	varchar				
+controlpedidos	encuesta	varchar				
+controlpedidos	ultactualizacion	datetime				
+controlpedidos	local	varchar				
+controlpedidos	totalweb	double				
+controlpedidos	instancia	int				
+controlpedidos	fecha_inicio_instancia	datetime				
+controlpedidos	fecha_fin_instancia	datetime				
+controlpedidos	fecha_proveedor	datetime				
+controlpedidos	fecha_ultima_nota	datetime				
+controlpedidos	pagado	int				
+controlpedidos	fecha_pago	datetime				
+control_pedidos_cancelados	id_pedidos_cancelados	int	PRI	auto_increment		
+control_pedidos_cancelados	id_control_pedidos	int	MUL		controlpedidos	id
+control_pedidos_cancelados	fecha	datetime				
+control_pedidos_cancelados	tipo	int				
+control_pedidos_cancelados	puntos	int				
+control_pedidos_cancelados	id_parametros_de_negocio	int	MUL		parametros_de_negocio	id
+deposito	Articulo	varchar	PRI			
+deposito	Detalle	varchar				
+deposito	Cantidad	int				
+deposito	PrecioOrigen	double				
+deposito	Moneda	varchar				
+deposito	PrecioManual	double				
+deposito	Gastos	double				
+deposito	Ganancia	double				
+deposito	PrecioConvertido	double				
+deposito	Proveedor	varchar				
+deposito	Observaciones	varchar				
+deposito	Web	tinyint				
+deposito	ImageName	varchar				
+deposito	websku	int				
+deposito	ProveedorSKU	varchar				
+deposito	CompraAuto	int				
+descuento	Id	int	PRI	auto_increment		
+descuento	NbreDescuento	varchar				
+descuento	Descuento	int				
+estados_financiera	id_estado	int	PRI	auto_increment		
+estados_financiera	nombre	varchar				
+factura	NroFactura	int	MUL			
+factura	Articulo	varchar	MUL			
+factura	Detalle	varchar				
+factura	Cantidad	int				
+factura	PrecioArgen	double				
+factura	PrecioUnitario	double				
+factura	PrecioVenta	double				
+factura	Ganancia	double				
+factura	Descuento	int				
+factura	Cajera	varchar				
+factura	Vendedora	varchar				
+factura	Fecha	datetime	MUL			
+factura	Estado	int				
+factura	ID	int				
+facturah	Id	int				
+facturah	NroFactura	int	MUL			
+facturah	Total	double				
+facturah	Porcentaje	int				
+facturah	Descuento	double				
+facturah	Ganancia	double				
+facturah	Fecha	datetime				
+facturah	Estado	int				
+facturah	id_clientes	int	MUL		clientes	id_clientes
+facturah	id_tipo_pago	int	MUL		tipo_pagos	id_tipo_pagos
+facturah	envio	double				
+facturah	totalEnvio	double				
+facturah	id_estados_financiera	int	MUL		estados_financiera	id_estado
+facturah	comentario	varchar				
+facturah	pagomixto	double				
+facturah	vendedora	varchar				
+facturah	created_at	timestamp				
+facturah	updated_at	timestamp				
+facturatemp	NroFactura	int				
+facturatemp	Articulo	varchar				
+facturatemp	Detalle	varchar				
+facturatemp	Cantidad	int				
+facturatemp	PrecioArgen	double				
+facturatemp	PrecioUnitario	double				
+facturatemp	PrecioVenta	double				
+facturatemp	Ganancia	double				
+facturatemp	Descuento	int				
+facturatemp	Cajera	varchar				
+facturatemp	Vendedora	varchar				
+facturatemp	Fecha	datetime				
+facturatemp	Estado	int				
+facturatemp	ID	int				
+fichaje	id_fichaje	int	PRI	auto_increment		
+fichaje	fecha_ingreso	datetime				
+fichaje	fecha_egreso	datetime				
+fichaje	id_user	int	MUL		users	id
+ganancia	NbreGrupo	varchar				
+ganancia	Ganancia	double				
+gastos	Id	int				
+gastos	Nbr_Gasto	varchar				
+gastos	Detalle	varchar				
+gastos	Importe	double				
+gastos	Fecha	datetime				
+gastos	Estado	int				
+grafico	ID	int				
+grafico	Mes	varchar				
+grafico	Facturacion	double				
+historico_cambio_precios	id_historico_cambio_precios	int	PRI	auto_increment		
+historico_cambio_precios	fecha	datetime				
+historico_cambio_precios	proveedor	varchar				
+historico_cambio_precios	tipo	varchar				
+historico_cambio_precios	porcentaje_descuento	double				
+historico_cambio_precios	valor	double				
+historico_cambio_precios	valor_agrego	double				
+historico_cambio_precios	valor_quito	double				
+importexcelcontrol	id	int	PRI	auto_increment		
+importexcelcontrol	Articulo	varchar	MUL			
+importexcelcontrol	PrecioOrigenViejo	double				
+importexcelcontrol	PrecioOrigenNuevo	double				
+importexcelcontrol	PrecioConvertidoViejo	double				
+importexcelcontrol	PrecioConvertidoNuevo	double				
+importexcelcontrol	PrecioManualNuevo	double				
+importexcelcontrol	PrecioManualViejo	double				
+importexcelcontrol	fecha	datetime				
+importexcelcontrol	status	varchar				
+migrations	migration	varchar				
+migrations	batch	int				
+mi_correo	id_mi_correo	int	PRI	auto_increment		
+mi_correo	tipo_producto	varchar				
+mi_correo	largo	varchar				
+mi_correo	ancho	varchar				
+mi_correo	altura	varchar				
+mi_correo	peso	varchar				
+mi_correo	valor_del_contenido	varchar				
+mi_correo	provincia_destino	varchar				
+mi_correo	sucursal_destino	varchar				
+mi_correo	localidad_destino	varchar				
+mi_correo	calle_destino	varchar				
+mi_correo	altura_destino	varchar				
+mi_correo	piso	varchar				
+mi_correo	dpto	varchar				
+mi_correo	codpostal_destino	varchar				
+mi_correo	destino_nombre	varchar				
+mi_correo	destino_email	varchar				
+mi_correo	cod_area_tel	varchar				
+mi_correo	tel	varchar				
+mi_correo	cod_area_cel	varchar				
+mi_correo	cel	varchar				
+mi_correo	nropedido	int				
+mi_correo	vendedora	varchar				
+mi_correo	tipo_envio	varchar				
+mi_correo	ordenweb	int				
+mi_correo	transporte	varchar				
+mi_correo	provincia	varchar				
+mi_correo	numero_orden	varchar				
+mi_correo	tipo	int				
+newartitn	id	int	PRI	auto_increment		
+newartitn	Identificador de URL	varchar				
+newartitn	Nombre	varchar				
+newartitn	Categoras	varchar				
+newartitn	Nombre de propiedad 1	varchar				
+newartitn	Valor de propiedad 1	varchar				
+newartitn	Nombre de propiedad 2	varchar				
+newartitn	Valor de propiedad 2	varchar				
+newartitn	Nombre de propiedad 3	varchar				
+newartitn	Valor de propiedad 3	varchar				
+newartitn	Precio	double				
+newartitn	Precio promocional	double				
+newartitn	Peso	double				
+newartitn	Stock	int				
+newartitn	SKU	varchar				
+newartitn	Cdigo de barras	varchar				
+newartitn	Mostrar en tienda	varchar				
+newartitn	Envo sin cargo	varchar				
+newartitn	Descripcin	longtext				
+newartitn	Tags	varchar				
+newartitn	Ttulo para SEO	varchar				
+newartitn	Descripcin para SEO	varchar				
+newartitn	Marca	varchar				
+notas_adhesivas	id_notas_adhesivas	int	PRI	auto_increment		
+notas_adhesivas	titulo	varchar				
+notas_adhesivas	body	varchar				
+notas_adhesivas	id_rolesweb	int	MUL		rolesweb	id_roles
+notas_carritos_abandonados	id_notas_carritos_abandonados	int	PRI	auto_increment		
+notas_carritos_abandonados	id_carritos_abandonados	int	MUL		carritos_abandonados	id_carritos_abandonados
+notas_carritos_abandonados	fecha	datetime				
+notas_carritos_abandonados	notas	varchar				
+notas_carritos_abandonados	users_id	int	MUL		users	id
+notas_clientes_fidel	id_notas_clientes_fidel	int	PRI	auto_increment		
+notas_clientes_fidel	id_clientes_fidelizacion	int	MUL		clientes_fidelizacion	idclientes_fidelizacion
+notas_clientes_fidel	fecha_creacion	datetime				
+notas_clientes_fidel	notas	varchar				
+notas_clientes_fidel	users_id	int	MUL		users	id
+notas_control_orden	id_notas_control_orden	int	PRI	auto_increment		
+notas_control_orden	fecha_creacion	datetime				
+notas_control_orden	notas	varchar				
+notas_control_orden	users_id	int	MUL		users	id
+notas_control_orden	id_compras	int	MUL		compras	id_compra
+notificaciones	id_notificaciones	int	PRI	auto_increment		
+notificaciones	id_users	int	MUL		users	id
+notificaciones	tipo	varchar				
+notificaciones	fecha	datetime				
+notificaciones	lectura	tinyint				
+nrofactura	NroFactura	int				
+nropedido	Nropedido	int				
+objetivos	id_objetivos	int	PRI	auto_increment		
+objetivos	mes	varchar				
+objetivos	fich_obj	int				
+objetivos	fich_alcance	int				
+objetivos	ped_obj	int				
+objetivos	ped_alcance	int				
+objetivos	v_salon_obj	int				
+objetivos	v_salon_alcance	int				
+objetivos	cancel_obj	int				
+objetivos	cancel_alcance	int				
+objetivos	no_encuesta_obj	int				
+objetivos	no_encuesta_alcance	int				
+objetivos	fidel_obj	int				
+objetivos	fidel_alcance	int				
+objetivos	id_users	int	PRI		users	id
+objetivos	id_users	int	PRI			
+ordencompras	NumeroOrden	int				
+ordenesarticulos	id	int	MUL	auto_increment		
+ordenesarticulos	articulo	varchar				
+ordenesarticulos	detalle	varchar				
+ordenesarticulos	precio	double				
+ordenesarticulos	cantidad	int				
+ordenesarticulos	id_controlPedidos	int	MUL		controlpedidos	id
+ordenesarticulos	estado_Arti_Pedido	int				
+parametros_clientes_fidel	id_parametro_clientes_fidel	int	PRI	auto_increment		
+parametros_clientes_fidel	cant_meses_ult_compra	int				
+parametros_clientes_fidel	cant_meses_ult_fidelizacion	int				
+parametros_clientes_fidel	monto_minimo_promedio	double				
+parametros_clientes_fidel	estado	int				
+parametros_clientes_fidel	cant_clientes_por_vendedora	int				
+parametros_de_negocio	id	int	PRI	auto_increment		
+parametros_de_negocio	descripcion	varchar				
+parametros_de_negocio	puntos	int				
+password_resets	email	varchar	MUL			
+password_resets	token	varchar	MUL			
+password_resets	created_at	timestamp				
+pedidotemp	NroPedido	int	MUL			
+pedidotemp	Articulo	varchar	MUL			
+pedidotemp	Detalle	varchar				
+pedidotemp	Cantidad	int				
+pedidotemp	PrecioArgen	double				
+pedidotemp	PrecioUnitario	double				
+pedidotemp	PrecioVenta	double				
+pedidotemp	Ganancia	double				
+pedidotemp	Descuento	int				
+pedidotemp	Cajera	varchar				
+pedidotemp	Vendedora	varchar				
+pedidotemp	Fecha	datetime				
+pedidotemp	Estado	int				
+pedidotemp	ID	int				
+preciodolar	Fecha	date				
+preciodolar	PrecioDolar	double				
+promocion	id	int	PRI	auto_increment		
+promocion	id_cliente	int	MUL		clientes	id_clientes
+promocion	fecha_creacion	datetime				
+promocion	fecha_vencimiento	datetime				
+promocion	fecha_cierre	datetime				
+promocion	estado	int				
+promocion	nrofactura	int				
+promocion	detalle	varchar				
+promocion	codautorizacion	varchar				
+provecomerce	id	int	PRI	auto_increment		
+provecomerce	proveedor	varchar				
+provecomerce	id_users	int	MUL		users	id
+provecomerce	fecha	datetime				
+provecomerce	id_cliente	int				
+provecomerce	tienda	varchar				
+proveedores	Id	int				
+proveedores	Nombre	varchar				
+proveedores	Pais	varchar				
+proveedores	Contacto	varchar				
+proveedores	Telefono	varchar				
+proveedores	Gastos	double				
+proveedores	Ganancia	double				
+provincias	id	int	PRI	auto_increment		
+provincias	id	int	PRI	auto_increment		
+provincias	nombre	varchar				
+provincias	codigo_sucursal	varchar				
+pub_sucursales	id_pub_sucursal	int	PRI	auto_increment		
+pub_sucursales	id_provincias	int	MUL		provincias	id
+pub_sucursales	codigo_provincia	text				
+pub_sucursales	codigo_sucursal	text				
+pub_sucursales	localidad	text				
+pub_sucursales	direccion	text				
+pub_sucursales	nro_calle	int				
+registrollamadas	id	int	PRI	auto_increment		
+registrollamadas	users_id	int	MUL		users	id
+registrollamadas	clientes_id	int	MUL		clientes	id_clientes
+registrollamadas	comentarios	varchar				
+registrollamadas	fecha	datetime				
+reportearticulo	Proveedor	varchar				
+reportearticulo	Pais	varchar				
+reportearticulo	Articulo	varchar	MUL			
+reportearticulo	Detalle	varchar				
+reportearticulo	Costo	double				
+reportearticulo	Ganancia	double				
+reportearticulo	Cantidad	int				
+reportearticulo	PrecioOrigen	double				
+reportearticulo	Moneda	varchar				
+reportearticulo	PrecioConvertido	double				
+reportearticulo	PrecioManual	double				
+reportearticulo	PrecioArgDolar	double				
+reportearticulo	PrecioArgenPesos	double				
+reportearticulo	PrecioVenta	double				
+reportearticulo	CotizacionDolar	double				
+repostocktemp	Articulo	varchar	PRI			
+repostocktemp	Detalle	varchar				
+repostocktemp	Cantidad	int				
+rolesweb	id_roles	int	PRI	auto_increment		
+rolesweb	tipo_role	varchar				
+statusbackup	fechafile	varchar				
+statusbackup	estado	int				
+statusecomercesincro	id	int	PRI	auto_increment		
+statusecomercesincro	id_provecomerce	int	MUL		provecomerce	id
+statusecomercesincro	status	varchar				
+statusecomercesincro	fecha	datetime				
+statusecomercesincro	articulo	varchar	MUL			
+statusecomercesincro	product_id	char				
+statusecomercesincro	articulo_id	char				
+statusecomercesincro	visible	tinyint				
+statusecomercesincro	images	varchar				
+statusecomercesincro	imagessrc	varchar				
+statusecommerceautosinc	id	int	PRI	auto_increment		
+statusecommerceautosinc	articulo	varchar				
+statusecommerceautosinc	fecha	datetime				
+statusecommerceautosinc	stock	int				
+statusreportes	Reporte	varchar				
+statusreportes	Fecha	datetime				
+stockinteligente	lu	int				
+stockinteligente	mar	int				
+stockinteligente	mier	int				
+stockinteligente	jue	int				
+stockinteligente	vier	int				
+stockinteligente	sab	int				
+stockinteligente	dom	int				
+stockinteligente	ultimoenviado	varchar				
+stockinteligente	mail	varchar				
+stockinteligente	cantidad	int				
+stockinteligente	estado	int				
+tipo_pagos	id_tipo_pagos	int	PRI	auto_increment		
+tipo_pagos	tipo_pago	varchar				
+transaccion	id	int	PRI	auto_increment		
+transaccion	tipo	varchar				
+transaccion	nropedido	int				
+transferencias	Articulo	varchar				
+transferencias	Cantidad	int				
+transferencias	UbicacionActual	varchar				
+transferencias	UbicacionNueva	varchar				
+transferencias	Usuario	varchar				
+transferencias	Fecha	datetime				
+transfertemp	Articulo	varchar				
+transfertemp	Cantidad	int				
+transfertemp	UbicacionActual	varchar				
+transfertemp	UbicacionNueva	varchar				
+transfertemp	Usuario	varchar				
+transfertemp	Fecha	datetime				
+transportes	id_transportes	int	PRI	auto_increment		
+transportes	nombre	varchar				
+users	id	int	PRI	auto_increment		
+users	name	varchar				
+users	email	varchar	UNI			
+users	password	varchar				
+users	remember_token	varchar				
+users	created_at	timestamp				
+users	updated_at	timestamp				
+users	id_roles	int	MUL		rolesweb	id_roles
+users	codigo	varchar				
+users	foto	varchar				
+users	id_vendedoras	int				
+users	hora_ingreso	time				
+users	hora_egreso	time				
+vendedores	Id	int	PRI	auto_increment		
+vendedores	Nombre	varchar				
+vendedores	Apellido	varchar				
+vendedores	Telefono	varchar				
+vendedores	Tipo	int				
+vendedores	Password	varchar				
+

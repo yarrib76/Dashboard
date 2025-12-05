@@ -1,0 +1,10 @@
+PORT=3000
+
+DB_HOST=192.168.1.209
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=NetAcc10
+DB_NAME=samira
+
+# Opcional: tamaño del pool de conexiones
+DB_CONNECTION_LIMIT=10

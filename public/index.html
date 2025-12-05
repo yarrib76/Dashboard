@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard Comercial</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <aside class="side-menu" id="side-menu">
+      <div class="menu-inner">
+        <div class="user-block">
+          <div class="avatar" id="user-avatar">👤</div>
+          <div class="user-info">
+            <p class="user-name" id="user-name">Usuario</p>
+            <p class="user-role">Equipo</p>
+          </div>
+        </div>
+        <nav class="menu-items">
+          <button class="menu-item active" data-target="dashboard">
+            <span class="icon">📊</span>
+            <span class="label">Dashboard</span>
+          </button>
+          <button class="menu-item" data-target="empleados">
+            <span class="icon">👥</span>
+            <span class="label">Empleados</span>
+          </button>
+        </nav>
+        <button class="menu-item logout" id="logout-btn">
+          <span class="icon">↩</span>
+          <span class="label">Cerrar sesión</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="page">
+      <header class="header">
+        <div>
+          <h1 class="title">Dashboard comercial</h1>
+          <p class="subtitle">Encuestas y pedidos en tiempo real</p>
+        </div>
+        <div class="tag logo-tag">
+          <img src="/logo.png" alt="Logo" class="tag-logo" />
+        </div>
+      </header>
+
+      <section class="grid view" id="view-dashboard">
+        <article class="card wide">
+          <div class="actions between">
+            <div class="heading">
+              <h2>Encuestas por mes</h2>
+              <button class="collapse-toggle" data-target="encuestas" aria-expanded="true">Ocultar</button>
+            </div>
+            <label class="inline">
+              <span>Año</span>
+              <select id="year-encuestas"></select>
+            </label>
+            <button id="refresh-encuestas" type="button">Actualizar</button>
+          </div>
+          <div class="card-body" data-section="encuestas">
+            <p>Histograma del año en curso usando <code>clientes.updated_at</code>.</p>
+            <div class="chart-wrap tall">
+              <canvas id="chart-encuestas"></canvas>
+            </div>
+            <p class="status" id="status-encuestas"></p>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="actions">
+            <h2>Empaquetados</h2>
+            <button id="refresh-paqueteria" type="button">Actualizar</button>
+          </div>
+          <div class="stat-grid">
+            <button class="stat stat-click" data-tipo="pendientes">
+              <p class="label">Pendientes</p>
+              <p class="value" id="stat-pendientes">0</p>
+            </button>
+            <button class="stat stat-click" data-tipo="sinTransporte">
+              <p class="label">Sin transporte</p>
+              <p class="value" id="stat-sin-transporte">0</p>
+            </button>
+            <button class="stat alert stat-click" data-tipo="vencidos">
+              <p class="label">Vencidos (&gt;3 días)</p>
+              <p class="value" id="stat-vencidos">0</p>
+            </button>
+          </div>
+          <p class="status" id="status-paqueteria"></p>
+        </article>
+
+        <article class="card wide">
+          <div class="actions between">
+            <div class="heading">
+              <h2>Pedidos del día</h2>
+              <button class="collapse-toggle" data-target="productividad" aria-expanded="true">Ocultar</button>
+            </div>
+            <div class="range">
+              <label>
+                <span>Desde</span>
+                <input type="date" id="fecha-desde" aria-label="Fecha desde" />
+              </label>
+              <label>
+                <span>Hasta</span>
+                <input type="date" id="fecha-hasta" aria-label="Fecha hasta" />
+              </label>
+            </div>
+            <button id="refresh-productividad" type="button">Actualizar</button>
+          </div>
+          <div class="card-body" data-section="productividad">
+            <p>Productividad de vendedoras con promedios calculados.</p>
+            <div class="table-wrap">
+              <table class="table" id="tabla-productividad">
+                <thead>
+                  <tr>
+                    <th>Vendedora</th>
+                    <th>Pedidos</th>
+                    <th>Días</th>
+                    <th>Promedio</th>
+                    <th>$ Prom.</th>
+                    <th>Art. Prom.</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <p class="status" id="status-productividad"></p>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <div class="actions between">
+            <div class="heading">
+              <h2>Pedidos por vendedora (mensual)</h2>
+              <button class="collapse-toggle" data-target="mensual" aria-expanded="true">Ocultar</button>
+            </div>
+            <label class="inline">
+              <span>Año</span>
+              <select id="year-mensual"></select>
+            </label>
+            <button id="refresh-mensual" type="button">Actualizar</button>
+          </div>
+          <div class="card-body" data-section="mensual">
+            <p>Distribución mensual del año corriente.</p>
+            <div class="chart-wrap tall">
+              <canvas id="chart-mensual"></canvas>
+            </div>
+            <p class="status" id="status-mensual"></p>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <div class="actions between">
+            <div class="heading">
+              <h2>Ventas mensuales por vendedora (salón)</h2>
+              <button class="collapse-toggle" data-target="ventas" aria-expanded="true">Ocultar</button>
+            </div>
+            <label class="inline">
+              <span>Año</span>
+              <select id="year-ventas"></select>
+            </label>
+            <button id="refresh-ventas" type="button">Actualizar</button>
+          </div>
+          <div class="card-body" data-section="ventas">
+            <p>Ventas en salón (sin orden web), agrupadas por vendedora y mes.</p>
+            <div class="chart-wrap tall">
+              <canvas id="chart-ventas"></canvas>
+            </div>
+            <p class="status" id="status-ventas"></p>
+          </div>
+        </article>
+      </section>
+
+      <section class="view hidden" id="view-empleados">
+        <article class="card wide">
+          <div class="actions between">
+            <div class="heading">
+              <h2>Empleados</h2>
+            </div>
+            <label class="inline">
+              <span>Mes</span>
+              <input type="month" id="mes-empleados" aria-label="Mes empleados" />
+            </label>
+            <label class="inline">
+              <span>Buscar</span>
+              <input type="search" id="buscar-empleados" placeholder="Nombre..." />
+            </label>
+            <label class="inline">
+              <span>Ver todos</span>
+              <input type="checkbox" id="filtro-roles" aria-label="Ver todos los roles" />
+            </label>
+            <button id="refresh-empleados" type="button">Actualizar</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="tabla-empleados">
+              <thead>
+                <tr>
+                  <th>Nombre y Apellido</th>
+                  <th>Alerta (≤5m)</th>
+                  <th>Tarde (&gt;5m)</th>
+                  <th>Llegadas Tarde</th>
+                  <th>Clientes no encuestados</th>
+                  <th>% Pedidos</th>
+                  <th>% Ventas</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="status" id="status-empleados"></p>
+        </article>
+      </section>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title">Detalle</h3>
+          <button id="modal-close" class="close-btn" type="button">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-controls">
+            <input type="search" id="modal-search" placeholder="Filtrar resultados..." />
+            <p class="status" id="modal-status"></p>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="tabla-modal">
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Cliente</th>
+                  <th>Fecha Factura</th>
+                  <th>Vendedora</th>
+                  <th>Total</th>
+                  <th>Orden Web</th>
+                  <th>Total Web</th>
+                  <th>Transporte</th>
+                  <th>Instancia</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="calendar-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="calendar-title">Calendario</h3>
+          <button id="calendar-close" class="close-btn" type="button">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="calendar-legend">
+            <span class="badge green">A tiempo</span>
+            <span class="badge yellow">≤5 min</span>
+            <span class="badge red">&gt;5 min</span>
+            <span class="badge gray">Sin registro</span>
+          </div>
+          <p class="status" id="calendar-status"></p>
+          <div class="calendar-grid" id="calendar-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
