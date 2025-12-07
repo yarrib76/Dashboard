@@ -1,0 +1,52 @@
+      <section class="view hidden" id="view-clientes">
+        <article class="card wide">
+          <div class="actions between">
+            <h2>Clientes</h2>
+            <div class="actions inline compact clients-controls">
+              <button id="refresh-clientes" type="button">Actualizar</button>
+              <label class="client-inline">
+                <span>Buscar</span>
+                <input type="search" id="buscar-clientes" placeholder="Nombre, email o teléfono" />
+              </label>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="tabla-clientes">
+              <thead>
+                <tr>
+                  <th data-sort="nombre">Nombre</th>
+                  <th data-sort="apellido">Apellido</th>
+                  <th data-sort="mail">Email</th>
+                  <th data-sort="telefono">Teléfono</th>
+                  <th data-sort="updated_at">Actualizado</th>
+                  <th data-sort="ultimaCompra">Última compra</th>
+                  <th data-sort="cantFacturas">Compras</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="clientes-pagination">
+            <button id="clientes-prev" type="button">Anterior</button>
+            <span id="clientes-page-info">Página 1</span>
+            <button id="clientes-next" type="button">Siguiente</button>
+            <label class="client-inline">
+                <span>Por página</span>
+                <select id="clientes-page-size">
+                  <option value="10">10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>  
+                </select>
+              </label>
+          </div>
+          <p class="status" id="status-clientes"></p>
+        </article>
+      </section>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="modal-title">Detalle</h3>
+          <button id="modal-close" class="close-btn" type="button">×</button>
+        </div>

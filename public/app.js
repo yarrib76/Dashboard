@@ -67,10 +67,42 @@ const statPendientes = document.getElementById('stat-pendientes');
 const statSinTransporte = document.getElementById('stat-sin-transporte');
 const statVencidos = document.getElementById('stat-vencidos');
 const statusEmpleados = document.getElementById('status-empleados');
+const statusPedidosClientes = document.getElementById('status-pedidos-clientes');
 const mesEmpleados = document.getElementById('mes-empleados');
 const tablaEmpleadosBody = document.querySelector('#tabla-empleados tbody');
 const filtroRoles = document.getElementById('filtro-roles');
 const buscarEmpleados = document.getElementById('buscar-empleados');
+const fechaPedidosClientes = document.getElementById('fecha-pedidos-clientes');
+const tablaPedidosClientesBody = document.querySelector('#tabla-pedidos-clientes tbody');
+const refreshPedidosClientes = document.getElementById('refresh-pedidos-clientes');
+const tablaPedidosClientesHead = document.querySelector('#tabla-pedidos-clientes thead');
+const statPcTotal = document.getElementById('stat-pc-total');
+const statPcNuevos = document.getElementById('stat-pc-nuevos');
+const statPcRecurrentes = document.getElementById('stat-pc-recurrentes');
+const pcPrev = document.getElementById('pc-prev');
+const pcNext = document.getElementById('pc-next');
+const pcPageInfo = document.getElementById('pc-page-info');
+const pcPageSizeSelect = document.getElementById('pc-page-size');
+const iaChatWindow = document.getElementById('ia-chat-window');
+const iaMessageInput = document.getElementById('ia-message');
+const iaFileInput = document.getElementById('ia-file');
+const iaSendBtn = document.getElementById('ia-send');
+const iaStatus = document.getElementById('ia-status');
+const iaSqlQuestionInput = document.getElementById('ia-sql-question');
+const iaSqlSendBtn = document.getElementById('ia-sql-send');
+const iaSqlStatus = document.getElementById('ia-sql-status');
+const iaSqlQueryEl = document.getElementById('ia-sql-query');
+const iaSqlExplanationEl = document.getElementById('ia-sql-explanation');
+const iaSqlResultEl = document.getElementById('ia-sql-result');
+const statusClientes = document.getElementById('status-clientes');
+const tablaClientesBody = document.querySelector('#tabla-clientes tbody');
+const tablaClientesHead = document.querySelector('#tabla-clientes thead');
+const buscarClientes = document.getElementById('buscar-clientes');
+const clientesPageSizeSelect = document.getElementById('clientes-page-size');
+const clientesPrev = document.getElementById('clientes-prev');
+const clientesNext = document.getElementById('clientes-next');
+const clientesPageInfo = document.getElementById('clientes-page-info');
+const refreshClientesBtn = document.getElementById('refresh-clientes');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -91,6 +123,84 @@ let transportesList = [];
 let empleadosRows = [];
 const viewDashboard = document.getElementById('view-dashboard');
 const viewEmpleados = document.getElementById('view-empleados');
+const viewClientes = document.getElementById('view-clientes');
+const viewIa = document.getElementById('view-ia');
+let clientesPage = 1;
+let clientesPageSize = 10;
+let clientesTotalPages = 1;
+let clientesTerm = '';
+let clientesRows = [];
+let clientesSort = { key: null, dir: 'asc' };
+let iaMessages = [];
+let iaFiles = [];
+let pedidosClientesRows = [];
+let pedidosClientesSort = { key: null, dir: 'asc' };
+let pcPage = 1;
+let pcTotalPages = 1;
+let pcPageSize = 10;
+
+function updateSortIndicators(headEl, sortState) {
+  if (!headEl) return;
+  headEl.querySelectorAll('th[data-sort]').forEach((th) => {
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    if (sortState.key === th.dataset.sort) {
+      th.classList.add(sortState.dir === 'desc' ? 'sorted-desc' : 'sorted-asc');
+    }
+  });
+}
+
+function renderIaMessages() {
+  if (!iaChatWindow) return;
+  iaChatWindow.innerHTML = '';
+  iaMessages.forEach((msg) => {
+    const div = document.createElement('div');
+    div.className = `chat-message ${msg.from}`;
+    const filesText = (msg.files || []).length ? `<small>Adjuntos: ${(msg.files || []).map((f) => f.name).join(', ')}</small>` : '';
+    div.innerHTML = `<p>${msg.text || ''}</p>${filesText}`;
+    iaChatWindow.appendChild(div);
+  });
+  iaChatWindow.scrollTop = iaChatWindow.scrollHeight;
+}
+
+function renderIaSqlResult(rows) {
+  if (!iaSqlResultEl) return;
+  iaSqlResultEl.innerHTML = '';
+  if (!Array.isArray(rows) || rows.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'status';
+    p.textContent = 'Sin resultados';
+    iaSqlResultEl.appendChild(p);
+    return;
+  }
+
+  const columns = Object.keys(rows[0]);
+  const table = document.createElement('table');
+  table.className = 'table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  columns.forEach((col) => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    columns.forEach((col) => {
+      const td = document.createElement('td');
+      const value = row[col];
+      td.textContent = value === null || value === undefined ? '' : value;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  iaSqlResultEl.appendChild(table);
+}
 
 function setStatus(el, text, isError = false) {
   if (!el) return;
@@ -456,6 +566,49 @@ function renderEmpleados(rows) {
   });
 }
 
+function renderClientes(rows) {
+  tablaClientesBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.nombre || ''}</td>
+      <td>${row.apellido || ''}</td>
+      <td>${row.mail || ''}</td>
+      <td>${row.telefono || ''}</td>
+      <td>${formatDate(row.updated_at)}</td>
+      <td>${formatDate(row.ultimaCompra)}</td>
+      <td>${row.cantFacturas ?? 0}</td>
+    `;
+    tablaClientesBody.appendChild(tr);
+  });
+}
+
+function renderPedidosClientes(rows) {
+  tablaPedidosClientesBody.innerHTML = '';
+  const uniqueNuevos = new Set();
+  const uniqueRecurrentes = new Set();
+
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.nombre || ''}</td>
+      <td>${row.apellido || ''}</td>
+      <td>${row.totalPedidos ?? 0}</td>
+      <td>${row.tipo || ''}</td>
+    `;
+    tablaPedidosClientesBody.appendChild(tr);
+
+    if (row.idCliente) {
+      if ((row.tipo || '').toLowerCase() === 'nuevo') uniqueNuevos.add(row.idCliente);
+      if ((row.tipo || '').toLowerCase() === 'recurrente') uniqueRecurrentes.add(row.idCliente);
+    }
+  });
+
+  if (statPcTotal) statPcTotal.textContent = rows.length;
+  if (statPcNuevos) statPcNuevos.textContent = uniqueNuevos.size;
+  if (statPcRecurrentes) statPcRecurrentes.textContent = uniqueRecurrentes.size;
+}
+
 function formatDateTime(value) {
   if (!value) return '';
   const d = new Date(value);
@@ -493,6 +646,63 @@ async function loadEmpleados(fecha) {
       'Error cargando empleados. Revisa conexión al servidor/base.',
       true
     );
+    console.error(error);
+  }
+}
+
+async function loadClientes(page = 1) {
+  try {
+    setStatus(statusClientes, 'Cargando...');
+    const params = new URLSearchParams();
+    params.set('page', page);
+    params.set('pageSize', clientesPageSize);
+    const term = buscarClientes.value.trim();
+    if (term) params.set('q', term);
+    if (clientesSort.key) {
+      params.set('sort', clientesSort.key);
+      params.set('dir', clientesSort.dir);
+    }
+    const res = await fetchJSON(`/api/clientes?${params.toString()}`);
+    clientesPage = res.page || 1;
+    clientesTotalPages = res.totalPages || 1;
+    clientesRows = res.data || [];
+    renderClientes(clientesRows);
+    clientesPageInfo.textContent = `Pбgina ${clientesPage} de ${clientesTotalPages}`;
+    setStatus(statusClientes, `Total ${res.total || 0} clientes`);
+  } catch (error) {
+    setStatus(
+      statusClientes,
+      'Error cargando clientes. Revisa conexiИn al servidor/base.',
+      true
+    );
+    console.error(error);
+  }
+}
+
+async function loadPedidosClientes() {
+  try {
+    setStatus(statusPedidosClientes, 'Cargando...');
+    const params = new URLSearchParams();
+    const fecha = fechaPedidosClientes?.value;
+    if (fecha) params.set('fecha', fecha);
+    if (pedidosClientesSort.key) {
+      params.set('sort', pedidosClientesSort.key);
+      params.set('dir', pedidosClientesSort.dir);
+    }
+    params.set('page', pcPage);
+    params.set('pageSize', pcPageSize);
+    const res = await fetchJSON(`/api/pedidos/clientes?${params.toString()}`);
+    pedidosClientesRows = res.data || [];
+    renderPedidosClientes(pedidosClientesRows);
+    pcTotalPages = res.totalPages || 1;
+    pcPage = res.page || 1;
+    if (pcPageInfo) pcPageInfo.textContent = `Página ${pcPage} de ${pcTotalPages}`;
+    if (statPcTotal) statPcTotal.textContent = res.totalPedidos ?? 0;
+    if (statPcNuevos) statPcNuevos.textContent = res.totalNuevos ?? 0;
+    if (statPcRecurrentes) statPcRecurrentes.textContent = res.totalRecurrentes ?? 0;
+    setStatus(statusPedidosClientes, `Fecha ${res.fecha}`);
+  } catch (error) {
+    setStatus(statusPedidosClientes, 'Error al cargar pedidos de clientes.', true);
     console.error(error);
   }
 }
@@ -740,6 +950,17 @@ function initCollapsibles() {
       const isHidden = body.classList.toggle('hidden');
       btn.setAttribute('aria-expanded', (!isHidden).toString());
       btn.textContent = isHidden ? 'Mostrar' : 'Ocultar';
+      if (!isHidden) {
+        if (target === 'encuestas') loadEncuestas(defaultYearEncuestas);
+        if (target === 'productividad') {
+          const desde = document.getElementById('fecha-desde').value;
+          const hasta = document.getElementById('fecha-hasta').value;
+          loadProductividad(desde, hasta);
+        }
+        if (target === 'mensual') loadMensual(defaultYearMensual);
+        if (target === 'ventas') loadVentas(defaultYearVentas);
+        if (target === 'pedidos-clientes') loadPedidosClientes();
+      }
     });
   });
 }
@@ -767,6 +988,200 @@ function initFechaEmpleados() {
     const [year, month] = (mesEmpleados.value || `${yyyy}-${mm}`).split('-');
     loadEmpleados(`${year}-${month}-01`);
   });
+}
+
+function initPedidosClientes() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const todayISO = `${yyyy}-${mm}-${dd}`;
+  if (fechaPedidosClientes) {
+    fechaPedidosClientes.value = todayISO;
+    fechaPedidosClientes.addEventListener('change', () => loadPedidosClientes());
+  }
+  if (refreshPedidosClientes) {
+    refreshPedidosClientes.addEventListener('click', () => loadPedidosClientes());
+  }
+  if (pcPageSizeSelect) {
+    pcPageSize = Number(pcPageSizeSelect.value) || pcPageSize;
+    pcPageSizeSelect.addEventListener('change', () => {
+      pcPageSize = Number(pcPageSizeSelect.value) || pcPageSize;
+      pcPage = 1;
+      loadPedidosClientes();
+    });
+  }
+  if (pcPrev) {
+    pcPrev.addEventListener('click', () => {
+      if (pcPage > 1) {
+        pcPage -= 1;
+        loadPedidosClientes();
+      }
+    });
+  }
+  if (pcNext) {
+    pcNext.addEventListener('click', () => {
+      if (pcPage < pcTotalPages) {
+        pcPage += 1;
+        loadPedidosClientes();
+      }
+    });
+  }
+  if (tablaPedidosClientesHead) {
+    tablaPedidosClientesHead.addEventListener('click', (e) => {
+      const th = e.target.closest('th[data-sort]');
+      if (!th) return;
+      const key = th.dataset.sort;
+      if (pedidosClientesSort.key === key) {
+        pedidosClientesSort.dir = pedidosClientesSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        pedidosClientesSort.key = key;
+        pedidosClientesSort.dir = 'asc';
+      }
+      pcPage = 1;
+      loadPedidosClientes();
+    });
+  }
+}
+
+function initClientes() {
+  if (clientesPageSizeSelect) {
+    clientesPageSize = Number(clientesPageSizeSelect.value) || clientesPageSize;
+    clientesPageSizeSelect.addEventListener('change', () => {
+      clientesPageSize = Number(clientesPageSizeSelect.value) || clientesPageSize;
+      loadClientes(1);
+    });
+  }
+  if (refreshClientesBtn) {
+    refreshClientesBtn.addEventListener('click', () => loadClientes(1));
+  }
+  if (buscarClientes) {
+    let debounce;
+    buscarClientes.addEventListener('input', () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => loadClientes(1), 250);
+    });
+  }
+  if (clientesPrev) {
+    clientesPrev.addEventListener('click', () => {
+      if (clientesPage > 1) loadClientes(clientesPage - 1);
+    });
+  }
+  if (clientesNext) {
+    clientesNext.addEventListener('click', () => {
+      if (clientesPage < clientesTotalPages) loadClientes(clientesPage + 1);
+    });
+  }
+  if (tablaClientesHead) {
+    tablaClientesHead.addEventListener('click', (e) => {
+      const th = e.target.closest('th[data-sort]');
+      if (!th) return;
+      const key = th.dataset.sort;
+      if (clientesSort.key === key) {
+        clientesSort.dir = clientesSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        clientesSort.key = key;
+        clientesSort.dir = 'asc';
+      }
+      loadClientes(1);
+    });
+  }
+}
+
+function initIaChat() {
+  if (iaSendBtn) {
+    iaSendBtn.addEventListener('click', sendIaMessage);
+  }
+  if (iaMessageInput) {
+    iaMessageInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') sendIaMessage();
+    });
+  }
+  if (iaSqlSendBtn) {
+    iaSqlSendBtn.addEventListener('click', sendIaSqlQuery);
+  }
+  if (iaSqlQuestionInput) {
+    iaSqlQuestionInput.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') sendIaSqlQuery();
+    });
+  }
+}
+
+async function sendIaMessage() {
+  const text = iaMessageInput?.value?.trim();
+  if (!text) return;
+  const allowedExt = ['pdf', 'csv', 'xls', 'xlsx', 'doc', 'docx'];
+  const filesSelected = Array.from(iaFileInput?.files || []);
+  const invalid = filesSelected.find((f) => {
+    const ext = f.name.split('.').pop()?.toLowerCase() || '';
+    return !allowedExt.includes(ext);
+  });
+  if (invalid) {
+    setStatus(iaStatus, 'Solo se permiten PDF, CSV, XLS, XLSX, DOC o DOCX.', true);
+    return;
+  }
+
+  async function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const files = [];
+  for (const f of filesSelected) {
+    const content = await fileToBase64(f);
+    files.push({ name: f.name, size: f.size, content });
+  }
+  iaMessages.push({ from: 'user', text, files });
+  renderIaMessages();
+  iaMessageInput.value = '';
+  if (iaStatus) iaStatus.textContent = 'Enviando...';
+  try {
+    const res = await fetch('/api/ia/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, files }),
+    });
+    const data = await res.json();
+    iaMessages.push({ from: 'ia', text: data.reply || 'Sin respuesta', files: [] });
+    renderIaMessages();
+    if (iaStatus) iaStatus.textContent = '';
+  } catch (error) {
+    if (iaStatus) iaStatus.textContent = 'Error enviando mensaje';
+  }
+}
+
+async function sendIaSqlQuery() {
+  const question = iaSqlQuestionInput?.value?.trim();
+  if (!question) return;
+  setStatus(iaSqlStatus, 'Generando consulta...');
+  if (iaSqlQueryEl) iaSqlQueryEl.textContent = '';
+  if (iaSqlExplanationEl) iaSqlExplanationEl.textContent = '';
+  if (iaSqlResultEl) iaSqlResultEl.innerHTML = '';
+  try {
+    const res = await fetch('/api/ia/db-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || errData.message || `Error ${res.status}`);
+    }
+    const data = await res.json();
+    if (iaSqlQueryEl) iaSqlQueryEl.textContent = data.query || '';
+    if (iaSqlExplanationEl) iaSqlExplanationEl.textContent = data.explanation || '';
+    renderIaSqlResult(Array.isArray(data.rows) ? data.rows : []);
+    const totalRows = Number.isFinite(data.rowCount) ? `${data.rowCount} fila(s)` : '';
+    const msg = data.message || totalRows || 'Consulta ejecutada';
+    setStatus(iaSqlStatus, msg, data.rowCount === 0);
+  } catch (error) {
+    renderIaSqlResult([]);
+    setStatus(iaSqlStatus, error.message || 'Error consultando IA', true);
+  }
 }
 
 function initMenu() {
@@ -886,14 +1301,20 @@ function formatDayLabel(year, month, dayNumber) {
 }
 
 function switchView(target) {
+  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa];
+  views.forEach((v) => v.classList.add('hidden'));
+
   if (target === 'empleados') {
-    viewDashboard.classList.add('hidden');
     viewEmpleados.classList.remove('hidden');
     const [year, month] = mesEmpleados.value.split('-');
     loadEmpleados(`${year}-${month}-01`);
+  } else if (target === 'clientes') {
+    viewClientes.classList.remove('hidden');
+    loadClientes(clientesPage);
+  } else if (target === 'ia') {
+    viewIa.classList.remove('hidden');
   } else {
     viewDashboard.classList.remove('hidden');
-    viewEmpleados.classList.add('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 }
@@ -905,6 +1326,9 @@ initMenu();
 initCollapsibles();
 initPaqueteriaModal();
 initFechaEmpleados();
+initClientes();
+initPedidosClientes();
+initIaChat();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();
@@ -912,3 +1336,4 @@ loadProductividad(document.getElementById('fecha-desde').value, document.getElem
 loadMensual(defaultYearMensual);
 loadVentas(defaultYearVentas);
 loadPaqueteria();
+loadPedidosClientes();

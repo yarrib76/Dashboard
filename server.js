@@ -1,12 +1,20 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { log } = require('console');
+const OpenAI = require('openai');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
+const fsp = fs.promises;
 
 const app = express();
 app.use(cors());
@@ -33,6 +41,13 @@ const DB_PASSWORD = requiredEnv('DB_PASSWORD');
 const DB_NAME = requiredEnv('DB_NAME');
 const DB_CONNECTION_LIMIT = Number(requiredEnv('DB_CONNECTION_LIMIT', 10));
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
+const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
+const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
+
+const openai =
+  OPENAI_API_KEY && OPENAI_API_KEY.trim()
+    ? new OpenAI({ apiKey: OPENAI_API_KEY.trim() })
+    : null;
 
 function parseISODate(value) {
   const date = new Date(`${value}T00:00:00`);
@@ -113,6 +128,247 @@ const pool = mysql.createPool({
   connectionLimit: DB_CONNECTION_LIMIT,
   timezone: 'Z',
 });
+
+const SCHEMA_CACHE_TTL_MS = 10 * 60 * 1000;
+let cachedSchema = { text: '', fetchedAt: 0 };
+const PROJECT_SCHEMA_PATH = path.join(__dirname, 'Proyecto.txt');
+const CUSTOM_SCHEMA_PATH = path.join(__dirname, 'consultasBaseDatos.txt');
+let cachedFileSchema = { text: '', loaded: false };
+let cachedCustomSchema = { text: '', mtimeMs: 0, tables: new Map(), columns: new Set() };
+
+function getLocalSchemaSummary() {
+  if (cachedFileSchema.loaded && cachedFileSchema.text) return cachedFileSchema.text;
+  try {
+    const raw = fs.readFileSync(PROJECT_SCHEMA_PATH, 'utf8');
+    const lines = raw.split(/\r?\n/);
+    const startIdx = lines.findIndex((line) => line.toLowerCase().includes('extructura de la base de datos'));
+    if (startIdx === -1) return '';
+    const slice = lines.slice(startIdx + 1, startIdx + 401); // tomar hasta 400 l¡neas para evitar exceso
+    const text = slice.join('\n').trim();
+    cachedFileSchema = { text, loaded: true };
+    return text;
+  } catch (_err) {
+    return '';
+  }
+}
+
+function parseColumns(raw) {
+  return raw
+    .split(',')
+    .map((c) => {
+      const cleaned = c.trim();
+      const firstToken = cleaned.split(/\s+/)[0]; // tomar solo el nombre, descartar tipos
+      const sanitized = firstToken.replace(/[^A-Za-z0-9_]/g, '');
+      return sanitized || '';
+    })
+    .filter(Boolean);
+}
+
+function getCustomSchemaSummary() {
+  try {
+    const stats = fs.statSync(CUSTOM_SCHEMA_PATH);
+    if (!stats.isFile()) return { text: '', tables: new Map(), columns: new Set() };
+
+    const raw = fs.readFileSync(CUSTOM_SCHEMA_PATH, 'utf8').trim();
+    const lines = raw.split(/\r?\n/);
+    const tables = new Map();
+    const allColumns = new Set();
+    let currentTable = null;
+
+    lines.forEach((line) => {
+      const tableMatch = line.match(/^\s*\d+\.\s*([a-zA-Z0-9_]+)/);
+      if (tableMatch) {
+        currentTable = tableMatch[1].toLowerCase();
+        tables.set(currentTable, new Set());
+        return;
+      }
+      const camposLine = line.match(/^\s*Campos:\s*\((.*)\)\s*$/i);
+      if (camposLine && currentTable) {
+        const content = camposLine[1];
+        const cols = parseColumns(content);
+        const tableSet = tables.get(currentTable);
+        cols.forEach((col) => {
+          const key = col.toLowerCase();
+          tableSet.add(key);
+          allColumns.add(key);
+        });
+      }
+    });
+
+    cachedCustomSchema = { text: raw, mtimeMs: stats.mtimeMs, tables, columns: allColumns };
+    return cachedCustomSchema;
+  } catch (_err) {
+    return { text: '', tables: new Map(), columns: new Set() };
+  }
+}
+
+async function getSchemaSummary() {
+  const now = Date.now();
+  if (cachedSchema.text && now - cachedSchema.fetchedAt < SCHEMA_CACHE_TTL_MS) {
+    return cachedSchema.text;
+  }
+  const [rows] = await pool.query(
+    `SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName, DATA_TYPE AS dataType
+     FROM information_schema.columns
+     WHERE table_schema = ?
+     ORDER BY TABLE_NAME, ORDINAL_POSITION
+     LIMIT 800`,
+    [DB_NAME]
+  );
+
+  const grouped = rows.reduce((acc, row) => {
+    if (!acc[row.tableName]) {
+      acc[row.tableName] = [];
+    }
+    acc[row.tableName].push(`${row.columnName} (${row.dataType})`);
+    return acc;
+  }, {});
+
+  const summary = Object.entries(grouped)
+    .map(([table, cols]) => `${table}: ${cols.join(', ')}`)
+    .join('\n');
+
+  cachedSchema = { text: summary, fetchedAt: now };
+  return summary;
+}
+
+function isSafeSelect(sql) {
+  if (typeof sql !== 'string') return false;
+  const cleaned = sql.trim().replace(/;+\s*$/, '');
+  const upper = cleaned.toUpperCase();
+  const forbidden = ['INSERT ', 'UPDATE ', 'DELETE ', 'DROP ', 'ALTER ', 'TRUNCATE ', 'REPLACE ', 'GRANT ', 'REVOKE '];
+  if (!/^SELECT|^WITH/.test(upper)) return false;
+  if (forbidden.some((kw) => upper.includes(kw))) return false;
+  if (cleaned.split(';').filter((p) => p.trim()).length > 1) return false;
+  return true;
+}
+
+function clampLimit(sql, maxRows = 50) {
+  let cleaned = sql.trim().replace(/;+\s*$/, '');
+  const limitMatch = cleaned.match(/\blimit\s+(\d+)(\s*,\s*\d+)?/i);
+  if (limitMatch) {
+    const first = Number(limitMatch[1]);
+    if (Number.isFinite(first) && first > maxRows) {
+      cleaned = cleaned.replace(/\blimit\s+(\d+)(\s*,\s*\d+)?/i, `LIMIT ${maxRows}`);
+    }
+    return cleaned;
+  }
+  return `${cleaned} LIMIT ${maxRows}`;
+}
+
+function hasSubquery(sql) {
+  return /\(\s*select[\s\S]+?\)/i.test(sql);
+}
+
+function normalizeRows(rows) {
+  return rows.map((row) => {
+    const out = {};
+    Object.entries(row).forEach(([key, value]) => {
+      if (value instanceof Date) {
+        out[key] = value.toISOString().slice(0, 10); // yyyy-mm-dd
+      } else {
+        out[key] = value;
+      }
+    });
+    return out;
+  });
+}
+
+async function processUploadedFiles(files = []) {
+  const allowedExt = new Set(['pdf', 'csv', 'xls', 'xlsx', 'doc', 'docx']);
+  const tmpFiles = [];
+  try {
+    for (let i = 0; i < Math.min(files.length, 5); i += 1) {
+      const f = files[i] || {};
+      const name = String(f.name || '').slice(0, 200);
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const base64 = typeof f.content === 'string' ? f.content : '';
+      if (!allowedExt.has(ext)) {
+        throw new Error(`Tipo de archivo no permitido: ${ext || 'sin extensión'}`);
+      }
+      if (!base64) {
+        continue;
+      }
+      const buffer = Buffer.from(base64, 'base64');
+      const tmpPath = path.join(os.tmpdir(), `ia_file_${Date.now()}_${i}.${ext || 'tmp'}`);
+      await fsp.writeFile(tmpPath, buffer);
+      tmpFiles.push({ path: tmpPath, name, ext });
+    }
+    if (!tmpFiles.length) {
+      return { outputs: [], summary: '' };
+    }
+
+    const scriptPath = path.join(__dirname, 'tools', 'read_attachments.py');
+    const args = [scriptPath, ...tmpFiles.map((f) => f.path)];
+    const { stdout } = await execFileAsync('python', args, { timeout: 20000 });
+    let parsed = [];
+    try {
+      parsed = JSON.parse(stdout);
+    } catch (_err) {
+      parsed = [];
+    }
+
+    const summarizeItem = (item) => {
+      if (!item) return '';
+      const name = item.file || '';
+      if (item.error) return `${name}: error - ${item.error}`;
+      if (item.content) {
+        const snippet = String(item.content).slice(0, 3000);
+        return `${name}: contenido (primeros 3000 chars):\n${snippet}`;
+      }
+      if (item.rows) {
+        const rowsText = JSON.stringify(item.rows.slice(0, 30));
+        return `${name}: filas (primeras 30):\n${rowsText.slice(0, 3000)}`;
+      }
+      return `${name}: sin datos`;
+    };
+
+    const summary = Array.isArray(parsed) && parsed.length ? parsed.map(summarizeItem).join('\n\n') : '';
+    return { outputs: parsed, summary };
+  } finally {
+    await Promise.all(
+      tmpFiles.map(async (f) => {
+        try {
+          await fsp.unlink(f.path);
+        } catch (_err) {
+          /* ignore */
+        }
+      })
+    );
+  }
+}
+
+function validateAgainstSchema(sql, schemaMeta) {
+  if (!schemaMeta || !schemaMeta.tables || !schemaMeta.columns) return { ok: false, invalidTables: [], invalidColumns: [] };
+  const tables = schemaMeta.tables;
+  const columns = schemaMeta.columns;
+  const upperSql = sql.toUpperCase();
+  if (!upperSql.startsWith('SELECT') && !upperSql.startsWith('WITH')) return { ok: false, invalidTables: [], invalidColumns: [] };
+
+  const usedTables = new Set();
+  const tableRegex = /\bfrom\s+([a-zA-Z0-9_]+)|\bjoin\s+([a-zA-Z0-9_]+)/gi;
+  let m;
+  while ((m = tableRegex.exec(sql)) !== null) {
+    const name = (m[1] || m[2] || '').toLowerCase();
+    if (name) usedTables.add(name);
+  }
+  const invalidTables = Array.from(usedTables).filter((t) => !tables.has(t));
+
+  const usedColumns = new Set();
+  const dotRegex = /([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/g;
+  while ((m = dotRegex.exec(sql)) !== null) {
+    const col = (m[2] || '').toLowerCase();
+    if (col) usedColumns.add(col);
+  }
+  const tickRegex = /`([^`]+)`/g;
+  while ((m = tickRegex.exec(sql)) !== null) {
+    const col = (m[1] || '').toLowerCase();
+    if (col) usedColumns.add(col);
+  }
+  const invalidColumns = Array.from(usedColumns).filter((c) => !columns.has(c));
+
+  return { ok: invalidTables.length === 0 && invalidColumns.length === 0, invalidTables, invalidColumns };
+}
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -420,6 +676,93 @@ app.get('/api/empleados', async (req, res) => {
     res.json({ fecha: desde.slice(0, 10), data });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar empleados', error: error.message });
+  }
+});
+
+app.get('/api/clientes', async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(5, Number.parseInt(req.query.pageSize, 10) || 10));
+    const terms =
+      typeof req.query.q === 'string'
+        ? req.query.q
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+        : [];
+
+    const sortKey = typeof req.query.sort === 'string' ? req.query.sort : null;
+    const sortDir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
+    const sortMap = {
+      nombre: 'c.nombre',
+      apellido: 'c.apellido',
+      mail: 'c.mail',
+      telefono: 'c.telefono',
+      updated_at: 'c.updated_at',
+      ultimaCompra: 'ult.ultimaCompra',
+      cantFacturas: 'COALESCE(fact.cantFacturas, 0)',
+    };
+    const orderBy = sortKey && sortMap[sortKey] ? `${sortMap[sortKey]} ${sortDir}` : 'c.updated_at DESC';
+
+    const filters = ['c.id_clientes <> 1'];
+    const params = [];
+    if (terms.length) {
+      terms.forEach((t) => {
+        const like = `%${t}%`;
+        filters.push(
+          '(c.nombre LIKE ? OR c.apellido LIKE ? OR c.mail LIKE ? OR c.telefono LIKE ? OR c.apodo LIKE ?)'
+        );
+        params.push(like, like, like, like, like);
+      });
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM clientes c ${where}`,
+      params
+    );
+    const total = Number(countRow.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * pageSize;
+
+    const [rows] = await pool.query(
+      `SELECT
+         c.id_clientes AS id,
+         c.nombre,
+         c.apellido,
+         c.mail,
+         c.telefono,
+         c.encuesta,
+         c.updated_at,
+         ult.ultimaCompra,
+         COALESCE(fact.cantFacturas, 0) AS cantFacturas
+       FROM clientes c
+       LEFT JOIN (
+         SELECT id_clientes, COUNT(*) AS cantFacturas
+         FROM facturah
+         GROUP BY id_clientes
+       ) fact ON fact.id_clientes = c.id_clientes
+       LEFT JOIN (
+         SELECT id_clientes, MAX(fecha) AS ultimaCompra
+         FROM facturah
+         GROUP BY id_clientes
+       ) ult ON ult.id_clientes = c.id_clientes
+       ${where}
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
+    );
+
+    res.json({
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar clientes', error: error.message });
   }
 });
 
@@ -735,6 +1078,255 @@ app.get('/api/ventas/mensual', async (req, res) => {
     res.json({ year, data: rows });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar ventas mensuales', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/clientes', async (req, res) => {
+  try {
+    const fechaParam = req.query.fecha ? parseISODate(req.query.fecha) : new Date();
+    const yyyy = fechaParam.getFullYear();
+    const mm = String(fechaParam.getMonth() + 1).padStart(2, '0');
+    const dd = String(fechaParam.getDate()).padStart(2, '0');
+    const fechaISO = `${yyyy}-${mm}-${dd}`;
+
+    const sortKey = typeof req.query.sort === 'string' ? req.query.sort : null;
+    const sortDir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
+    const sortMap = {
+      nombre: 'c.nombre',
+      apellido: 'c.apellido',
+      totalPedidos: 'tot.totalPedidos',
+      tipo: 'tipo',
+    };
+    const orderBy = sortKey && sortMap[sortKey] ? `${sortMap[sortKey]} ${sortDir}` : 'c.nombre, c.apellido';
+
+    const pageReq = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(5, Number.parseInt(req.query.pageSize, 10) || 10));
+
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM controlpedidos cp
+       WHERE DATE(cp.fecha) = ?
+         AND cp.id_cliente <> 1`,
+      [fechaISO]
+    );
+    const total = Number(countRow.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(pageReq, totalPages);
+    const offset = (page - 1) * pageSize;
+
+    const [[totalsRow]] = await pool.query(
+      `SELECT
+         COUNT(*) AS totalPedidos,
+         SUM(tipo = 'Nuevo') AS totalNuevos,
+         SUM(tipo = 'Recurrente') AS totalRecurrentes
+       FROM (
+         SELECT
+           CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM facturah f
+               WHERE f.id_clientes = c.id_clientes
+                 AND f.fecha < cp.fecha
+             ) THEN 'Recurrente'
+             ELSE 'Nuevo'
+           END AS tipo
+         FROM controlpedidos cp
+         INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
+         WHERE DATE(cp.fecha) = ?
+           AND cp.id_cliente <> 1
+       ) t`,
+      [fechaISO]
+    );
+
+    const [rows] = await pool.query(
+      `SELECT
+         cp.id,
+         cp.id_cliente AS idCliente,
+         c.nombre,
+         c.apellido,
+         tot.totalPedidos,
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM facturah f
+             WHERE f.id_clientes = c.id_clientes
+               AND f.fecha < cp.fecha
+           ) THEN 'Recurrente'
+           ELSE 'Nuevo'
+         END AS tipo
+       FROM controlpedidos cp
+       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
+       LEFT JOIN (
+         SELECT id_cliente, COUNT(*) AS totalPedidos
+         FROM controlpedidos
+         WHERE id_cliente <> 1
+         GROUP BY id_cliente
+       ) tot ON tot.id_cliente = cp.id_cliente
+       WHERE DATE(cp.fecha) = ?
+         AND cp.id_cliente <> 1
+       ORDER BY ${orderBy}
+       LIMIT ? OFFSET ?`,
+      [fechaISO, pageSize, offset]
+    );
+
+    res.json({
+      fecha: fechaISO,
+      page,
+      pageSize,
+      total,
+      totalPages,
+      totalPedidos: Number(totalsRow.totalPedidos) || 0,
+      totalNuevos: Number(totalsRow.totalNuevos) || 0,
+      totalRecurrentes: Number(totalsRow.totalRecurrentes) || 0,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos de clientes', error: error.message });
+  }
+});
+
+app.post('/api/ia/chat', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const { message, files = [] } = req.body || {};
+    const allowedExt = new Set(['pdf', 'csv', 'xls', 'xlsx', 'doc', 'docx']);
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ message: 'Mensaje requerido' });
+    }
+    if (!openai) {
+      return res.status(400).json({ message: 'OPENAI_API_KEY no configurada en el servidor' });
+    }
+    let promptFiles = 'Sin adjuntos.';
+    if (Array.isArray(files) && files.length) {
+      try {
+        const { summary } = await processUploadedFiles(files);
+        promptFiles = summary ? `Contenido de adjuntos:\n${summary}` : promptFiles;
+      } catch (err) {
+        return res.status(400).json({ message: err.message || 'Error procesando adjuntos' });
+      }
+    }
+    const systemPrompt =
+      'Eres un asistente amable y conciso. El servidor ya procesó los adjuntos permitidos (PDF, CSV, XLS/XLSX, DOC/DOCX) ' +
+      'y te entrega a continuación un resumen del contenido (primeros ~3000 caracteres o 30 filas). ' +
+      'Usa ese resumen directamente para responder; no pidas al usuario que ejecute comandos ni que pegue texto adicional. ' +
+      'Devuelve respuestas cortas y accionables.';
+
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `${message}\n\n${promptFiles}` },
+      ],
+    });
+    const reply = completion.choices?.[0]?.message?.content || 'Sin respuesta';
+    return res.json({ reply });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en OpenAI', error: error.message });
+  }
+});
+
+app.post('/api/ia/db-query', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    let attemptedSql = '';
+    const { question } = req.body || {};
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ message: 'Pregunta requerida' });
+    }
+    if (!openai) {
+      return res.status(400).json({ message: 'OPENAI_API_KEY no configurada en el servidor' });
+    }
+
+    const schemaMeta = getCustomSchemaSummary();
+    if (!schemaMeta.text) {
+      return res.status(400).json({ message: 'No hay información para su consulta' });
+    }
+
+    const baseSystemPrompt = (extraRules = '') =>
+      'Eres un analista SQL para MySQL. Genera consultas de SOLO LECTURA usando únicamente las tablas y columnas listadas. ' +
+      'Si la pregunta requiere tablas/columnas que no estén en la lista, responde con sql="/* sin informacion */" y explanation="No hay información para su consulta". ' +
+      'Usa EXACTAMENTE los nombres de columnas/tablas listados (respetando mayúsculas/minúsculas tal como aparezcan). ' +
+      'Si el texto del esquema trae ejemplos o reglas (como manejo de descuentos en facturación), respétalos literalmente al generar la consulta. ' +
+      'Para calcular facturación con descuentos en la tabla facturah, usa la lógica: SUM(CASE WHEN Descuento IS NOT NULL OR Descuento = 0 THEN Descuento ELSE Total END). ' +
+      'Si necesitas el último registro (pedido, factura, etc.), ordena por la fecha correspondiente en orden DESC y limita a 1. ' +
+      'No uses subconsultas ni tablas derivadas; usa JOIN y ORDER BY ... DESC LIMIT 1 directamente en la consulta principal. ' +
+      'Respeta ONLY_FULL_GROUP_BY: si usas GROUP BY, solo ordena por columnas agrupadas o agregadas (usa alias). Usa COALESCE para nulos en agregaciones y limita resultados con LIMIT si no se especifica. ' +
+      (extraRules ? extraRules + ' ' : '') +
+      'Responde SOLO en JSON con las claves: sql (string) y explanation (string breve). No inventes columnas ni tablas.';
+
+    const userPrompt = (q) => `Pregunta del usuario: "${q}"
+Esquema disponible:
+${schemaMeta.text}`;
+
+    async function requestCompletion(extraRules = '') {
+      const completion = await openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: baseSystemPrompt(extraRules) },
+          { role: 'user', content: userPrompt(question) },
+        ],
+      });
+      return completion.choices?.[0]?.message?.content || '{}';
+    }
+
+    let content;
+    try {
+      content = await requestCompletion();
+    } catch (error) {
+      return res.status(500).json({ message: 'No se pudo interpretar la respuesta de IA', error: error.message });
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (error) {
+      return res.status(500).json({ message: 'No se pudo interpretar la respuesta de IA', error: error.message });
+    }
+
+    let sql = typeof parsed.sql === 'string' ? parsed.sql : '';
+    attemptedSql = sql;
+    if (hasSubquery(sql)) {
+      try {
+        content = await requestCompletion('Reescribe SIN subconsultas ni tablas derivadas; usa solo JOIN y ORDER BY ... DESC LIMIT 1 en la consulta principal.');
+        parsed = JSON.parse(content);
+        sql = typeof parsed.sql === 'string' ? parsed.sql : '';
+        attemptedSql = sql;
+      } catch (error) {
+        return res.status(400).json({ message: 'La consulta generada usa subconsultas no permitidas.', sql: attemptedSql });
+      }
+    }
+
+    if (!isSafeSelect(sql)) {
+      return res.status(400).json({ message: 'La consulta generada no es segura. Reformula tu pregunta.', sql: attemptedSql });
+    }
+    if (hasSubquery(sql)) {
+      return res.status(400).json({ message: 'La consulta generada usa subconsultas no permitidas.', sql: attemptedSql });
+    }
+    const schemaCheck = validateAgainstSchema(sql, schemaMeta);
+    if (!schemaCheck.ok) {
+      return res.status(400).json({
+        message: 'La consulta generada usa tablas o columnas no permitidas.',
+        tables: schemaCheck.invalidTables,
+        columns: schemaCheck.invalidColumns,
+        sql: attemptedSql,
+      });
+    }
+    const safeSql = clampLimit(sql);
+
+    const [rows] = await pool.query(safeSql);
+    const normalized = Array.isArray(rows) ? normalizeRows(rows) : [];
+    const noData = normalized.length === 0;
+    return res.json({
+      query: safeSql,
+      rows: normalized,
+      rowCount: normalized.length,
+      explanation: parsed.explanation || 'Consulta generada',
+      message: noData ? 'No hay datos registrados' : undefined,
+    });
+  } catch (error) {
+    const isMysqlError = error && typeof error.code === 'string';
+    return res
+      .status(isMysqlError ? 400 : 500)
+      .json({ message: 'Error al ejecutar consulta IA', error: error.message || String(error), sql: attemptedSql || '' });
   }
 });
 

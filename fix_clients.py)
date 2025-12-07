@@ -1,0 +1,3 @@
+path=Path('public/index.html'
+text=path.read_text(encoding='utf-8'
+text=re.sub(r'placeholder=\\" Nombre,email o tel.*?\"','placeholder=\"Nombre,email o "tel‚fono\',text

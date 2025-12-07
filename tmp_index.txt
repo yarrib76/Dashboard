@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
@@ -17,7 +17,7 @@
     <aside class="side-menu" id="side-menu">
       <div class="menu-inner">
         <div class="user-block">
-          <div class="avatar" id="user-avatar">👤</div>
+          <div class="avatar" id="user-avatar">ðŸ‘¤</div>
           <div class="user-info">
             <p class="user-name" id="user-name">Usuario</p>
             <p class="user-role">Equipo</p>
@@ -25,25 +25,21 @@
         </div>
         <nav class="menu-items">
           <button class="menu-item active" data-target="dashboard">
-            <span class="icon">📊</span>
+            <span class="icon">ðŸ“Š</span>
             <span class="label">Dashboard</span>
           </button>
           <button class="menu-item" data-target="empleados">
-            <span class="icon">👥</span>
+            <span class="icon">ðŸ‘¥</span>
             <span class="label">Empleados</span>
           </button>
           <button class="menu-item" data-target="clientes">
             <span class="icon">+</span>
             <span class="label">Clientes</span>
           </button>
-          <button class="menu-item" data-target="ia">
-            <span class="icon">🤖</span>
-            <span class="label">IA</span>
-          </button>
         </nav>
         <button class="menu-item logout" id="logout-btn">
-          <span class="icon">↩</span>
-          <span class="label">Cerrar sesión</span>
+          <span class="icon">â†©</span>
+          <span class="label">Cerrar sesiÃ³n</span>
         </button>
       </div>
     </aside>
@@ -67,13 +63,13 @@
               <button class="collapse-toggle" data-target="encuestas" aria-expanded="false">Mostrar</button>
             </div>
             <label class="inline">
-              <span>Año</span>
+              <span>AÃ±o</span>
               <select id="year-encuestas"></select>
             </label>
             <button id="refresh-encuestas" type="button">Actualizar</button>
           </div>
           <div class="card-body hidden" data-section="encuestas">
-            <p>Histograma del año en curso usando <code>clientes.updated_at</code>.</p>
+            <p>Histograma del aÃ±o en curso usando <code>clientes.updated_at</code>.</p>
             <div class="chart-wrap tall">
               <canvas id="chart-encuestas"></canvas>
             </div>
@@ -98,7 +94,7 @@
                 <p class="value" id="stat-sin-transporte">0</p>
               </button>
               <button class="stat alert stat-click" data-tipo="vencidos">
-                <p class="label">Vencidos (&gt;3 días)</p>
+                <p class="label">Vencidos (&gt;3 dÃ­as)</p>
                 <p class="value" id="stat-vencidos">0</p>
               </button>
             </div>
@@ -109,7 +105,7 @@
         <article class="card wide">
           <div class="actions between">
             <div class="heading">
-              <h2>Pedidos del día</h2>
+              <h2>Pedidos del dÃ­a</h2>
               <button class="collapse-toggle" data-target="productividad" aria-expanded="false">Mostrar</button>
             </div>
             <div class="range">
@@ -132,7 +128,7 @@
                   <tr>
                     <th>Vendedora</th>
                     <th>Pedidos</th>
-                    <th>Días</th>
+                    <th>DÃ­as</th>
                     <th>Promedio</th>
                     <th>$ Prom.</th>
                     <th>Art. Prom.</th>
@@ -152,13 +148,13 @@
               <button class="collapse-toggle" data-target="mensual" aria-expanded="false">Mostrar</button>
             </div>
             <label class="inline">
-              <span>Año</span>
+              <span>AÃ±o</span>
               <select id="year-mensual"></select>
             </label>
             <button id="refresh-mensual" type="button">Actualizar</button>
           </div>
           <div class="card-body hidden" data-section="mensual">
-            <p>Distribución mensual del año corriente.</p>
+            <p>DistribuciÃ³n mensual del aÃ±o corriente.</p>
             <div class="chart-wrap tall">
               <canvas id="chart-mensual"></canvas>
             </div>
@@ -169,17 +165,17 @@
         <article class="card wide">
           <div class="actions between">
             <div class="heading">
-              <h2>Ventas mensuales por vendedora (salón)</h2>
+              <h2>Ventas mensuales por vendedora (salÃ³n)</h2>
               <button class="collapse-toggle" data-target="ventas" aria-expanded="false">Mostrar</button>
             </div>
             <label class="inline">
-              <span>Año</span>
+              <span>AÃ±o</span>
               <select id="year-ventas"></select>
             </label>
             <button id="refresh-ventas" type="button">Actualizar</button>
           </div>
           <div class="card-body hidden" data-section="ventas">
-            <p>Ventas en salón (sin orden web), agrupadas por vendedora y mes.</p>
+            <p>Ventas en salÃ³n (sin orden web), agrupadas por vendedora y mes.</p>
             <div class="chart-wrap tall">
               <canvas id="chart-ventas"></canvas>
             </div>
@@ -229,10 +225,10 @@
             </div>
             <div class="pagination" id="pc-pagination">
               <button id="pc-prev" type="button">Anterior</button>
-              <span id="pc-page-info">Página 1</span>
+              <span id="pc-page-info">PÃ¡gina 1</span>
               <button id="pc-next" type="button">Siguiente</button>
               <label class="client-inline">
-                <span>Por página</span>
+                <span>Por pÃ¡gina</span>
                 <select id="pc-page-size">
                   <option value="10">10</option>
                   <option value="25">25</option>
@@ -270,7 +266,7 @@
               <thead>
                 <tr>
                   <th>Nombre y Apellido</th>
-                  <th>Alerta (≤5m)</th>
+                  <th>Alerta (â‰¤5m)</th>
                   <th>Tarde (&gt;5m)</th>
                   <th>Llegadas Tarde</th>
                   <th>Clientes no encuestados</th>
@@ -285,17 +281,17 @@
         </article>
       </section>
 
-  <section class="view hidden" id="view-clientes">
+       <section class="view hidden" id="view-clientes">
     <article class="card wide">
       <div class="actions between">
         <h2>Clientes</h2>
         <div class="actions inline compact clients-controls">
-        <label class="client-inline">
-          <span>Buscar</span>
-          <input type="search" id="buscar-clientes" placeholder="Nombre, email o teléfono" />
-        </label>
-        <button id="refresh-clientes" type="button">Actualizar</button>
-      </div>
+          <label class="client-inline">
+            <span>Buscar</span>
+            <input type="search" id="buscar-clientes" placeholder="Nombre, email o teléfono" />
+          </label>
+          <button id="refresh-clientes" type="button">Actualizar</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="table" id="tabla-clientes">
@@ -312,8 +308,6 @@
           </thead>
           <tbody></tbody>
         </table>
-      </div>
-      <div class="pagination" id="clientes-pagination">
         <button id="clientes-prev" type="button">Anterior</button>
         <span id="clientes-page-info">Página 1</span>
         <button id="clientes-next" type="button">Siguiente</button>
@@ -329,63 +323,12 @@
       <p class="status" id="status-clientes"></p>
     </article>
   </section>
-
-  <section class="view hidden" id="view-ia">
-    <article class="card wide">
-      <div class="actions between">
-        <div>
-          <h2>IA</h2>
-          <p class="status">Chat y consultas a la base (solo lectura)</p>
-        </div>
-      </div>
-      <div class="ia-grid">
-        <div class="ia-panel">
-          <div class="card-body">
-            <h3>Chat rápido</h3>
-            <p class="status">Conversación general con adjuntos</p>
-            <div class="chat-window" id="ia-chat-window"></div>
-            <div class="chat-inputs">
-              <label class="file-label">
-                <span>Adjuntar</span>
-                <input type="file" id="ia-file" multiple />
-              </label>
-              <input type="text" id="ia-message" placeholder="Escribe tu mensaje..." />
-              <button id="ia-send" type="button">Enviar</button>
-            </div>
-            <p class="status" id="ia-status"></p>
-          </div>
-        </div>
-        <div class="ia-panel">
-          <div class="card-body">
-            <h3>Consultas a la base</h3>
-            <p class="status">Pregunta en lenguaje natural y la IA genera SQL de solo lectura</p>
-            <div class="chat-inputs">
-              <input type="text" id="ia-sql-question" placeholder="Ej: ¿Últimas 20 facturas del cliente Pérez en noviembre?" />
-              <button id="ia-sql-send" type="button">Consultar base</button>
-            </div>
-            <p class="status" id="ia-sql-status"></p>
-            <div class="ia-sql-meta">
-              <div>
-                <p class="muted-label">Explicación</p>
-                <p id="ia-sql-explanation" class="muted"></p>
-              </div>
-              <div>
-                <p class="muted-label">SQL generado</p>
-                <pre id="ia-sql-query" class="code-block"></pre>
-              </div>
-            </div>
-            <div class="table-wrap" id="ia-sql-result"></div>
-          </div>
-        </div>
-      </div>
-    </article>
-  </section>
-
+  
     <div class="modal-overlay" id="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <h3 id="modal-title">Detalle</h3>
-          <button id="modal-close" class="close-btn" type="button">×</button>
+          <button id="modal-close" class="close-btn" type="button">Ã—</button>
         </div>
         <div class="modal-body">
           <div class="modal-controls">
@@ -419,12 +362,12 @@
       <div class="modal">
         <div class="modal-header">
           <h3 id="calendar-title">Calendario</h3>
-          <button id="calendar-close" class="close-btn" type="button">×</button>
+          <button id="calendar-close" class="close-btn" type="button">Ã—</button>
         </div>
         <div class="modal-body">
           <div class="calendar-legend">
             <span class="badge green">A tiempo</span>
-            <span class="badge yellow">≤5 min</span>
+            <span class="badge yellow">â‰¤5 min</span>
             <span class="badge red">&gt;5 min</span>
             <span class="badge gray">Sin registro</span>
           </div>
@@ -437,9 +380,6 @@
     <script src="/app.js"></script>
   </body>
 </html>
-
-
-
 
 
 

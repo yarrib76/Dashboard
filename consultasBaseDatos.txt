@@ -1,0 +1,40 @@
+Tablas
+1. clientes
+Campos: (`id_clientes`, `nombre`, `apellido`, `direccion`, `mail`, `telefono`, `cuit`, `provincia`, `localidad`, `apodo`, `id_provincia`, `updated_at`, `created_at`, `cant_ofertas`, `encuesta`, `codigopostal`)
+Funcion: Contiene los datos de todos los clientes.
+
+2. facturah
+Campos: (`Id`, `NroFactura`, `Total`, `Porcentaje`, `Descuento`, `Fecha`, `Estado`, `id_clientes`, `id_tipo_pago`, `envio`, `totalEnvio`, `id_estados_financiera`, `comentario`, `pagomixto`)
+Funcion: Contiene los datos de las facturas de los clientes.
+Se puede utilizar para saber la facturacion de un periodo y hay que contemplar los descuentos,
+ejemplo:
+"SELECT DATE_FORMAT(fecha, "%M") AS Mes, ROUND(SUM(CASE WHEN Descuento <> "null" OR Descuento = 0 THEN Descuento ELSE total END),2) as total
+                            from samira.facturah where fecha >= "2025/09/01" and Fecha < "2025/10/01"
+                            group by Mes
+                            ORDER BY fecha asc"
+
+3. factura
+Campos: (`NroFactura`, `Articulo`, `Detalle`, `Cantidad`, `Descuento`, `Cajera`, `Vendedora`, `Fecha`, `Estado`, `ID`)
+Funcion: Contiene los artículos de cada factura y tiene relación con la tabla facturah. Permite calcular el artículo más vendido.
+
+4. articulos
+Campos: (`Articulo`, `Detalle`, `Cantidad`, `Proveedor`, `Observaciones`, `Web`, `ImageName`, `websku`, `ProveedorSKU`, `CompraAuto`)
+Funcion: Contiene la información de todos los artículos y su stock actual. Con esta información deberá crear las consultas para responder a las preguntas.
+
+6. users
+Campos: (`id` int(10), `name` varchar(255), `email` varchar(255), `created_at` timestamp, `updated_at` timestamp, `id_roles` int(11), `codigo` varchar(45), `foto` varchar(45), `id_vendedoras` int(11))
+Funcion: Contiene todos los usuarios y tiene relación con la tabla vendedores.
+
+8. controlpedidos
+Campos: (`id` int(11), `id_cliente` int(11), `nropedido` int(11), `vendedora` varchar(45), `cajera` varchar(45), `fecha` datetime, `estado` int(11), `nrofactura` int(11), `total` double, `ordenWeb` int(11), `empaquetado` int(2), `transporte` varchar(45), `encuesta` varchar(45), `ultactualizacion` datetime, `local` varchar(45), `totalweb` double, `instancia` int(2), `fecha_inicio_instancia` datetime, `fecha_fin_instancia` datetime, `fecha_proveedor` datetime, `fecha_ultima_nota` datetime, `pagado` int(2), `fecha_pago` datetime)
+Funcion: Contiene todos los pedidos realizados por los clientes. El campo `vendedora` hace referencia a quien armó el pedido y el campo `cajera` a quien lo facturó. 
+Tiene relaciones con las tablas facturah, clientes y pedidotemp. Estados: 0 - Facturado, 1 - Proceso, 2 - Cancelado.
+
+9. pedidotemp
+Campos: (`NroPedido`, `Articulo`, `Detalle`, `Cantidad`, `Descuento`, `Cajera`, `Vendedora`, `Fecha`, `Estado`, `ID`)
+Funcion: Contiene los ítems de cada pedido.
+
+10. registrollamadas
+Campos: (`id`, `users_id`, `clientes_id`, `comentarios`, `fecha`)
+Funcion: Contiene los registros de notas de los clientes, ejemplo los reclamos de los clientes.
+Tiene relación con las tablas clientes y users.
