@@ -308,6 +308,7 @@
               <th data-sort="updated_at">Actualizado</th>
               <th data-sort="ultimaCompra">Última compra</th>
               <th data-sort="cantFacturas">Compras</th>
+              <th data-sort="ticketPromedio">Ticket promedio</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -430,6 +431,48 @@
           </div>
           <p class="status" id="calendar-status"></p>
           <div class="calendar-grid" id="calendar-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="ne-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="ne-title">No encuestados</h3>
+          <button id="ne-close" class="close-btn" type="button">ž</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-controls">
+            <input type="search" id="ne-search" placeholder="Buscar..." />
+            <label class="client-inline">
+              <span>Por página</span>
+              <select id="ne-page-size">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <p class="status" id="ne-status"></p>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="ne-table">
+              <thead>
+                <tr>
+                  <th>N° Pedido</th>
+                  <th>Cliente</th>
+                  <th>Fecha Pedido</th>
+                  <th>Vendedora</th>
+                  <th>Encuesta</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="ne-pagination">
+            <button id="ne-prev" type="button">Anterior</button>
+            <span id="ne-page-info">Página 1</span>
+            <button id="ne-next" type="button">Siguiente</button>
+          </div>
         </div>
       </div>
     </div>

@@ -541,6 +541,26 @@ input[type='month'] {
   display: none;
 }
 
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.menu-item[data-target='ia'] {
+  display: none !important;
+}
+
+#view-ia {
+  display: none !important;
+}
+
 .ia-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

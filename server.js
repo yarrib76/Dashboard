@@ -701,6 +701,7 @@ app.get('/api/clientes', async (req, res) => {
       updated_at: 'c.updated_at',
       ultimaCompra: 'ult.ultimaCompra',
       cantFacturas: 'COALESCE(fact.cantFacturas, 0)',
+      ticketPromedio: 'COALESCE(fact.ticketPromedio, 0)',
     };
     const orderBy = sortKey && sortMap[sortKey] ? `${sortMap[sortKey]} ${sortDir}` : 'c.updated_at DESC';
 
@@ -736,10 +737,15 @@ app.get('/api/clientes', async (req, res) => {
          c.encuesta,
          c.updated_at,
          ult.ultimaCompra,
-         COALESCE(fact.cantFacturas, 0) AS cantFacturas
+         COALESCE(fact.cantFacturas, 0) AS cantFacturas,
+         COALESCE(fact.ticketPromedio, 0) AS ticketPromedio
        FROM clientes c
        LEFT JOIN (
-         SELECT id_clientes, COUNT(*) AS cantFacturas
+         SELECT
+           id_clientes,
+           COUNT(*) AS cantFacturas,
+           SUM(COALESCE(Total, 0)) AS sumFacturas,
+           CASE WHEN COUNT(*) > 0 THEN SUM(COALESCE(Total, 0)) / COUNT(*) ELSE 0 END AS ticketPromedio
          FROM facturah
          GROUP BY id_clientes
        ) fact ON fact.id_clientes = c.id_clientes
@@ -852,6 +858,92 @@ app.get('/api/empleados/tardes', async (req, res) => {
   } catch (error) {
     console.error('Error /api/empleados/tardes', error);
     res.status(500).json({ message: 'Error al cargar llegadas', error: error.message });
+  }
+});
+
+app.get('/api/empleados/no-encuestados', async (req, res) => {
+  try {
+    const userId = Number.parseInt(req.query.userId, 10);
+    if (!userId) return res.status(400).json({ message: 'userId requerido' });
+
+    const fechaParam = req.query.fecha ? parseISODate(req.query.fecha) : new Date();
+    const desdeDate = new Date(fechaParam.getFullYear(), fechaParam.getMonth(), 1, 0, 0, 0);
+    const hastaDate = new Date(fechaParam.getFullYear(), fechaParam.getMonth() + 1, 1, 0, 0, 0);
+    const desde = formatDateTimeLocal(desdeDate);
+    const hasta = formatDateTimeLocal(hastaDate);
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(5, Number.parseInt(req.query.pageSize, 10) || 10));
+    const offset = (page - 1) * pageSize;
+    const term = req.query.q ? `%${req.query.q}%` : null;
+
+    const filters = [
+      'u.id = ?',
+      'COALESCE(cp.fecha, fa.fecha) >= ?',
+      'COALESCE(cp.fecha, fa.fecha) < ?',
+      'cp.ordenWeb IS NOT NULL',
+      'cp.ordenWeb <> 0',
+      "c.encuesta = 'Ninguna'",
+    ];
+    const params = [userId, desde, hasta];
+    if (term) {
+      filters.push(
+        '(cp.nropedido LIKE ? OR c.nombre LIKE ? OR c.apellido LIKE ? OR cp.vendedora LIKE ? OR c.encuesta LIKE ?)'
+      );
+      params.push(term, term, term, term, term);
+    }
+    const where = filters.join(' AND ');
+
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM controlpedidos cp
+       INNER JOIN facturah fa ON fa.NroFactura = cp.nrofactura
+       INNER JOIN clientes c ON c.id_clientes = fa.id_clientes
+       INNER JOIN vendedores v ON v.nombre = cp.vendedora
+       INNER JOIN users u ON u.id_vendedoras = v.id
+       WHERE ${where}`,
+      params
+    );
+
+    const total = Number(countRow.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const safeOffset = (safePage - 1) * pageSize;
+
+    const dataParams = params.slice();
+    dataParams.push(pageSize, safeOffset);
+
+    const [rows] = await pool.query(
+      `SELECT
+         cp.nropedido,
+         c.nombre,
+         c.apellido,
+         COALESCE(cp.fecha, fa.fecha) AS fechaPedido,
+         cp.vendedora,
+         c.encuesta
+       FROM controlpedidos cp
+       INNER JOIN facturah fa ON fa.NroFactura = cp.nrofactura
+       INNER JOIN clientes c ON c.id_clientes = fa.id_clientes
+       INNER JOIN vendedores v ON v.nombre = cp.vendedora
+       INNER JOIN users u ON u.id_vendedoras = v.id
+       WHERE ${where}
+       ORDER BY COALESCE(cp.fecha, fa.fecha) DESC
+       LIMIT ? OFFSET ?`,
+      dataParams
+    );
+
+    res.json({
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+      data: rows,
+      fechaDesde: desde.slice(0, 10),
+      fechaHasta: new Date(hastaDate.getTime() - 1).toISOString().slice(0, 10),
+    });
+  } catch (error) {
+    console.error('Error /api/empleados/no-encuestados', error);
+    res.status(500).json({ message: 'Error al cargar no encuestados', error: error.message });
   }
 });
 

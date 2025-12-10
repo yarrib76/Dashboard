@@ -117,6 +117,16 @@ const calendarTitle = document.getElementById('calendar-title');
 const calendarClose = document.getElementById('calendar-close');
 const calendarGrid = document.getElementById('calendar-grid');
 const calendarStatus = document.getElementById('calendar-status');
+const neOverlay = document.getElementById('ne-overlay');
+const neTitle = document.getElementById('ne-title');
+const neClose = document.getElementById('ne-close');
+const neSearch = document.getElementById('ne-search');
+const neStatus = document.getElementById('ne-status');
+const neTableBody = document.querySelector('#ne-table tbody');
+const nePrev = document.getElementById('ne-prev');
+const neNext = document.getElementById('ne-next');
+const nePageInfo = document.getElementById('ne-page-info');
+const nePageSizeSelect = document.getElementById('ne-page-size');
 
 let paqueteriaRows = [];
 let transportesList = [];
@@ -138,6 +148,12 @@ let pedidosClientesSort = { key: null, dir: 'asc' };
 let pcPage = 1;
 let pcTotalPages = 1;
 let pcPageSize = 10;
+let nePage = 1;
+let neTotalPages = 1;
+let nePageSize = 10;
+let neSearchTerm = '';
+let neUserId = null;
+let neUserName = '';
 
 function updateSortIndicators(headEl, sortState) {
   if (!headEl) return;
@@ -558,11 +574,32 @@ function renderEmpleados(rows) {
       <td>${toNum(row.alertas)}</td>
       <td>${toNum(row.tardes)}</td>
       <td><button class="transport-btn" data-user="${row.id}">Ver calendario</button></td>
-      <td>${noEncVal}</td>
+      <td>${
+        noEncVal > 0
+          ? `<button class="link-btn noenc-btn" data-user="${row.id}" data-name="${row.nombre || ''}">${noEncVal}</button>`
+          : noEncVal
+      }</td>
       <td>${toNum(row.porcentajePedidos)}%</td>
       <td>${toNum(row.porcentajeVentas)}%</td>
     `;
     tablaEmpleadosBody.appendChild(tr);
+  });
+}
+
+function renderNoEncuestados(rows) {
+  if (!neTableBody) return;
+  neTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const cliente = `${row.nombre || ''} ${row.apellido || ''}`.trim();
+    tr.innerHTML = `
+      <td>${row.nropedido ?? ''}</td>
+      <td>${cliente}</td>
+      <td>${formatDate(row.fechaPedido)}</td>
+      <td>${row.vendedora || ''}</td>
+      <td>${row.encuesta || ''}</td>
+    `;
+    neTableBody.appendChild(tr);
   });
 }
 
@@ -578,6 +615,7 @@ function renderClientes(rows) {
       <td>${formatDate(row.updated_at)}</td>
       <td>${formatDate(row.ultimaCompra)}</td>
       <td>${row.cantFacturas ?? 0}</td>
+      <td>${Number(row.ticketPromedio ?? 0).toFixed(2)}</td>
     `;
     tablaClientesBody.appendChild(tr);
   });
@@ -1184,6 +1222,46 @@ async function sendIaSqlQuery() {
   }
 }
 
+async function loadNoEncuestados(page = 1) {
+  try {
+    if (!neStatus) return;
+    setStatus(neStatus, 'Cargando...');
+    nePage = page;
+    const params = new URLSearchParams();
+    if (neUserId) params.set('userId', neUserId);
+    const mes = mesEmpleados?.value;
+    if (mes) params.set('fecha', `${mes}-01`);
+    params.set('page', nePage);
+    params.set('pageSize', nePageSize);
+    if (neSearchTerm) params.set('q', neSearchTerm);
+    const res = await fetchJSON(`/api/empleados/no-encuestados?${params.toString()}`);
+    neTotalPages = res.totalPages || 1;
+    nePage = res.page || 1;
+    renderNoEncuestados(res.data || []);
+    if (nePageInfo) nePageInfo.textContent = `Página ${nePage} de ${neTotalPages}`;
+    setStatus(neStatus, `Total ${res.total || 0}`);
+  } catch (error) {
+    setStatus(neStatus, error.message || 'No se pudieron cargar los no encuestados', true);
+    if (neTableBody) neTableBody.innerHTML = '';
+  }
+}
+
+function openNoEncuestadosModal(userId, userName) {
+  neUserId = userId;
+  neUserName = userName || '';
+  nePage = 1;
+  neSearchTerm = '';
+  if (neSearch) neSearch.value = '';
+  if (nePageSizeSelect) nePageSizeSelect.value = String(nePageSize);
+  if (neTitle) neTitle.textContent = `No encuestados de ${neUserName || 'vendedor'}`;
+  if (neOverlay) neOverlay.classList.add('open');
+  loadNoEncuestados(1);
+}
+
+function closeNoEncuestadosModal() {
+  if (neOverlay) neOverlay.classList.remove('open');
+}
+
 function initMenu() {
   const menu = document.getElementById('side-menu');
   const items = document.querySelectorAll('.menu-item');
@@ -1237,13 +1315,51 @@ function initPaqueteriaModal() {
   });
 
   tablaEmpleadosBody.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.transport-btn');
-    if (!btn) return;
-    const userId = Number(btn.dataset.user);
-    const employee = empleadosRows.find((u) => u.id === userId);
-    const [year, month] = mesEmpleados.value.split('-');
-    await loadCalendario(userId, employee?.nombre || '', year, month);
+    const btnCal = e.target.closest('.transport-btn');
+    if (btnCal) {
+      const userId = Number(btnCal.dataset.user);
+      const employee = empleadosRows.find((u) => u.id === userId);
+      const [year, month] = mesEmpleados.value.split('-');
+      await loadCalendario(userId, employee?.nombre || '', year, month);
+      return;
+    }
+    const btnNoEnc = e.target.closest('.noenc-btn');
+    if (btnNoEnc) {
+      const userId = Number(btnNoEnc.dataset.user);
+      const name = btnNoEnc.dataset.name || '';
+      openNoEncuestadosModal(userId, name);
+    }
   });
+}
+
+function initNoEncuestadosModal() {
+  if (neClose) neClose.addEventListener('click', closeNoEncuestadosModal);
+  if (neOverlay) {
+    neOverlay.addEventListener('click', (e) => {
+      if (e.target === neOverlay) closeNoEncuestadosModal();
+    });
+  }
+  if (nePrev)
+    nePrev.addEventListener('click', () => {
+      if (nePage > 1) loadNoEncuestados(nePage - 1);
+    });
+  if (neNext)
+    neNext.addEventListener('click', () => {
+      if (nePage < neTotalPages) loadNoEncuestados(nePage + 1);
+    });
+  if (nePageSizeSelect)
+    nePageSizeSelect.addEventListener('change', () => {
+      nePageSize = Number(nePageSizeSelect.value) || 10;
+      loadNoEncuestados(1);
+    });
+  if (neSearch) {
+    let t;
+    neSearch.addEventListener('input', (e) => {
+      clearTimeout(t);
+      neSearchTerm = e.target.value.trim();
+      t = setTimeout(() => loadNoEncuestados(1), 250);
+    });
+  }
 }
 
 async function loadCalendario(userId, nombre, year, month) {
@@ -1325,6 +1441,7 @@ const defaultYearVentas = initYearSelect('year-ventas', (y) => loadVentas(y));
 initMenu();
 initCollapsibles();
 initPaqueteriaModal();
+initNoEncuestadosModal();
 initFechaEmpleados();
 initClientes();
 initPedidosClientes();
