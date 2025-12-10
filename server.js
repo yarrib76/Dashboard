@@ -43,6 +43,7 @@ const DB_CONNECTION_LIMIT = Number(requiredEnv('DB_CONNECTION_LIMIT', 10));
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
+const SESSION_MAX_IDLE_MINUTES = Number(requiredEnv('TIEMP_SESSION', 30));
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -998,7 +999,10 @@ app.get('/api/me', (req, res) => {
   if (!payload) {
     return res.status(401).json({ message: 'No autorizado' });
   }
-  res.json({ user: { id: payload.id, name: payload.name, email: payload.email } });
+  res.json({
+    user: { id: payload.id, name: payload.name, email: payload.email },
+    sessionIdleMinutes: SESSION_MAX_IDLE_MINUTES,
+  });
 });
 
 app.get('/api/encuestas/mes', async (_req, res) => {

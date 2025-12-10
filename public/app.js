@@ -154,6 +154,8 @@ let nePageSize = 10;
 let neSearchTerm = '';
 let neUserId = null;
 let neUserName = '';
+let sessionIdleMinutes = 30;
+let sessionIdleTimer = null;
 
 function updateSortIndicators(headEl, sortState) {
   if (!headEl) return;
@@ -911,6 +913,10 @@ async function loadCurrentUser() {
         .toUpperCase();
       avatarEl.textContent = initials || '👤';
     }
+    if (Number.isFinite(Number(data.sessionIdleMinutes))) {
+      sessionIdleMinutes = Number(data.sessionIdleMinutes) || sessionIdleMinutes;
+    }
+    initIdleTimeout();
   } catch (error) {
     window.location.href = '/login';
   }
@@ -957,6 +963,28 @@ async function handleLogout() {
   } finally {
     window.location.href = '/login';
   }
+}
+
+let idleListenersBound = false;
+function resetIdleTimer() {
+  if (sessionIdleTimer) {
+    clearTimeout(sessionIdleTimer);
+  }
+  const ms = Math.max(1, Number(sessionIdleMinutes) || 0) * 60 * 1000;
+  sessionIdleTimer = setTimeout(handleLogout, ms);
+}
+
+function initIdleTimeout() {
+  if (idleListenersBound) {
+    resetIdleTimer();
+    return;
+  }
+  const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+  events.forEach((ev) => {
+    window.addEventListener(ev, resetIdleTimer, { passive: true });
+  });
+  idleListenersBound = true;
+  resetIdleTimer();
 }
 
 function initYearSelect(elementId, onChange) {
