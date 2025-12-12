@@ -43,7 +43,7 @@ const DB_CONNECTION_LIMIT = Number(requiredEnv('DB_CONNECTION_LIMIT', 10));
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
-const SESSION_MAX_IDLE_MINUTES = Number(requiredEnv('TIEMP_SESSION', 30));
+const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -129,6 +129,20 @@ const pool = mysql.createPool({
   connectionLimit: DB_CONNECTION_LIMIT,
   timezone: 'Z',
 });
+
+async function safeQuery(sql, params = []) {
+  try {
+    return await pool.query(sql, params);
+  } catch (err) {
+    const transientCodes = ['ECONNRESET', 'PROTOCOL_CONNECTION_LOST', 'ER_SERVER_SHUTDOWN', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'];
+    if (err && transientCodes.includes(err.code)) {
+      console.warn('[db] reconnect on', err.code);
+      // Intento rápido de reintentar una vez
+      return pool.query(sql, params);
+    }
+    throw err;
+  }
+}
 
 const SCHEMA_CACHE_TTL_MS = 10 * 60 * 1000;
 let cachedSchema = { text: '', fetchedAt: 0 };
@@ -895,7 +909,7 @@ app.get('/api/empleados/no-encuestados', async (req, res) => {
     }
     const where = filters.join(' AND ');
 
-    const [[countRow]] = await pool.query(
+    const [[countRow]] = await safeQuery(
       `SELECT COUNT(*) AS total
        FROM controlpedidos cp
        INNER JOIN facturah fa ON fa.NroFactura = cp.nrofactura
@@ -914,7 +928,7 @@ app.get('/api/empleados/no-encuestados', async (req, res) => {
     const dataParams = params.slice();
     dataParams.push(pageSize, safeOffset);
 
-    const [rows] = await pool.query(
+    const [rows] = await safeQuery(
       `SELECT
          cp.nropedido,
          c.nombre,
@@ -955,17 +969,19 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Email y contraseña son requeridos' });
     }
 
-    const [rows] = await pool.query(
+    const [rows] = await safeQuery(
       'SELECT id, name, email, password FROM users WHERE email = ? LIMIT 1',
       [email]
     );
     const user = rows[0];
     if (!user) {
+      console.warn('[login] usuario no encontrado', email);
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     const match = await bcrypt.compare(password, user.password || '');
     if (!match) {
+      console.warn('[login] contraseña inválida', email);
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
@@ -978,7 +994,8 @@ app.post('/api/login', async (req, res) => {
     setAuthCookie(res, token);
     res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email } });
   } catch (error) {
-    res.status(500).json({ message: 'Error al iniciar sesión', error: error.message });
+    console.error('[login] error', error);
+    res.status(500).json({ message: 'Error al iniciar sesión', error: error.message, code: error.code });
   }
 });
 
