@@ -41,11 +41,19 @@
             <span class="icon">🤖</span>
             <span class="label">IA</span>
           </button>
+          <button class="menu-item" data-target="salon">
+            <span class="icon">🏬</span>
+            <span class="label">Salón</span>
+          </button>
+          <button class="menu-item" data-target="pedidos">
+            <span class="icon">🧾</span>
+            <span class="label">Pedidos</span>
+          </button>
         </nav>
-      <button class="menu-item logout" id="logout-btn">
-        <span class="icon">↩</span>
-        <span class="label">Cerrar sesión</span>
-      </button>
+        <button class="menu-item logout" id="logout-btn">
+          <span class="icon">↩</span>
+          <span class="label">Cerrar sesión</span>
+        </button>
     </div>
   </aside>
     <div class="menu-backdrop" id="menu-backdrop"></div>
@@ -381,6 +389,98 @@
           </div>
         </div>
       </div>
+    </article>
+  </section>
+
+  <section class="view hidden" id="view-salon">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Salón</h2>
+          <p class="status">Ventas presenciales filtradas por fecha</p>
+        </div>
+        <div class="range">
+          <label>
+            <span>Desde</span>
+            <input type="date" id="salon-desde" />
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input type="date" id="salon-hasta" />
+          </label>
+        </div>
+        <button id="salon-actualizar" type="button">Actualizar</button>
+      </div>
+      <div class="stat-grid three">
+        <div class="stat">
+          <p class="label">Ventas salón</p>
+          <p class="value" id="stat-salon-total">$0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Cantidad de ventas</p>
+          <p class="value" id="stat-salon-cantidad">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Ticket promedio</p>
+          <p class="value" id="stat-salon-ticket">$0</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="actions between">
+          <h3>Ventas por vendedora (salón)</h3>
+          <p class="status">Cantidad de facturas en el rango seleccionado</p>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart-salon-vendedoras"></canvas>
+        </div>
+      </div>
+      <p class="status" id="salon-status"></p>
+    </article>
+  </section>
+
+  <section class="view hidden" id="view-pedidos">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Pedidos Web Facturados</h2>
+          <p class="status">Pedidos con orden web (facturados) filtrados por fecha</p>
+        </div>
+        <div class="range">
+          <label>
+            <span>Desde</span>
+            <input type="date" id="pedidos-desde" />
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input type="date" id="pedidos-hasta" />
+          </label>
+        </div>
+        <button id="pedidos-actualizar" type="button">Actualizar</button>
+      </div>
+      <div class="stat-grid three">
+        <div class="stat">
+          <p class="label">Total facturado</p>
+          <p class="value" id="stat-pedidos-total">$0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Cantidad de pedidos</p>
+          <p class="value" id="stat-pedidos-cantidad">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Ticket promedio</p>
+          <p class="value" id="stat-pedidos-ticket">$0</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="actions between">
+          <h3>Pedidos por vendedora (web)</h3>
+          <p class="status">Cantidad de pedidos con orden web facturados</p>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart-pedidos-vendedoras"></canvas>
+        </div>
+      </div>
+      <p class="status" id="pedidos-status"></p>
     </article>
   </section>
 

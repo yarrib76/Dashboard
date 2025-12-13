@@ -1321,6 +1321,128 @@ app.get('/api/pedidos/clientes', async (req, res) => {
   }
 });
 
+app.get('/api/salon/resumen', async (req, res) => {
+  try {
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+    const fechaDesde = desdeDate.toISOString().slice(0, 10);
+    const fechaHasta = hastaDate.toISOString().slice(0, 10);
+
+    const [[row]] = await pool.query(
+      `SELECT
+         ROUND(SUM(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END), 2) AS total,
+         COUNT(*) AS cantidad
+       FROM facturah f
+       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)`,
+      [fechaDesde, fechaHasta]
+    );
+
+    const total = Number(row?.total) || 0;
+    const cantidad = Number(row?.cantidad) || 0;
+    const ticketPromedio = cantidad > 0 ? total / cantidad : 0;
+
+    res.json({
+      desde: fechaDesde,
+      hasta: fechaHasta,
+      total,
+      cantidad,
+      ticketPromedio,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar resumen de salón', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/resumen', async (req, res) => {
+  try {
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+    const fechaDesde = desdeDate.toISOString().slice(0, 10);
+    const fechaHasta = hastaDate.toISOString().slice(0, 10);
+
+    const [[row]] = await pool.query(
+      `SELECT
+         ROUND(SUM(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END), 2) AS total,
+         COUNT(*) AS cantidad
+       FROM facturah f
+       INNER JOIN controlpedidos cp ON cp.nrofactura = f.nrofactura
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND cp.ordenWeb IS NOT NULL
+         AND cp.ordenWeb <> 0`,
+      [fechaDesde, fechaHasta]
+    );
+
+    const total = Number(row?.total) || 0;
+    const cantidad = Number(row?.cantidad) || 0;
+    const ticketPromedio = cantidad > 0 ? total / cantidad : 0;
+
+    res.json({
+      desde: fechaDesde,
+      hasta: fechaHasta,
+      total,
+      cantidad,
+      ticketPromedio,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar resumen de pedidos', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/vendedoras', async (req, res) => {
+  try {
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+    const fechaDesde = desdeDate.toISOString().slice(0, 10);
+    const fechaHasta = hastaDate.toISOString().slice(0, 10);
+
+    const [rows] = await pool.query(
+      `SELECT
+         f.vendedora,
+         COUNT(*) AS cantidad
+       FROM facturah f
+       INNER JOIN controlpedidos cp ON cp.nrofactura = f.nrofactura
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND cp.ordenWeb IS NOT NULL
+         AND cp.ordenWeb <> 0
+       GROUP BY f.vendedora
+       ORDER BY cantidad DESC, f.vendedora`,
+      [fechaDesde, fechaHasta]
+    );
+
+    res.json({ desde: fechaDesde, hasta: fechaHasta, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos por vendedora', error: error.message });
+  }
+});
+
+app.get('/api/salon/vendedoras', async (req, res) => {
+  try {
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+    const fechaDesde = desdeDate.toISOString().slice(0, 10);
+    const fechaHasta = hastaDate.toISOString().slice(0, 10);
+
+    const [rows] = await pool.query(
+      `SELECT
+         f.vendedora,
+         COUNT(*) AS cantidad
+       FROM facturah f
+       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+       GROUP BY f.vendedora
+       ORDER BY cantidad DESC, f.vendedora`,
+      [fechaDesde, fechaHasta]
+    );
+
+    res.json({ desde: fechaDesde, hasta: fechaHasta, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar ventas por vendedora (salón)', error: error.message });
+  }
+});
+
 app.post('/api/ia/chat', express.json({ limit: '2mb' }), async (req, res) => {
   try {
     const { message, files = [] } = req.body || {};

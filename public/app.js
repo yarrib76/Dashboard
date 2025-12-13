@@ -137,6 +137,24 @@ const viewDashboard = document.getElementById('view-dashboard');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
+const viewSalon = document.getElementById('view-salon');
+const viewPedidos = document.getElementById('view-pedidos');
+const salonDesdeInput = document.getElementById('salon-desde');
+const salonHastaInput = document.getElementById('salon-hasta');
+const salonActualizarBtn = document.getElementById('salon-actualizar');
+const statSalonTotal = document.getElementById('stat-salon-total');
+const statSalonCantidad = document.getElementById('stat-salon-cantidad');
+const statSalonTicket = document.getElementById('stat-salon-ticket');
+const salonStatus = document.getElementById('salon-status');
+const salonVendedorasChartEl = document.getElementById('chart-salon-vendedoras');
+const pedidosDesdeInput = document.getElementById('pedidos-desde');
+const pedidosHastaInput = document.getElementById('pedidos-hasta');
+const pedidosActualizarBtn = document.getElementById('pedidos-actualizar');
+const statPedidosTotal = document.getElementById('stat-pedidos-total');
+const statPedidosCantidad = document.getElementById('stat-pedidos-cantidad');
+const statPedidosTicket = document.getElementById('stat-pedidos-ticket');
+const pedidosStatus = document.getElementById('pedidos-status');
+const pedidosVendedorasChartEl = document.getElementById('chart-pedidos-vendedoras');
 let clientesPage = 1;
 let clientesPageSize = 10;
 let clientesTotalPages = 1;
@@ -158,6 +176,182 @@ let neUserId = null;
 let neUserName = '';
 let sessionIdleMinutes = 30;
 let sessionIdleTimer = null;
+let chartSalonVendedoras = null;
+let chartPedidosVendedoras = null;
+
+const currencyFormatter = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  minimumFractionDigits: 0,
+});
+
+function formatMoney(value) {
+  return currencyFormatter.format(Number(value) || 0);
+}
+
+function initSalonResumen() {
+  if (!salonDesdeInput || !salonHastaInput) return;
+  const hoy = new Date();
+  const hoyIso = hoy.toISOString().slice(0, 10);
+  salonDesdeInput.value = hoyIso;
+  salonHastaInput.value = hoyIso;
+  const handler = () => loadSalonResumen();
+  if (salonActualizarBtn) salonActualizarBtn.addEventListener('click', handler);
+  salonDesdeInput.addEventListener('change', handler);
+  salonHastaInput.addEventListener('change', handler);
+  loadSalonResumen();
+}
+
+async function loadSalonResumen() {
+  if (!salonDesdeInput || !salonHastaInput) return;
+  try {
+    if (salonStatus) salonStatus.textContent = 'Cargando...';
+    const desde = salonDesdeInput.value || new Date().toISOString().slice(0, 10);
+    const hasta = salonHastaInput.value || desde;
+    const params = new URLSearchParams({ desde, hasta });
+    const [resResumen, resVend] = await Promise.all([
+      fetch(`/api/salon/resumen?${params.toString()}`),
+      fetch(`/api/salon/vendedoras?${params.toString()}`),
+    ]);
+    if (!resResumen.ok) throw new Error('No se pudo cargar el resumen de salón');
+    const data = await resResumen.json();
+    let vendData = [];
+    if (resVend.ok) {
+      const parsed = await resVend.json();
+      vendData = Array.isArray(parsed.data) ? parsed.data : [];
+    }
+    if (statSalonTotal) statSalonTotal.textContent = formatMoney(data.total || 0);
+    if (statSalonCantidad) statSalonCantidad.textContent = data.cantidad ?? 0;
+    if (statSalonTicket) statSalonTicket.textContent = formatMoney(data.ticketPromedio || 0);
+    if (salonStatus) salonStatus.textContent = `Rango: ${data.desde || desde} a ${data.hasta || hasta}`;
+    renderSalonVendedorasChart(vendData);
+  } catch (error) {
+    if (salonStatus) salonStatus.textContent = error.message || 'Error al cargar resumen de salón';
+  }
+}
+
+function renderSalonVendedorasChart(rows) {
+  if (!salonVendedorasChartEl) return;
+  const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
+  const values = rows.map((r) => Number(r.cantidad) || 0);
+  if (chartSalonVendedoras) {
+    chartSalonVendedoras.data.labels = labels;
+    chartSalonVendedoras.data.datasets[0].data = values;
+    chartSalonVendedoras.update();
+    return;
+  }
+  chartSalonVendedoras = new Chart(salonVendedorasChartEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Cantidad de ventas',
+          data: values,
+          backgroundColor: 'rgba(123, 215, 255, 0.6)',
+          borderColor: 'rgba(123, 215, 255, 0.9)',
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.y} ventas`,
+          },
+        },
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+}
+
+function initPedidosResumen() {
+  if (!pedidosDesdeInput || !pedidosHastaInput) return;
+  const hoy = new Date();
+  const hoyIso = hoy.toISOString().slice(0, 10);
+  pedidosDesdeInput.value = hoyIso;
+  pedidosHastaInput.value = hoyIso;
+  const handler = () => loadPedidosResumen();
+  if (pedidosActualizarBtn) pedidosActualizarBtn.addEventListener('click', handler);
+  pedidosDesdeInput.addEventListener('change', handler);
+  pedidosHastaInput.addEventListener('change', handler);
+  loadPedidosResumen();
+}
+
+async function loadPedidosResumen() {
+  if (!pedidosDesdeInput || !pedidosHastaInput) return;
+  try {
+    if (pedidosStatus) pedidosStatus.textContent = 'Cargando...';
+    const desde = pedidosDesdeInput.value || new Date().toISOString().slice(0, 10);
+    const hasta = pedidosHastaInput.value || desde;
+    const params = new URLSearchParams({ desde, hasta });
+    const [resResumen, resVend] = await Promise.all([
+      fetch(`/api/pedidos/resumen?${params.toString()}`),
+      fetch(`/api/pedidos/vendedoras?${params.toString()}`),
+    ]);
+    if (!resResumen.ok) throw new Error('No se pudo cargar el resumen de pedidos');
+    const data = await resResumen.json();
+    let vendData = [];
+    if (resVend.ok) {
+      const parsed = await resVend.json();
+      vendData = Array.isArray(parsed.data) ? parsed.data : [];
+    }
+    if (statPedidosTotal) statPedidosTotal.textContent = formatMoney(data.total || 0);
+    if (statPedidosCantidad) statPedidosCantidad.textContent = data.cantidad ?? 0;
+    if (statPedidosTicket) statPedidosTicket.textContent = formatMoney(data.ticketPromedio || 0);
+    if (pedidosStatus) pedidosStatus.textContent = `Rango: ${data.desde || desde} a ${data.hasta || hasta}`;
+    renderPedidosVendedorasChart(vendData);
+  } catch (error) {
+    if (pedidosStatus) pedidosStatus.textContent = error.message || 'Error al cargar resumen de pedidos';
+  }
+}
+
+function renderPedidosVendedorasChart(rows) {
+  if (!pedidosVendedorasChartEl) return;
+  const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
+  const values = rows.map((r) => Number(r.cantidad) || 0);
+  if (chartPedidosVendedoras) {
+    chartPedidosVendedoras.data.labels = labels;
+    chartPedidosVendedoras.data.datasets[0].data = values;
+    chartPedidosVendedoras.update();
+    return;
+  }
+  chartPedidosVendedoras = new Chart(pedidosVendedorasChartEl, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Pedidos',
+          data: values,
+          backgroundColor: 'rgba(167, 139, 250, 0.6)',
+          borderColor: 'rgba(167, 139, 250, 0.9)',
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.parsed.y} pedidos`,
+          },
+        },
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+}
 
 function updateSortIndicators(headEl, sortState) {
   if (!headEl) return;
@@ -1464,7 +1658,7 @@ function formatDayLabel(year, month, dayNumber) {
 }
 
 function switchView(target) {
-  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa];
+  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa, viewSalon, viewPedidos];
   views.forEach((v) => v.classList.add('hidden'));
 
   if (target === 'empleados') {
@@ -1476,6 +1670,12 @@ function switchView(target) {
     loadClientes(clientesPage);
   } else if (target === 'ia') {
     viewIa.classList.remove('hidden');
+  } else if (target === 'salon') {
+    viewSalon.classList.remove('hidden');
+    loadSalonResumen();
+  } else if (target === 'pedidos') {
+    viewPedidos.classList.remove('hidden');
+    loadPedidosResumen();
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1493,6 +1693,8 @@ initFechaEmpleados();
 initClientes();
 initPedidosClientes();
 initIaChat();
+initSalonResumen();
+initPedidosResumen();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();
