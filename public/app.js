@@ -455,7 +455,7 @@ function renderPaqueteriaLista(rows) {
     tr.innerHTML = `
       <td>${row.nropedido || ''}</td>
       <td>${row.cliente || ''}</td>
-      <td>${formatDate(row.fechaFactura)}</td>
+      <td>${(row.fechaFactura)}</td>
       <td>${row.vendedora || ''}</td>
       <td>${row.total ?? ''}</td>
       <td>${row.ordenWeb ?? ''}</td>

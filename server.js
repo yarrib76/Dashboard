@@ -454,7 +454,7 @@ app.get('/api/paqueteria/lista', async (req, res) => {
       `SELECT
          cp.id,
          cp.fecha AS fechaPedido,
-         f.fecha AS fechaFactura,
+         DATE_FORMAT(f.created_at, '%Y-%m-%d %H:%i') AS fechaFactura,
          cp.nropedido,
          cp.nrofactura,
          cp.vendedora,
@@ -473,8 +473,8 @@ app.get('/api/paqueteria/lista', async (req, res) => {
        INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
        LEFT JOIN comentariospedidos com ON com.controlpedidos_id = cp.id
        WHERE ${baseWhere} ${extra}
-       GROUP BY cp.id, cp.fecha, f.fecha, cp.nropedido, cp.nrofactura, cp.vendedora, cp.transporte, cp.total, cp.totalweb, cp.ordenweb, cp.instancia, cp.estado, c.nombre, c.apellido, c.encuesta
-       ORDER BY f.fecha DESC`
+       GROUP BY cp.id, cp.fecha, f.created_at, cp.nropedido, cp.nrofactura, cp.vendedora, cp.transporte, cp.total, cp.totalweb, cp.ordenweb, cp.instancia, cp.estado, c.nombre, c.apellido, c.encuesta
+       ORDER BY f.created_at DESC`
     );
 
     const data = rows.map((row) => ({
