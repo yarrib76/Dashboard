@@ -29,8 +29,10 @@ Veridicar logs
 sudo docker logs --tail=20 dashboard-node
 
 
-Si se realizan cambios en el repo, para reiniciar el docker
-Priemro Eliminar el contenedor actual
+Si se realizan cambios en el repo
+hay que reconstruir el contenedor y reiniciarlo con los nuevos cambios 
+sudo docker build --no-cache -t dashboard-node .
+Luego  Eliminar el contenedor actual
 sudo docker rm -f dashboard-node
 Volver a crear el contenedor leyendo el .env
 sudo docker run -d \
