@@ -462,7 +462,7 @@ function setAlpha(color, alpha) {
   return `hsla(${h}, ${s}, ${l}, ${alpha})`;
 }
 
-function renderEncuestas(data) {
+function renderEncuestas(data, breakdown = []) {
   const porEncuesta = {};
   data.forEach((row) => {
     const label = row.encuesta || 'Sin dato';
@@ -492,6 +492,15 @@ function renderEncuestas(data) {
   const maxTotal = Math.max(...totals, 1);
   const suggestedMax = Math.ceil(maxTotal * 1.25);
 
+  const breakdownMap = new Map();
+  breakdown.forEach((row) => {
+    const key = `${row.encuesta || 'Sin dato'}|${row.mes}`;
+    breakdownMap.set(key, {
+      pedidos: Number(row.pedidos) || 0,
+      salon: Number(row.salon) || 0,
+    });
+  });
+
   const ctx = document.getElementById('chart-encuestas').getContext('2d');
   if (chartState.encuestas) chartState.encuestas.destroy();
   chartState.encuestas = new Chart(ctx, {
@@ -502,7 +511,24 @@ function renderEncuestas(data) {
     },
     options: {
       responsive: true,
-      plugins: { legend: { position: 'bottom' } },
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const encuestaLabel = ctx.dataset.label || '';
+              const mes = ctx.dataIndex + 1;
+              const value = ctx.parsed.y || 0;
+              const key = `${encuestaLabel}|${mes}`;
+              const detail = breakdownMap.get(key) || { pedidos: 0, salon: 0 };
+              const parts = [`${encuestaLabel}: ${value}`];
+              parts.push(`Pedidos: ${detail.pedidos}`);
+              parts.push(`Salón: ${detail.salon}`);
+              return parts;
+            },
+          },
+        },
+      },
       scales: {
         x: { stacked: true },
         y: { stacked: true, beginAtZero: true, suggestedMax, ticks: { precision: 0 } },
@@ -953,12 +979,12 @@ async function loadEncuestas(year) {
         : selectYear?.value || '';
     const url = yearValue ? `/api/encuestas/mes?year=${yearValue}` : '/api/encuestas/mes';
     const res = await fetchJSON(url);
-    renderEncuestas(res.data);
+    renderEncuestas(res.data, res.breakdown || []);
     if (selectYear && res.year) selectYear.value = res.year;
     setStatus(statusEncuestas, `Año ${res.year}`);
   } catch (error) {
     if (USE_SAMPLE_FALLBACK) {
-      renderEncuestas(sampleEncuestas);
+      renderEncuestas(sampleEncuestas, []);
       setStatus(statusEncuestas, 'Usando datos de ejemplo (sin conexión a la base).', true);
     } else {
       setStatus(

@@ -1068,7 +1068,22 @@ app.get('/api/encuestas/mes', async (_req, res) => {
       [year]
     );
 
-    res.json({ year, data: rows });
+    const [breakdown] = await pool.query(
+      `SELECT
+         COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') AS encuesta,
+         MONTH(cp.fecha) AS mes,
+         SUM(CASE WHEN cp.ordenWeb IS NULL OR cp.ordenWeb = 0 THEN 1 ELSE 0 END) AS salon,
+         SUM(CASE WHEN cp.ordenWeb IS NOT NULL AND cp.ordenWeb <> 0 THEN 1 ELSE 0 END) AS pedidos
+       FROM controlpedidos cp
+       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
+       WHERE YEAR(cp.fecha) = ?
+         AND c.encuesta IS NOT NULL
+       GROUP BY encuesta, MONTH(cp.fecha)
+       ORDER BY encuesta, mes`,
+      [year]
+    );
+
+    res.json({ year, data: rows, breakdown });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar encuestas por mes', error: error.message });
   }
