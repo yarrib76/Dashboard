@@ -1,0 +1,41 @@
+archivo Dockerfile
+FROM node:20-bullseye-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3030
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+EXPOSE 3030
+CMD ["npm", "start"]
+
+Build del contenedor docker
+sudo docker build --no-cache -t dashboard-node .
+sudo docker rm -f dashboard-node
+sudo docker run -d \
+  --restart unless-stopped \
+  --name dashboard-node \
+  --env-file /home/yarrib76/Dashboard/.env \
+  -p 3030:3030 \
+  dashboard-node
+Verificar que el contenedor este corriendo
+sudo docker ps -a | grep dashboard-node
+Veridicar logs
+sudo docker logs --tail=20 dashboard-node
+
+
+Si se realizan cambios en el repo, para reiniciar el docker
+Priemro Eliminar el contenedor actual
+sudo docker rm -f dashboard-node
+Volver a crear el contenedor leyendo el .env
+sudo docker run -d \
+  --restart unless-stopped \
+  --name dashboard-node \
+  --env-file /home/yarrib76/Dashboard/.env \
+  -p 3030:3030 \
+  dashboard-node

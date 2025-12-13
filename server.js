@@ -44,6 +44,7 @@ const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
 const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
+const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -107,9 +108,17 @@ function requireAuth(req, res, next) {
   next();
 }
 
-function setAuthCookie(res, token) {
+function shouldUseSecureCookie(req) {
+  if (COOKIE_SECURE_MODE === 'false') return false;
+  if (COOKIE_SECURE_MODE === 'true') return true;
+  const forwarded = req?.headers?.['x-forwarded-proto'];
+  if (typeof forwarded === 'string' && forwarded.split(',')[0].trim() === 'https') return true;
+  return !!req?.secure;
+}
+
+function setAuthCookie(res, token, req) {
   const parts = ['auth_token=' + encodeURIComponent(token), 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=604800'];
-  if (process.env.NODE_ENV === 'production') {
+  if (shouldUseSecureCookie(req)) {
     parts.push('Secure');
   }
   res.setHeader('Set-Cookie', parts.join('; '));
@@ -991,7 +1000,7 @@ app.post('/api/login', async (req, res) => {
       name: user.name,
       iat: Date.now(),
     });
-    setAuthCookie(res, token);
+    setAuthCookie(res, token, req);
     res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email } });
   } catch (error) {
     console.error('[login] error', error);
