@@ -17,7 +17,8 @@ const execFileAsync = promisify(execFile);
 const fsp = fs.promises;
 
 const app = express();
-app.use(cors());
+// Habilita cookies en peticiones cross-site si el front vive en otro dominio/puerto
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
@@ -45,6 +46,7 @@ const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
 const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
+const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -117,7 +119,19 @@ function shouldUseSecureCookie(req) {
 }
 
 function setAuthCookie(res, token, req) {
-  const parts = ['auth_token=' + encodeURIComponent(token), 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=604800'];
+  const samesiteSafe = (() => {
+    const val = COOKIE_SAMESITE.toLowerCase();
+    if (val === 'none') return 'None';
+    if (val === 'strict') return 'Strict';
+    return 'Lax';
+  })();
+  const parts = [
+    'auth_token=' + encodeURIComponent(token),
+    'HttpOnly',
+    'Path=/',
+    `SameSite=${samesiteSafe}`,
+    'Max-Age=604800',
+  ];
   if (shouldUseSecureCookie(req)) {
     parts.push('Secure');
   }
