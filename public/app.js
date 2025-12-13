@@ -498,6 +498,8 @@ function renderEncuestas(data, breakdown = []) {
     breakdownMap.set(key, {
       pedidos: Number(row.pedidos) || 0,
       salon: Number(row.salon) || 0,
+      sin_match: Number(row.sin_match) || 0,
+      total: Number(row.total) || 0,
     });
   });
 
@@ -520,10 +522,11 @@ function renderEncuestas(data, breakdown = []) {
               const mes = ctx.dataIndex + 1;
               const value = ctx.parsed.y || 0;
               const key = `${encuestaLabel}|${mes}`;
-              const detail = breakdownMap.get(key) || { pedidos: 0, salon: 0 };
+              const detail = breakdownMap.get(key) || { pedidos: 0, salon: 0, sin_match: 0, total: value };
               const parts = [`${encuestaLabel}: ${value}`];
               parts.push(`Pedidos: ${detail.pedidos}`);
               parts.push(`Salón: ${detail.salon}`);
+              if (detail.sin_match) parts.push(`Sin match: ${detail.sin_match}`);
               return parts;
             },
           },

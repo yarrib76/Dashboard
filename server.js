@@ -1068,18 +1068,44 @@ app.get('/api/encuestas/mes', async (_req, res) => {
       [year]
     );
 
+    // Nota: sin CTE ni funciones de ventana para compatibilidad con MySQL < 8
     const [breakdown] = await pool.query(
       `SELECT
-         COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') AS encuesta,
-         MONTH(cp.fecha) AS mes,
-         SUM(CASE WHEN cp.ordenWeb IS NULL OR cp.ordenWeb = 0 THEN 1 ELSE 0 END) AS salon,
-         SUM(CASE WHEN cp.ordenWeb IS NOT NULL AND cp.ordenWeb <> 0 THEN 1 ELSE 0 END) AS pedidos
-       FROM controlpedidos cp
-       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
-       WHERE YEAR(cp.fecha) = ?
-         AND c.encuesta IS NOT NULL
-       GROUP BY encuesta, MONTH(cp.fecha)
-       ORDER BY encuesta, mes`,
+         base.encuesta,
+         base.mes,
+         COUNT(*) AS total,
+         SUM(base.canal_match = 'pedidos') AS pedidos,
+         SUM(base.canal_match = 'salon') AS salon,
+         SUM(base.canal_match IS NULL) AS sin_match
+       FROM (
+         SELECT
+           c.id_clientes AS id,
+           COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') AS encuesta,
+           MONTH(c.updated_at) AS mes,
+           (
+             SELECT CASE
+                      WHEN EXISTS (
+                        SELECT 1
+                        FROM controlpedidos cp2
+                        WHERE cp2.NroFactura = f.NroFactura
+                          AND cp2.ordenWeb IS NOT NULL
+                          AND cp2.ordenWeb <> 0
+                      ) THEN 'pedidos'
+                      ELSE 'salon'
+                    END
+             FROM facturah f
+             WHERE f.id_clientes = c.id_clientes
+               AND f.fecha BETWEEN DATE_SUB(DATE(c.updated_at), INTERVAL 15 DAY)
+                                AND DATE_ADD(DATE(c.updated_at), INTERVAL 15 DAY)
+             ORDER BY ABS(DATEDIFF(f.fecha, c.updated_at)), f.fecha DESC
+             LIMIT 1
+           ) AS canal_match
+         FROM clientes c
+         WHERE YEAR(c.updated_at) = ?
+           AND c.encuesta IS NOT NULL
+       ) base
+       GROUP BY base.encuesta, base.mes
+       ORDER BY base.encuesta, base.mes`,
       [year]
     );
 
