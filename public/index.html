@@ -14,6 +14,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   </head>
   <body>
+    <button class="menu-toggle" id="menu-toggle" aria-label="Abrir menú">&#9776;</button>
     <aside class="side-menu" id="side-menu">
       <div class="menu-inner">
         <div class="user-block">
@@ -41,14 +42,15 @@
             <span class="label">IA</span>
           </button>
         </nav>
-        <button class="menu-item logout" id="logout-btn">
-          <span class="icon">↩</span>
-          <span class="label">Cerrar sesión</span>
-        </button>
-      </div>
-    </aside>
+      <button class="menu-item logout" id="logout-btn">
+        <span class="icon">↩</span>
+        <span class="label">Cerrar sesión</span>
+      </button>
+    </div>
+  </aside>
+    <div class="menu-backdrop" id="menu-backdrop"></div>
 
-    <div class="page">
+  <div class="page">
       <header class="header">
         <div>
           <h1 class="title">Dashboard comercial</h1>

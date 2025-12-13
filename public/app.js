@@ -68,6 +68,8 @@ const statSinTransporte = document.getElementById('stat-sin-transporte');
 const statVencidos = document.getElementById('stat-vencidos');
 const statusEmpleados = document.getElementById('status-empleados');
 const statusPedidosClientes = document.getElementById('status-pedidos-clientes');
+const menuToggle = document.getElementById('menu-toggle');
+const menuBackdrop = document.getElementById('menu-backdrop');
 const mesEmpleados = document.getElementById('mes-empleados');
 const tablaEmpleadosBody = document.querySelector('#tabla-empleados tbody');
 const filtroRoles = document.getElementById('filtro-roles');
@@ -1293,6 +1295,22 @@ function closeNoEncuestadosModal() {
 function initMenu() {
   const menu = document.getElementById('side-menu');
   const items = document.querySelectorAll('.menu-item');
+  const mqMobile = window.matchMedia('(max-width: 960px)');
+
+  const toggleMenu = (force) => {
+    const shouldOpen = typeof force === 'boolean' ? force : !menu.classList.contains('open');
+    if (shouldOpen) {
+      menu.classList.add('open');
+      document.body.classList.add('menu-open');
+    } else {
+      menu.classList.remove('open');
+      document.body.classList.remove('menu-open');
+    }
+  };
+
+  if (menuToggle) menuToggle.addEventListener('click', () => toggleMenu());
+  if (menuBackdrop) menuBackdrop.addEventListener('click', () => toggleMenu(false));
+
   menu.addEventListener('mouseenter', () => menu.classList.add('expanded'));
   menu.addEventListener('mouseleave', () => menu.classList.remove('expanded'));
   items.forEach((btn) => {
@@ -1301,6 +1319,7 @@ function initMenu() {
       btn.classList.add('active');
       if (btn.classList.contains('logout')) return;
       switchView(btn.dataset.target);
+      if (mqMobile.matches) toggleMenu(false);
     });
   });
   logoutBtn.addEventListener('click', handleLogout);
