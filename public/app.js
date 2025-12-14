@@ -139,6 +139,42 @@ const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
 const viewSalon = document.getElementById('view-salon');
 const viewPedidos = document.getElementById('view-pedidos');
+const viewMercaderia = document.getElementById('view-mercaderia');
+const mercDesde = document.getElementById('merc-desde');
+const mercHasta = document.getElementById('merc-hasta');
+const mercProveedoresList = document.getElementById('merc-proveedores-list');
+const mercWebTn = document.getElementById('merc-webtn');
+const mercSearch = document.getElementById('merc-search');
+const mercBuscarBtn = document.getElementById('merc-buscar');
+const mercExportBtn = document.getElementById('merc-export');
+const mercTableBody = document.querySelector('#merc-table tbody');
+const mercStatus = document.getElementById('merc-status');
+const mercIaOverlay = document.getElementById('merc-ia-overlay');
+const mercIaClose = document.getElementById('merc-ia-close');
+const mercIaTitle = document.getElementById('merc-ia-title');
+const mercIaInfo = document.getElementById('merc-ia-info');
+const mercIaYear = document.getElementById('merc-ia-year');
+const mercIaMonthsList = document.getElementById('merc-ia-months-list');
+const mercIaStock = document.getElementById('merc-ia-stock');
+const mercIaDemanda = document.getElementById('merc-ia-demanda');
+const mercIaCompra = document.getElementById('merc-ia-compra');
+const mercIaTableBody = document.querySelector('#merc-ia-table tbody');
+const mercIaStatus = document.getElementById('merc-ia-status');
+const mercIaRun = document.getElementById('merc-ia-run');
+const mercProvWrap = document.getElementById('merc-proveedores-wrap');
+const mercProvToggle = document.getElementById('merc-proveedores-toggle');
+const mercIaMonthsWrap = document.getElementById('merc-ia-months-wrap');
+const mercIaMonthsToggle = document.getElementById('merc-ia-months-toggle');
+const mercPrev = document.getElementById('merc-prev');
+const mercNext = document.getElementById('merc-next');
+const mercPageInfo = document.getElementById('merc-page-info');
+const mercPageSizeSelect = document.getElementById('merc-page-size');
+const mercImgOverlay = document.getElementById('merc-img-overlay');
+const mercImgClose = document.getElementById('merc-img-close');
+const mercImgFull = document.getElementById('merc-img-full');
+const mercImgZoomIn = document.getElementById('merc-img-zoom-in');
+const mercImgZoomOut = document.getElementById('merc-img-zoom-out');
+const mercImgZoomReset = document.getElementById('merc-img-zoom-reset');
 const salonDesdeInput = document.getElementById('salon-desde');
 const salonHastaInput = document.getElementById('salon-hasta');
 const salonActualizarBtn = document.getElementById('salon-actualizar');
@@ -178,6 +214,16 @@ let sessionIdleMinutes = 30;
 let sessionIdleTimer = null;
 let chartSalonVendedoras = null;
 let chartPedidosVendedoras = null;
+let mercRows = [];
+let mercFiltered = [];
+const mercSelected = new Set();
+let mercCurrentRow = null;
+let mercPage = 1;
+let mercPageSize = 10;
+let mercTotalPages = 1;
+const mercProveedorSet = new Set();
+const mercMesSet = new Set();
+let mercImgZoom = 1;
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -187,6 +233,21 @@ const currencyFormatter = new Intl.NumberFormat('es-AR', {
 
 function formatMoney(value) {
   return currencyFormatter.format(Number(value) || 0);
+}
+
+function fillSelectOptions(selectEl, options) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  options.forEach((opt) => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    selectEl.appendChild(option);
+  });
+}
+
+function getSelectedMonths() {
+  return Array.from(mercMesSet);
 }
 
 function initSalonResumen() {
@@ -312,6 +373,384 @@ async function loadPedidosResumen() {
   }
 }
 
+function getSelectedOptions(selectEl) {
+  if (!selectEl) return [];
+  return Array.from(selectEl.selectedOptions).map((o) => o.value).filter(Boolean);
+}
+
+function getSelectedProviders() {
+  return Array.from(mercProveedorSet);
+}
+
+async function loadProveedores() {
+  try {
+    const res = await fetchJSON('/api/proveedores');
+    const opts = (res.data || [])
+      .map((r) => ({ value: r.proveedor, label: r.proveedor }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (mercProveedoresList) {
+      mercProveedoresList.innerHTML = '';
+      opts.forEach((opt) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pill-option';
+        btn.dataset.value = opt.value;
+        btn.textContent = opt.label;
+        mercProveedoresList.appendChild(btn);
+      });
+      mercProveedoresList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.pill-option');
+        if (!btn) return;
+        const value = btn.dataset.value;
+        if (!value) return;
+        if (mercProveedorSet.has(value)) {
+          mercProveedorSet.delete(value);
+          btn.classList.remove('selected');
+        } else {
+          mercProveedorSet.add(value);
+          btn.classList.add('selected');
+        }
+        mercPage = 1;
+        loadMercaderia();
+      });
+    }
+  } catch (error) {
+    console.error('Error cargando proveedores', error);
+  }
+}
+
+function applyMercFilters() {
+  const term = (mercSearch?.value || '').toLowerCase();
+  mercFiltered = mercRows.filter((row) => {
+    if (!term) return true;
+    return (
+      (row.articulo || '').toLowerCase().includes(term) ||
+      (row.detalle || '').toLowerCase().includes(term) ||
+      (row.proveedorSku || '').toLowerCase().includes(term) ||
+      String(row.totalVendido || '').includes(term) ||
+      String(row.totalStock || '').includes(term) ||
+      String(row.precioVenta || '').includes(term)
+    );
+  });
+  mercPage = 1;
+  renderMercaderiaTable();
+}
+
+function renderMercaderiaTable() {
+  if (!mercTableBody) return;
+  mercTableBody.innerHTML = '';
+  mercTotalPages = Math.max(1, Math.ceil(mercFiltered.length / mercPageSize));
+  mercPage = Math.min(mercPage, mercTotalPages);
+  const start = (mercPage - 1) * mercPageSize;
+  const slice = mercFiltered.slice(start, start + mercPageSize);
+  slice.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    const checked = mercSelected.has(row.articulo);
+    tr.innerHTML = `
+      <td><input type="checkbox" class="merc-select" data-id="${row.articulo}" ${checked ? 'checked' : ''}></td>
+      <td>${row.articulo || ''}</td>
+      <td>${row.detalle || ''}</td>
+      <td>${row.proveedorSku || ''}</td>
+      <td>${row.totalVendido ?? 0}</td>
+      <td>${row.totalStock ?? 0}</td>
+      <td>${formatMoney(row.precioVenta || 0)}</td>
+      <td><span class="merc-img" data-articulo="${row.articulo}"></span></td>
+      <td><button class="icon-button merc-ia-btn" data-idx="${start + idx}" title="Predicción IA">🤖</button></td>
+    `;
+    mercTableBody.appendChild(tr);
+  });
+  if (mercPageInfo) mercPageInfo.textContent = `Página ${mercPage} de ${mercTotalPages}`;
+  if (mercWebTn?.checked) {
+    loadMercaderiaImages(slice);
+  }
+}
+
+async function loadMercaderia() {
+  if (mercStatus) mercStatus.textContent = 'Cargando...';
+  try {
+    const params = new URLSearchParams();
+    if (mercDesde?.value) params.set('desde', mercDesde.value);
+    if (mercHasta?.value) params.set('hasta', mercHasta.value);
+    const provs = getSelectedProviders();
+    if (provs.length) params.set('proveedores', provs.join(','));
+    if (mercWebTn?.checked) params.set('webTn', 'true');
+    const url = params.toString() ? `/api/mercaderia/top?${params.toString()}` : '/api/mercaderia/top';
+    const res = await fetchJSON(url);
+    mercRows = res.data || [];
+    mercFiltered = mercRows.slice();
+    applyMercFilters();
+    if (mercStatus) mercStatus.textContent = `Resultados: ${mercFiltered.length} (rango ${res.desde} a ${res.hasta})`;
+  } catch (error) {
+    if (mercStatus) mercStatus.textContent = 'Error al cargar artículos más vendidos';
+    console.error(error);
+  }
+}
+
+function initMercaderia() {
+  if (!viewMercaderia) return;
+  const hoy = new Date();
+  const firstDay = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  if (mercDesde) mercDesde.value = firstDay.toISOString().slice(0, 10);
+  if (mercHasta) mercHasta.value = hoy.toISOString().slice(0, 10);
+  loadProveedores();
+  if (mercProvToggle && mercProvWrap) {
+    mercProvToggle.addEventListener('click', () => {
+      mercProvWrap.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!mercProvWrap.contains(e.target)) mercProvWrap.classList.remove('open');
+    });
+  }
+  if (mercBuscarBtn) mercBuscarBtn.addEventListener('click', loadMercaderia);
+  if (mercWebTn) mercWebTn.addEventListener('change', loadMercaderia);
+  if (mercSearch) mercSearch.addEventListener('input', applyMercFilters);
+  if (mercExportBtn) mercExportBtn.addEventListener('click', exportMercaderia);
+  if (mercPrev) mercPrev.addEventListener('click', () => {
+    if (mercPage > 1) {
+      mercPage -= 1;
+      renderMercaderiaTable();
+    }
+  });
+  if (mercNext) mercNext.addEventListener('click', () => {
+    if (mercPage < mercTotalPages) {
+      mercPage += 1;
+      renderMercaderiaTable();
+    }
+  });
+  if (mercPageSizeSelect)
+    mercPageSizeSelect.addEventListener('change', () => {
+      mercPageSize = Number(mercPageSizeSelect.value) || 10;
+      mercPage = 1;
+      renderMercaderiaTable();
+    });
+  if (mercTableBody) {
+    mercTableBody.addEventListener('change', (e) => {
+      const cb = e.target.closest('.merc-select');
+      if (!cb) return;
+      const id = cb.dataset.id;
+      if (!id) return;
+      if (cb.checked) mercSelected.add(id);
+      else mercSelected.delete(id);
+    });
+    mercTableBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.merc-ia-btn');
+      if (btn) {
+        const idx = Number(btn.dataset.idx);
+        const row = mercFiltered[idx];
+        if (row) openMercIa(row);
+        return;
+      }
+      const imgEl = e.target.closest('.merc-thumb');
+      if (imgEl) {
+        openMercImage(imgEl.src);
+      }
+    });
+  }
+  if (mercIaClose) mercIaClose.addEventListener('click', closeMercIa);
+  if (mercIaOverlay) mercIaOverlay.addEventListener('click', (e) => {
+    if (e.target === mercIaOverlay) closeMercIa();
+  });
+  if (mercIaRun) mercIaRun.addEventListener('click', runMercIa);
+  if (mercIaMonthsToggle && mercIaMonthsWrap) {
+    mercIaMonthsToggle.addEventListener('click', () => {
+      mercIaMonthsWrap.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!mercIaMonthsWrap.contains(e.target)) mercIaMonthsWrap.classList.remove('open');
+    });
+  }
+  if (mercImgClose) mercImgClose.addEventListener('click', closeMercImage);
+  if (mercImgOverlay)
+    mercImgOverlay.addEventListener('click', (e) => {
+      if (e.target === mercImgOverlay) closeMercImage();
+    });
+  if (mercImgZoomIn)
+    mercImgZoomIn.addEventListener('click', () => {
+      setMercImgZoom(mercImgZoom + 0.25);
+    });
+  if (mercImgZoomOut)
+    mercImgZoomOut.addEventListener('click', () => {
+      setMercImgZoom(mercImgZoom - 0.25);
+    });
+  if (mercImgZoomReset)
+    mercImgZoomReset.addEventListener('click', () => {
+      setMercImgZoom(1);
+    });
+  // inicializa años para IA
+  if (mercIaYear) {
+    const opts = [];
+    for (let y = 2025; y <= 2030; y += 1) {
+      opts.push({ value: String(y), label: String(y) });
+    }
+    fillSelectOptions(mercIaYear, opts);
+    mercIaYear.value = String(hoy.getFullYear());
+  }
+  if (mercIaMonthsList) {
+    const months = [
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
+    ];
+    mercIaMonthsList.innerHTML = '';
+    months.forEach((name, idx) => {
+      const val = String(idx + 1);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pill-option';
+      btn.dataset.value = val;
+      btn.textContent = name;
+      mercIaMonthsList.appendChild(btn);
+    });
+    mercIaMonthsList.addEventListener('click', (e) => {
+      const btn = e.target.closest('button.pill-option');
+      if (!btn) return;
+      const val = btn.dataset.value;
+      if (!val) return;
+      if (mercMesSet.has(val)) {
+        mercMesSet.delete(val);
+        btn.classList.remove('selected');
+      } else {
+        mercMesSet.add(val);
+        btn.classList.add('selected');
+      }
+    });
+  }
+  // primera carga
+  loadMercaderia();
+}
+
+function closeMercIa() {
+  if (mercIaOverlay) mercIaOverlay.classList.remove('open');
+  mercCurrentRow = null;
+  if (mercIaStatus) mercIaStatus.textContent = '';
+  if (mercIaTableBody) mercIaTableBody.innerHTML = '';
+}
+
+function openMercIa(row) {
+  mercCurrentRow = row;
+  if (mercIaTitle) mercIaTitle.textContent = `Predicción - ${row.articulo}`;
+  if (mercIaInfo) mercIaInfo.textContent = `${row.detalle || ''}`;
+  if (mercIaStock) mercIaStock.value = row.totalStock || 0;
+  if (mercIaDemanda) mercIaDemanda.value = '';
+  if (mercIaCompra) mercIaCompra.value = '';
+  if (mercIaTableBody) mercIaTableBody.innerHTML = '';
+  if (mercIaStatus) mercIaStatus.textContent = 'Selecciona año y meses, luego Ejecutar.';
+  if (mercIaOverlay) mercIaOverlay.classList.add('open');
+}
+
+async function runMercIa() {
+  if (!mercCurrentRow) return;
+  try {
+    if (mercIaStatus) mercIaStatus.textContent = 'Calculando...';
+    const meses = getSelectedMonths().map((m) => Number(m));
+  const payload = {
+    articulo: mercCurrentRow.articulo,
+    detalle: mercCurrentRow.detalle,
+      anio: Number(mercIaYear?.value) || new Date().getFullYear(),
+      meses,
+      stockActual: Number(mercIaStock?.value) || 0,
+    };
+    const res = await fetch('/api/mercaderia/prediccion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('No se pudo calcular la predicción');
+    const data = await res.json();
+    if (mercIaDemanda) mercIaDemanda.value = data.demanda_total_horizonte ?? 0;
+    if (mercIaCompra) mercIaCompra.value = data.compra_sugerida_total ?? 0;
+    if (Array.isArray(data.resultados) && mercIaTableBody) {
+      mercIaTableBody.innerHTML = '';
+      data.resultados.forEach((r) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.mes}</td><td>${r.prediccion}</td>`;
+        mercIaTableBody.appendChild(tr);
+      });
+    }
+    if (mercIaStatus) mercIaStatus.textContent = 'Predicción generada.';
+  } catch (error) {
+    if (mercIaStatus) mercIaStatus.textContent = error.message || 'Error en predicción';
+  }
+}
+
+async function loadMercaderiaImages(rows) {
+  try {
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const res = await fetchJSON(`/api/mercaderia/image?articulo=${encodeURIComponent(row.articulo)}`);
+          const cell = mercTableBody?.querySelector(`.merc-img[data-articulo="${row.articulo}"]`);
+          if (cell && res.imagessrc) {
+            cell.innerHTML = `<img src="${res.imagessrc}" alt="img" width="48" loading="lazy" class="merc-thumb">`;
+          }
+        } catch (_err) {
+          /* silencioso por cada imagen */
+        }
+      })
+    );
+  } catch (_err) {
+    /* silencioso */
+  }
+}
+
+function exportMercaderia() {
+  const rows = mercFiltered.filter((r) => mercSelected.has(r.articulo));
+  if (!rows.length) {
+    if (mercStatus) mercStatus.textContent = 'Seleccione al menos un artículo para exportar.';
+    return;
+  }
+  const headers = ['Articulo', 'Detalle', 'ProveedorSku', 'Total Vendido', 'Total Stock', 'Precio Venta'];
+  const csvRows = [headers.join(',')];
+  rows.forEach((r) => {
+    const row = [
+      r.articulo,
+      (r.detalle || '').replace(/,/g, ' '),
+      r.proveedorSku || '',
+      r.totalVendido ?? 0,
+      r.totalStock ?? 0,
+      r.precioVenta ?? 0,
+    ];
+    csvRows.push(row.join(','));
+  });
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mercaderia.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  if (mercStatus) mercStatus.textContent = `Exportado ${rows.length} artículo(s).`;
+}
+
+function openMercImage(src) {
+  if (!src) return;
+  mercImgZoom = 1;
+  if (mercImgFull) {
+    mercImgFull.src = src;
+    mercImgFull.style.transform = 'scale(1)';
+  }
+  if (mercImgOverlay) mercImgOverlay.classList.add('open');
+}
+
+function closeMercImage() {
+  if (mercImgOverlay) mercImgOverlay.classList.remove('open');
+}
+
+function setMercImgZoom(factor) {
+  mercImgZoom = Math.max(0.5, Math.min(4, factor));
+  if (mercImgFull) mercImgFull.style.transform = `scale(${mercImgZoom})`;
+}
 function renderPedidosVendedorasChart(rows) {
   if (!pedidosVendedorasChartEl) return;
   const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
@@ -1687,7 +2126,7 @@ function formatDayLabel(year, month, dayNumber) {
 }
 
 function switchView(target) {
-  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa, viewSalon, viewPedidos];
+  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa, viewSalon, viewPedidos, viewMercaderia];
   views.forEach((v) => v.classList.add('hidden'));
 
   if (target === 'empleados') {
@@ -1705,6 +2144,9 @@ function switchView(target) {
   } else if (target === 'pedidos') {
     viewPedidos.classList.remove('hidden');
     loadPedidosResumen();
+  } else if (target === 'mercaderia') {
+    viewMercaderia.classList.remove('hidden');
+    loadMercaderia();
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1724,6 +2166,7 @@ initPedidosClientes();
 initIaChat();
 initSalonResumen();
 initPedidosResumen();
+initMercaderia();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();

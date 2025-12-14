@@ -1,0 +1,2 @@
+Verificar la consulta que llena la grilla Articulos Mas vendidos ya que no es igual a la del sistema
+actual. Ejemplo de Fecha "fac.Fecha >= "2025-10-01" and fac.Fecha <= "2025-10-01" 

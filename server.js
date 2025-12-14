@@ -1115,6 +1115,122 @@ app.get('/api/encuestas/mes', async (_req, res) => {
   }
 });
 
+app.get('/api/proveedores', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT DISTINCT TRIM(Proveedor) AS proveedor
+       FROM articulos
+       WHERE Proveedor IS NOT NULL AND TRIM(Proveedor) <> ''
+       ORDER BY proveedor`
+    );
+    res.json({ data: rows });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar proveedores', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/top', async (req, res) => {
+  try {
+    const hoy = new Date();
+    const firstDay = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : firstDay;
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : hoy;
+    const desde = desdeDate.toISOString().slice(0, 10);
+    const hasta = hastaDate.toISOString().slice(0, 10);
+
+    const proveedoresParam =
+      typeof req.query.proveedores === 'string' && req.query.proveedores.trim()
+        ? req.query.proveedores.split(',').map((p) => p.trim()).filter(Boolean)
+        : [];
+    const webTn = req.query.webTn === 'true' || req.query.webTn === '1';
+
+    const where = ['fac.Fecha BETWEEN ? AND ?', 'fac.Estado <> 2'];
+    const params = [desde, hasta];
+    if (proveedoresParam.length) {
+      where.push(`art.Proveedor IN (${proveedoresParam.map(() => '?').join(',')})`);
+      params.push(...proveedoresParam);
+    }
+
+    const sql = `
+      SELECT
+        fac.Articulo,
+        art.Detalle,
+        art.ProveedorSKU,
+        SUM(fac.Cantidad) AS TotalVendido,
+        art.Cantidad AS TotalStock,
+        repoArt.PrecioVenta,
+        art.ImageName
+      FROM factura AS fac
+      JOIN articulos AS art ON fac.Articulo = art.Articulo
+      LEFT JOIN reportearticulo AS repoArt ON fac.Articulo = repoArt.Articulo
+      WHERE ${where.join(' AND ')}
+      GROUP BY fac.Articulo, art.Detalle, art.ProveedorSKU, art.Cantidad, repoArt.PrecioVenta, art.ImageName
+      ORDER BY TotalVendido DESC
+    `;
+
+    const [rows] = await pool.query(sql, params);
+    res.json({
+      desde,
+      hasta,
+      count: rows.length,
+      data: rows.map((r) => ({
+        articulo: r.Articulo,
+        detalle: r.Detalle,
+        proveedorSku: r.ProveedorSKU,
+        totalVendido: Number(r.TotalVendido) || 0,
+        totalStock: Number(r.TotalStock) || 0,
+        precioVenta: Number(r.PrecioVenta) || 0,
+        imageName: r.ImageName || '',
+        imagessrc: webTn ? '' : '',
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar artículos más vendidos', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/image', async (req, res) => {
+  try {
+    const articulo = req.query.articulo;
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const [[row]] = await pool.query(
+      `SELECT imagessrc
+       FROM statusecomercesincro
+       WHERE articulo = ?
+       ORDER BY id_provecomerce DESC
+       LIMIT 1`,
+      [articulo]
+    );
+    res.json({ articulo, imagessrc: row?.imagessrc || '' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar imagen', error: error.message });
+  }
+});
+
+app.post('/api/mercaderia/prediccion', async (req, res) => {
+  try {
+    const { articulo, detalle, anio, meses = [], stockActual = 0 } = req.body || {};
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const months = Array.isArray(meses) ? meses : [];
+    const safeYear = Number(anio) || new Date().getFullYear();
+    const results = months.map((m) => {
+      const base = 20 + Math.floor(Math.random() * 30);
+      return { mes: m, prediccion: base };
+    });
+    const demandaTotal = results.reduce((acc, r) => acc + (Number(r.prediccion) || 0), 0);
+    res.json({
+      articulo,
+      detalle,
+      resultados: results,
+      demanda_total_horizonte: demandaTotal,
+      compra_sugerida_total: Math.max(0, demandaTotal - (Number(stockActual) || 0)),
+      anio: safeYear,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error en predicción de mercadería', error: error.message });
+  }
+});
+
 app.get('/api/pedidos/productividad', async (req, res) => {
   try {
     const hoy = new Date();

@@ -986,6 +986,144 @@ input[type='month'] {
   color: var(--fg);
 }
 
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 12px 0;
+}
+
+.filters-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.filters-row select[multiple] {
+  min-width: 180px;
+  min-height: 120px;
+}
+
+.select-dropdown {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.select-toggle .caret {
+  font-size: 12px;
+  transition: transform 0.12s ease;
+}
+
+.select-dropdown .select-body {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  background: rgba(12, 15, 26, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: var(--shadow);
+  min-width: 240px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.select-dropdown.open .select-body {
+  display: block;
+}
+
+.select-dropdown.open .caret {
+  transform: rotate(180deg);
+}
+
+.pill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pill-option {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.pill-option.selected {
+  background: rgba(123, 215, 255, 0.18);
+  border-color: rgba(123, 215, 255, 0.6);
+  color: var(--text);
+}
+
+.filters-row .grow {
+  flex: 1;
+}
+
+.icon-button {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.icon-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(123, 215, 255, 0.6);
+}
+
+.modal-img {
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.img-body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #0b0e16;
+}
+
+.img-body img {
+  max-width: 100%;
+  max-height: 80vh;
+  transform-origin: center;
+  transition: transform 0.1s ease;
+}
+
+.img-zoom-controls button {
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
 @media (max-width: 960px) {
   .page {
     padding: 24px 16px 64px;

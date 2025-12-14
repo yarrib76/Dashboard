@@ -49,6 +49,10 @@
             <span class="icon">🧾</span>
             <span class="label">Pedidos</span>
           </button>
+          <button class="menu-item" data-target="mercaderia">
+            <span class="icon">📦</span>
+            <span class="label">Mercadería</span>
+          </button>
         </nav>
         <button class="menu-item logout" id="logout-btn">
           <span class="icon">↩</span>
@@ -483,6 +487,149 @@
       <p class="status" id="pedidos-status"></p>
     </article>
   </section>
+
+  <section class="view hidden" id="view-mercaderia">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Mercadería</h2>
+          <p class="status">Gestión y seguimiento de mercadería</p>
+        </div>
+      </div>
+      <div class="filters-row">
+        <label>
+          <span>Desde</span>
+          <input type="date" id="merc-desde" />
+        </label>
+        <label>
+          <span>Hasta</span>
+          <input type="date" id="merc-hasta" />
+        </label>
+        <div class="select-dropdown" id="merc-proveedores-wrap">
+          <button type="button" class="select-toggle" id="merc-proveedores-toggle">
+            Seleccionar proveedores
+            <span class="caret">▼</span>
+          </button>
+          <div class="select-body">
+            <div id="merc-proveedores-list" class="pill-list"></div>
+          </div>
+        </div>
+        <label class="inline">
+          <span>Web TN</span>
+          <input type="checkbox" id="merc-webtn" />
+        </label>
+        <label class="inline grow">
+          <span>Buscar</span>
+          <input type="search" id="merc-search" placeholder="Filtrar por cualquier campo..." />
+        </label>
+        <button id="merc-buscar" type="button">Buscar</button>
+        <button id="merc-export" type="button">📊 Exportar seleccionados</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="merc-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Artículo</th>
+              <th>Detalle</th>
+              <th>ProveedorSKU</th>
+              <th>Total Vendido</th>
+              <th>Total Stock</th>
+              <th>Precio Venta</th>
+              <th>Imagen</th>
+              <th>IA</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="merc-pagination">
+        <button id="merc-prev" type="button">Anterior</button>
+        <span id="merc-page-info">Página 1</span>
+        <button id="merc-next" type="button">Siguiente</button>
+        <label class="client-inline">
+          <span>Por página</span>
+          <select id="merc-page-size">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+          </select>
+        </label>
+      </div>
+      <p class="status" id="merc-status"></p>
+    </article>
+  </section>
+
+  <div class="modal-overlay" id="merc-ia-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="merc-ia-title">Predicción</h3>
+        <button id="merc-ia-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p id="merc-ia-info" class="status"></p>
+        <div class="filters-row">
+          <label>
+            <span>Año</span>
+            <select id="merc-ia-year"></select>
+          </label>
+          <div class="select-dropdown" id="merc-ia-months-wrap">
+            <button type="button" class="select-toggle" id="merc-ia-months-toggle">
+              Seleccionar meses
+              <span class="caret">▼</span>
+            </button>
+            <div class="select-body">
+              <div id="merc-ia-months-list" class="pill-list"></div>
+            </div>
+          </div>
+        </div>
+        <div class="stat-grid three">
+          <div class="stat">
+            <p class="label">Stock</p>
+            <p class="value"><input type="number" id="merc-ia-stock" /></p>
+          </div>
+          <div class="stat">
+            <p class="label">Demanda</p>
+            <p class="value"><input type="number" id="merc-ia-demanda" readonly /></p>
+          </div>
+          <div class="stat">
+            <p class="label">Compra sugerida</p>
+            <p class="value"><input type="number" id="merc-ia-compra" readonly /></p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="merc-ia-table">
+            <thead>
+              <tr>
+                <th>Mes</th>
+                <th>Predicción ventas</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="merc-ia-status"></p>
+        <button id="merc-ia-run" type="button">⚙️ Ejecutar predicción</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="merc-img-overlay">
+    <div class="modal modal-img">
+      <div class="modal-header">
+        <h3>Imagen</h3>
+        <div class="img-zoom-controls">
+          <button type="button" id="merc-img-zoom-in">+</button>
+          <button type="button" id="merc-img-zoom-out">−</button>
+          <button type="button" id="merc-img-zoom-reset">100%</button>
+        </div>
+        <button id="merc-img-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body img-body">
+        <img id="merc-img-full" alt="Imagen artículo" />
+      </div>
+    </div>
+  </div>
 
     <div class="modal-overlay" id="modal-overlay">
       <div class="modal">
