@@ -690,13 +690,28 @@ async function runMercIa() {
     const data = await res.json();
     if (mercIaDemanda) mercIaDemanda.value = data.demanda_total_horizonte ?? 0;
     if (mercIaCompra) mercIaCompra.value = data.compra_sugerida_total ?? 0;
-    if (Array.isArray(data.resultados) && mercIaTableBody) {
+
+    // Normalizar estructura de resultados
+    let resultados = [];
+    if (Array.isArray(data.resultados)) {
+      resultados = data.resultados;
+    } else if (data.mes && (data.prediccion_ventas_mes || data.prediccion)) {
+      resultados = [
+        {
+          mes: data.mes,
+          prediccion: data.prediccion_ventas_mes ?? data.prediccion,
+        },
+      ];
+    }
+
+    if (Array.isArray(resultados) && mercIaTableBody) {
       mercIaTableBody.innerHTML = '';
       const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-      data.resultados.forEach((r) => {
+      resultados.forEach((r) => {
         const mesLabel = monthNames[(Number(r.mes) || 1) - 1] || r.mes;
+        const pred = r.prediccion ?? r.prediccion_ventas_mes ?? r.total ?? '';
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${mesLabel}</td><td>${r.prediccion ?? r.total ?? ''}</td>`;
+        tr.innerHTML = `<td>${mesLabel}</td><td>${pred}</td>`;
         mercIaTableBody.appendChild(tr);
       });
     }
