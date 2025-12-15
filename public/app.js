@@ -688,6 +688,20 @@ async function runMercIa() {
       throw new Error(errText || 'No se pudo calcular la predicción');
     }
     const data = await res.json();
+    let resultados = [];
+    if (Array.isArray(data.resultados)) {
+      resultados = data.resultados;
+    } else if (data.mes && (data.prediccion_ventas_mes || data.prediccion)) {
+      resultados = [
+        {
+          mes: data.mes,
+          prediccion: data.prediccion_ventas_mes ?? data.prediccion,
+          demanda_total_horizonte: data.demanda_total_horizonte,
+          compra_sugerida_total: data.compra_sugerida_total,
+          stock_actual: data.stock_actual,
+        },
+      ];
+    }
     const firstRes = Array.isArray(resultados) && resultados.length ? resultados[0] : null;
     const demandaTotal =
       data.demanda_total_horizonte ??
@@ -696,10 +710,7 @@ async function runMercIa() {
       null;
     if (mercIaDemanda) mercIaDemanda.value = demandaTotal ?? '';
     const stockVal =
-      data.stock_actual ??
-      firstRes?.stock_actual ??
-      Number(mercIaStock?.value) ||
-      0;
+      (data.stock_actual ?? firstRes?.stock_actual ?? Number(mercIaStock?.value)) ?? 0;
     if (mercIaStock && (data.stock_actual != null || firstRes?.stock_actual != null)) {
       mercIaStock.value = stockVal;
     }
@@ -709,19 +720,6 @@ async function runMercIa() {
       firstRes?.compra_sugerida_total ??
       (demandaTotal != null ? Math.max(0, (Number(demandaTotal) || 0) - stockVal) : null);
     if (mercIaCompra) mercIaCompra.value = compraSugerida ?? '';
-
-    // Normalizar estructura de resultados
-    let resultados = [];
-    if (Array.isArray(data.resultados)) {
-      resultados = data.resultados;
-    } else if (data.mes && (data.prediccion_ventas_mes || data.prediccion)) {
-      resultados = [
-        {
-          mes: data.mes,
-          prediccion: data.prediccion_ventas_mes ?? data.prediccion,
-        },
-      ];
-    }
 
     if (Array.isArray(resultados) && mercIaTableBody) {
       mercIaTableBody.innerHTML = '';
