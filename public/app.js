@@ -688,18 +688,25 @@ async function runMercIa() {
       throw new Error(errText || 'No se pudo calcular la predicción');
     }
     const data = await res.json();
+    const firstRes = Array.isArray(resultados) && resultados.length ? resultados[0] : null;
     const demandaTotal =
       data.demanda_total_horizonte ??
       data.demanda_total ??
-      data.demanda_total_horisonte ??
-      data.demanda_total_hor ?? // por si el predictor usa otra key
+      firstRes?.demanda_total_horizonte ??
       null;
     if (mercIaDemanda) mercIaDemanda.value = demandaTotal ?? '';
-    if (data.stock_actual != null && mercIaStock) mercIaStock.value = data.stock_actual;
-    const stockVal = Number(mercIaStock?.value) || 0;
+    const stockVal =
+      data.stock_actual ??
+      firstRes?.stock_actual ??
+      Number(mercIaStock?.value) ||
+      0;
+    if (mercIaStock && (data.stock_actual != null || firstRes?.stock_actual != null)) {
+      mercIaStock.value = stockVal;
+    }
     const compraSugerida =
       data.compra_sugerida_total ??
       data.compra_sugerida ??
+      firstRes?.compra_sugerida_total ??
       (demandaTotal != null ? Math.max(0, (Number(demandaTotal) || 0) - stockVal) : null);
     if (mercIaCompra) mercIaCompra.value = compraSugerida ?? '';
 
