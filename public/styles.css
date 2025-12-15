@@ -1077,6 +1077,11 @@ input[type='month'] {
   color: var(--text);
 }
 
+.low-stock {
+  color: #f87171;
+  font-weight: 700;
+}
+
 .filters-row .grow {
   flex: 1;
 }
@@ -1098,6 +1103,16 @@ input[type='month'] {
 .modal-img {
   max-width: 90vw;
   max-height: 90vh;
+}
+
+.modal .chart-body {
+  max-height: 70vh;
+}
+
+.modal .chart-body canvas {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 360px;
 }
 
 .img-body {

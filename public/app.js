@@ -147,6 +147,7 @@ const mercWebTn = document.getElementById('merc-webtn');
 const mercSearch = document.getElementById('merc-search');
 const mercBuscarBtn = document.getElementById('merc-buscar');
 const mercExportBtn = document.getElementById('merc-export');
+const mercGraficarBtn = document.getElementById('merc-graficar');
 const mercTableBody = document.querySelector('#merc-table tbody');
 const mercStatus = document.getElementById('merc-status');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
@@ -175,6 +176,10 @@ const mercImgFull = document.getElementById('merc-img-full');
 const mercImgZoomIn = document.getElementById('merc-img-zoom-in');
 const mercImgZoomOut = document.getElementById('merc-img-zoom-out');
 const mercImgZoomReset = document.getElementById('merc-img-zoom-reset');
+const mercChartOverlay = document.getElementById('merc-chart-overlay');
+const mercChartClose = document.getElementById('merc-chart-close');
+const mercChartCanvas = document.getElementById('merc-chart');
+const mercChartStatus = document.getElementById('merc-chart-status');
 const salonDesdeInput = document.getElementById('salon-desde');
 const salonHastaInput = document.getElementById('salon-hasta');
 const salonActualizarBtn = document.getElementById('salon-actualizar');
@@ -224,6 +229,7 @@ let mercTotalPages = 1;
 const mercProveedorSet = new Set();
 const mercMesSet = new Set();
 let mercImgZoom = 1;
+let mercChart = null;
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -446,15 +452,17 @@ function renderMercaderiaTable() {
   slice.forEach((row, idx) => {
     const tr = document.createElement('tr');
     const checked = mercSelected.has(row.articulo);
+    const imgHtml = row.imagessrc ? `<img src="${row.imagessrc}" alt="img" width="48" class="merc-thumb" loading="lazy">` : '';
+    const stockClass = row.totalStock < 10 ? 'low-stock' : '';
     tr.innerHTML = `
       <td><input type="checkbox" class="merc-select" data-id="${row.articulo}" ${checked ? 'checked' : ''}></td>
       <td>${row.articulo || ''}</td>
       <td>${row.detalle || ''}</td>
       <td>${row.proveedorSku || ''}</td>
       <td>${row.totalVendido ?? 0}</td>
-      <td>${row.totalStock ?? 0}</td>
+      <td class="${stockClass}">${row.totalStock ?? 0}</td>
       <td>${formatMoney(row.precioVenta || 0)}</td>
-      <td><span class="merc-img" data-articulo="${row.articulo}"></span></td>
+      <td><span class="merc-img" data-articulo="${row.articulo}">${imgHtml}</span></td>
       <td><button class="icon-button merc-ia-btn" data-idx="${start + idx}" title="Predicción IA">🤖</button></td>
     `;
     mercTableBody.appendChild(tr);
@@ -505,6 +513,7 @@ function initMercaderia() {
   if (mercWebTn) mercWebTn.addEventListener('change', loadMercaderia);
   if (mercSearch) mercSearch.addEventListener('input', applyMercFilters);
   if (mercExportBtn) mercExportBtn.addEventListener('click', exportMercaderia);
+  if (mercGraficarBtn) mercGraficarBtn.addEventListener('click', graficarMercaderia);
   if (mercPrev) mercPrev.addEventListener('click', () => {
     if (mercPage > 1) {
       mercPage -= 1;
@@ -575,6 +584,12 @@ function initMercaderia() {
   if (mercImgZoomReset)
     mercImgZoomReset.addEventListener('click', () => {
       setMercImgZoom(1);
+    });
+  if (mercChartClose)
+    mercChartClose.addEventListener('click', () => {
+      if (mercChartOverlay) mercChartOverlay.classList.remove('open');
+      if (mercChart) mercChart.destroy();
+      mercChart = null;
     });
   // inicializa años para IA
   if (mercIaYear) {
@@ -671,8 +686,10 @@ async function runMercIa() {
     if (Array.isArray(data.resultados) && mercIaTableBody) {
       mercIaTableBody.innerHTML = '';
       data.resultados.forEach((r) => {
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const mesLabel = monthNames[(Number(r.mes) || 1) - 1] || r.mes;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${r.mes}</td><td>${r.prediccion}</td>`;
+        tr.innerHTML = `<td>${mesLabel}</td><td>${r.prediccion}</td>`;
         mercIaTableBody.appendChild(tr);
       });
     }
@@ -687,10 +704,12 @@ async function loadMercaderiaImages(rows) {
     await Promise.all(
       rows.map(async (row) => {
         try {
+          if (row.imagessrc) return;
           const res = await fetchJSON(`/api/mercaderia/image?articulo=${encodeURIComponent(row.articulo)}`);
           const cell = mercTableBody?.querySelector(`.merc-img[data-articulo="${row.articulo}"]`);
           if (cell && res.imagessrc) {
             cell.innerHTML = `<img src="${res.imagessrc}" alt="img" width="48" loading="lazy" class="merc-thumb">`;
+            row.imagessrc = res.imagessrc;
           }
         } catch (_err) {
           /* silencioso por cada imagen */
@@ -731,6 +750,92 @@ function exportMercaderia() {
   a.remove();
   URL.revokeObjectURL(url);
   if (mercStatus) mercStatus.textContent = `Exportado ${rows.length} artículo(s).`;
+}
+
+async function graficarMercaderia() {
+  const rows = mercFiltered.filter((r) => mercSelected.has(r.articulo));
+  if (!rows.length) {
+    if (mercStatus) mercStatus.textContent = 'Seleccione al menos un artículo para graficar.';
+    return;
+  }
+  try {
+    const desde = mercDesde?.value;
+    const params = new URLSearchParams();
+    params.set('articulos', rows.map((r) => r.articulo).join(','));
+    if (desde) params.set('desde', desde);
+    const res = await fetchJSON(`/api/mercaderia/series?${params.toString()}`);
+    const detailMap = Object.fromEntries(rows.map((r) => [r.articulo, r.detalle || '']));
+    const labels = [];
+    const labelSet = new Set();
+    const monthNamesShort = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const byArticulo = res.data || {};
+    const datasets = [];
+    Object.entries(byArticulo).forEach(([art, series], idx) => {
+      const dataPoints = Array(6).fill(0);
+      series.forEach((item) => {
+        const key = `${item.anio}-${String(item.mes).padStart(2, '0')}`;
+        labelSet.add(key);
+      });
+      datasets.push({
+        label: art,
+        data: dataPoints,
+        backgroundColor: colorByIndex(idx, 0.15),
+        borderColor: colorByIndex(idx, 0.9),
+        borderWidth: 2,
+        fill: false,
+        detail: detailMap[art] || '',
+      });
+    });
+    const sortedLabels = Array.from(labelSet)
+      .sort()
+      .slice(-6)
+      .map((k) => {
+        const [y, m] = k.split('-');
+        return `${monthNamesShort[Number(m) - 1]} ${y}`;
+      });
+    // rebuild data with last 6 labels only
+    Object.entries(byArticulo).forEach(([art, series]) => {
+      const ds = datasets.find((d) => d.label === art);
+      if (!ds) return;
+      ds.data = sortedLabels.map((lbl) => {
+        const [monLabel, yearLabel] = lbl.split(' ');
+        const mesIndex = monthNamesShort.indexOf(monLabel) + 1;
+        const yearVal = Number(yearLabel);
+        const found = series.find((s) => s.anio === yearVal && s.mes === mesIndex);
+        return found ? found.total : 0;
+      });
+    });
+
+    if (mercChart) mercChart.destroy();
+    if (mercChartCanvas) {
+      mercChart = new Chart(mercChartCanvas, {
+        type: 'line',
+        data: { labels: sortedLabels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const detail = ctx.dataset.detail || '';
+                  const parts = [`${ctx.dataset.label}: ${ctx.parsed.y}`];
+                  if (detail) parts.push(detail);
+                  return parts;
+                },
+              },
+            },
+          },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+    }
+    if (mercChartStatus) mercChartStatus.textContent = `Rango: ${res.desde} a ${res.hasta}`;
+    if (mercChartOverlay) mercChartOverlay.classList.add('open');
+  } catch (error) {
+    if (mercStatus) mercStatus.textContent = error.message || 'Error al graficar';
+  }
 }
 
 function openMercImage(src) {

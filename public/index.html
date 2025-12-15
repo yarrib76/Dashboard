@@ -524,6 +524,7 @@
         </label>
         <button id="merc-buscar" type="button">Buscar</button>
         <button id="merc-export" type="button">📊 Exportar seleccionados</button>
+        <button id="merc-graficar" type="button">📈 Graficar seleccionados</button>
       </div>
       <div class="table-wrap">
         <table class="table" id="merc-table">
@@ -559,6 +560,19 @@
       <p class="status" id="merc-status"></p>
     </article>
   </section>
+
+  <div class="modal-overlay" id="merc-chart-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Ventas últimos 6 meses</h3>
+        <button id="merc-chart-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body chart-body">
+        <canvas id="merc-chart" height="260"></canvas>
+        <p class="status" id="merc-chart-status"></p>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="merc-ia-overlay">
     <div class="modal">
