@@ -717,8 +717,8 @@ async function runMercIa() {
       data.compra_sugerida ??
       (demandaTotal != null ? Math.max(0, (Number(demandaTotal) || 0) - stockVal) : null);
     
-    if (mercIaDemanda) mercIaDemanda.value = demandaTotal != null ? demandaTotal : 10;
-    if (mercIaCompra) mercIaCompra.value = compraSugerida != null ? compraSugerida : 20;
+    if (mercIaDemanda) mercIaDemanda.value = demandaTotal != null ? demandaTotal : '';
+    if (mercIaCompra) mercIaCompra.value = compraSugerida != null ? compraSugerida : '';
     if (mercIaStock) mercIaStock.value = stockVal || 0;
 
     if (Array.isArray(resultados) && mercIaTableBody) {
