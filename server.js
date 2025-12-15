@@ -1267,10 +1267,10 @@ app.post('/api/mercaderia/prediccion', async (req, res) => {
     const months = Array.isArray(meses) ? meses : [];
     if (!months.length) return res.status(400).json({ message: 'Selecciona al menos un mes' });
 
+    const safeYear = Number(anio) || new Date().getFullYear();
     const payload = {
       sku: articulo,
-      periodos: months,
-      anio: Number(anio) || new Date().getFullYear(),
+      periodos: months.map((m) => ({ anio: safeYear, mes: m })),
     };
 
     const controller = new AbortController();
