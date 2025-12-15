@@ -1402,6 +1402,7 @@ function renderPedidosClientes(rows) {
     tr.innerHTML = `
       <td>${row.nombre || ''}</td>
       <td>${row.apellido || ''}</td>
+      <td>${row.mail || row.email || ''}</td>
       <td>${row.totalPedidos ?? 0}</td>
       <td>${row.tipo || ''}</td>
     `;
@@ -1509,6 +1510,11 @@ async function loadPedidosClientes() {
     if (statPcTotal) statPcTotal.textContent = res.totalPedidos ?? 0;
     if (statPcNuevos) statPcNuevos.textContent = res.totalNuevos ?? 0;
     if (statPcRecurrentes) statPcRecurrentes.textContent = res.totalRecurrentes ?? 0;
+    const totalNuevos = Number(res.totalNuevos ?? 0);
+    const totalPedidos = Number(res.totalPedidos ?? 0);
+    const pctNuevos = totalPedidos > 0 ? ((totalNuevos / totalPedidos) * 100).toFixed(1) : '0.0';
+    const pctEl = document.getElementById('stat-pc-pct-nuevos');
+    if (pctEl) pctEl.textContent = `${pctNuevos}%`;
     setStatus(statusPedidosClientes, `Fecha ${res.fecha}`);
   } catch (error) {
     setStatus(statusPedidosClientes, 'Error al cargar pedidos de clientes.', true);

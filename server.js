@@ -1478,17 +1478,22 @@ app.get('/api/pedidos/clientes', async (req, res) => {
          FROM controlpedidos cp
          INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
          WHERE DATE(cp.fecha) = ?
-           AND cp.id_cliente <> 1
+         AND cp.id_cliente <> 1
+         AND (cp.ordenWeb IS NOT NULL AND cp.ordenWeb <> 0)
        ) t`,
       [fechaISO]
     );
 
+    const monthStart = new Date(Date.UTC(fechaParam.getUTCFullYear(), fechaParam.getUTCMonth(), 1));
+    const mesDesde = monthStart.toISOString().slice(0, 10);
+    const mesHasta = fechaISO; // hasta la fecha seleccionada (mes a la fecha)
     const [rows] = await pool.query(
       `SELECT
          cp.id,
          cp.id_cliente AS idCliente,
          c.nombre,
          c.apellido,
+         c.mail,
          tot.totalPedidos,
          CASE
            WHEN EXISTS (
@@ -1499,19 +1504,22 @@ app.get('/api/pedidos/clientes', async (req, res) => {
            ) THEN 'Recurrente'
            ELSE 'Nuevo'
          END AS tipo
-       FROM controlpedidos cp
-       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
-       LEFT JOIN (
-         SELECT id_cliente, COUNT(*) AS totalPedidos
-         FROM controlpedidos
-         WHERE id_cliente <> 1
-         GROUP BY id_cliente
-       ) tot ON tot.id_cliente = cp.id_cliente
-       WHERE DATE(cp.fecha) = ?
-         AND cp.id_cliente <> 1
-       ORDER BY ${orderBy}
-       LIMIT ? OFFSET ?`,
-      [fechaISO, pageSize, offset]
+      FROM controlpedidos cp
+      INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
+      LEFT JOIN (
+        SELECT id_cliente, COUNT(*) AS totalPedidos
+        FROM controlpedidos
+        WHERE id_cliente <> 1
+          AND (ordenWeb IS NOT NULL AND ordenWeb <> 0)
+          AND DATE(fecha) <= ?
+        GROUP BY id_cliente
+      ) tot ON tot.id_cliente = cp.id_cliente
+      WHERE DATE(cp.fecha) = ?
+        AND cp.id_cliente <> 1
+        AND (cp.ordenWeb IS NOT NULL AND cp.ordenWeb <> 0)
+      ORDER BY ${orderBy}
+      LIMIT ? OFFSET ?`,
+      [fechaISO, fechaISO, pageSize, offset]
     );
 
     res.json({
