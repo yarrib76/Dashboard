@@ -717,7 +717,7 @@ async function runMercIa() {
     
     if (mercIaDemanda) mercIaDemanda.value = demandaTotal != null ? demandaTotal : '';
     if (mercIaCompra) mercIaCompra.value = compraSugerida != null ? compraSugerida : '';
-    if (mercIaStock) mercIaStock.value = stockVal || 0;
+    // No modificar el stock mostrado; se usa el valor de la grilla/input
 
     if (Array.isArray(resultados) && mercIaTableBody) {
       mercIaTableBody.innerHTML = '';
