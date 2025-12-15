@@ -708,9 +708,7 @@ async function runMercIa() {
       data.demanda_total_horizonte ??
       data.demanda_total ??
       null;
-    const stockVal = Number(
-      firstRes?.stock_actual ?? data.stock_actual ?? mercIaStock?.value ?? 0
-    );
+    const stockVal = Number(mercIaStock?.value) || 0;
     const compraSugerida =
       firstRes?.compra_sugerida_total ??
       data.compra_sugerida_total ??
