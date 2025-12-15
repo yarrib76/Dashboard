@@ -688,8 +688,17 @@ async function runMercIa() {
       throw new Error(errText || 'No se pudo calcular la predicción');
     }
     const data = await res.json();
-    if (mercIaDemanda) mercIaDemanda.value = data.demanda_total_horizonte ?? 0;
-    if (mercIaCompra) mercIaCompra.value = data.compra_sugerida_total ?? 0;
+    const demandaTotal =
+      data.demanda_total_horizonte ??
+      data.demanda_total ??
+      data.demanda_total_horisonte ??
+      null;
+    if (mercIaDemanda) mercIaDemanda.value = demandaTotal ?? 0;
+    const compraSugerida =
+      data.compra_sugerida_total ??
+      (demandaTotal != null ? Math.max(0, demandaTotal - (Number(mercIaStock?.value) || 0)) : null);
+    if (mercIaCompra) mercIaCompra.value = compraSugerida ?? 0;
+    if (data.stock_actual != null && mercIaStock) mercIaStock.value = data.stock_actual;
 
     // Normalizar estructura de resultados
     let resultados = [];
