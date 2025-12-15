@@ -667,9 +667,13 @@ async function runMercIa() {
   try {
     if (mercIaStatus) mercIaStatus.textContent = 'Calculando...';
     const meses = getSelectedMonths().map((m) => Number(m));
-  const payload = {
-    articulo: mercCurrentRow.articulo,
-    detalle: mercCurrentRow.detalle,
+    if (!meses.length) {
+      if (mercIaStatus) mercIaStatus.textContent = 'Selecciona meses para predecir.';
+      return;
+    }
+    const payload = {
+      articulo: mercCurrentRow.articulo,
+      detalle: mercCurrentRow.detalle,
       anio: Number(mercIaYear?.value) || new Date().getFullYear(),
       meses,
       stockActual: Number(mercIaStock?.value) || 0,
@@ -679,17 +683,20 @@ async function runMercIa() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error('No se pudo calcular la predicción');
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(errText || 'No se pudo calcular la predicción');
+    }
     const data = await res.json();
     if (mercIaDemanda) mercIaDemanda.value = data.demanda_total_horizonte ?? 0;
     if (mercIaCompra) mercIaCompra.value = data.compra_sugerida_total ?? 0;
     if (Array.isArray(data.resultados) && mercIaTableBody) {
       mercIaTableBody.innerHTML = '';
+      const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
       data.resultados.forEach((r) => {
-        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
         const mesLabel = monthNames[(Number(r.mes) || 1) - 1] || r.mes;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${mesLabel}</td><td>${r.prediccion}</td>`;
+        tr.innerHTML = `<td>${mesLabel}</td><td>${r.prediccion ?? r.total ?? ''}</td>`;
         mercIaTableBody.appendChild(tr);
       });
     }

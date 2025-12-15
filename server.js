@@ -47,6 +47,7 @@ const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
 const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
+const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -1264,19 +1265,48 @@ app.post('/api/mercaderia/prediccion', async (req, res) => {
     const { articulo, detalle, anio, meses = [], stockActual = 0 } = req.body || {};
     if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
     const months = Array.isArray(meses) ? meses : [];
-    const safeYear = Number(anio) || new Date().getFullYear();
-    const results = months.map((m) => {
-      const base = 20 + Math.floor(Math.random() * 30);
-      return { mes: m, prediccion: base };
-    });
-    const demandaTotal = results.reduce((acc, r) => acc + (Number(r.prediccion) || 0), 0);
+    if (!months.length) return res.status(400).json({ message: 'Selecciona al menos un mes' });
+
+    const payload = {
+      sku: articulo,
+      periodos: months,
+      anio: Number(anio) || new Date().getFullYear(),
+    };
+
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(PREDICTOR_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(id));
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      return res
+        .status(502)
+        .json({ message: 'Error del predictor', detail: errText || `Status ${response.status}` });
+    }
+    const data = await response.json();
+    // Normalizar un poco al formato esperado en el front
+    const results = Array.isArray(data?.resultados)
+      ? data.resultados
+      : Array.isArray(data) // por si devuelve array simple
+      ? data
+      : [];
+    const demandaTotal =
+      data?.demanda_total_horizonte ??
+      results.reduce((acc, r) => acc + (Number(r.prediccion || r.total || 0)), 0);
+
     res.json({
       articulo,
       detalle,
       resultados: results,
       demanda_total_horizonte: demandaTotal,
-      compra_sugerida_total: Math.max(0, demandaTotal - (Number(stockActual) || 0)),
-      anio: safeYear,
+      compra_sugerida_total: Math.max(0, (Number(demandaTotal) || 0) - (Number(stockActual) || 0)),
+      anio: payload.anio,
+      raw: data,
     });
   } catch (error) {
     res.status(500).json({ message: 'Error en predicción de mercadería', error: error.message });
