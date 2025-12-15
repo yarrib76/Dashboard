@@ -692,12 +692,14 @@ async function runMercIa() {
       data.demanda_total_horizonte ??
       data.demanda_total ??
       data.demanda_total_horisonte ??
+      data.demanda_total_hor ?? // por si el predictor usa otra key
       null;
-    if (mercIaDemanda) mercIaDemanda.value = demandaTotal ?? 0;
+    if (mercIaDemanda) mercIaDemanda.value = demandaTotal ?? '';
     const compraSugerida =
       data.compra_sugerida_total ??
+      data.compra_sugerida ??
       (demandaTotal != null ? Math.max(0, demandaTotal - (Number(mercIaStock?.value) || 0)) : null);
-    if (mercIaCompra) mercIaCompra.value = compraSugerida ?? 0;
+    if (mercIaCompra) mercIaCompra.value = compraSugerida ?? '';
     if (data.stock_actual != null && mercIaStock) mercIaStock.value = data.stock_actual;
 
     // Normalizar estructura de resultados
