@@ -1151,6 +1151,8 @@ app.get('/api/mercaderia/top', async (req, res) => {
       params.push(...proveedoresParam);
     }
 
+    const latestStatusSubquery = `(SELECT id_provecomerce FROM statusecomercesincro ORDER BY id_provecomerce DESC LIMIT 1)`;
+
     const sql = `
       SELECT
         fac.Articulo,
@@ -1159,11 +1161,14 @@ app.get('/api/mercaderia/top', async (req, res) => {
         SUM(fac.Cantidad) AS TotalVendido,
         art.Cantidad AS TotalStock,
         repoArt.PrecioVenta,
-        art.ImageName
+        art.ImageName,
+        ${webTn ? 'MAX(StatusSincr.imagessrc)' : 'NULL'} AS imagessrc
       FROM factura AS fac
       JOIN articulos AS art ON fac.Articulo = art.Articulo
       LEFT JOIN reportearticulo AS repoArt ON fac.Articulo = repoArt.Articulo
+      ${webTn ? `LEFT JOIN statusecomercesincro AS StatusSincr ON repoArt.Articulo = StatusSincr.articulo AND StatusSincr.id_provecomerce = ${latestStatusSubquery}` : ''}
       WHERE ${where.join(' AND ')}
+      ${webTn ? 'AND StatusSincr.id_provecomerce IS NOT NULL' : ''}
       GROUP BY fac.Articulo, art.Detalle, art.ProveedorSKU, art.Cantidad, repoArt.PrecioVenta, art.ImageName
       ORDER BY TotalVendido DESC
     `;
@@ -1186,6 +1191,53 @@ app.get('/api/mercaderia/top', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar artículos más vendidos', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/series', async (req, res) => {
+  try {
+    const idsParam =
+      typeof req.query.articulos === 'string' && req.query.articulos.trim()
+        ? req.query.articulos.split(',').map((p) => p.trim()).filter(Boolean)
+        : [];
+    if (!idsParam.length) return res.status(400).json({ message: 'articulos requeridos' });
+
+    const baseDesde = req.query.desde ? parseISODate(req.query.desde) : new Date();
+    const start = new Date(baseDesde.getFullYear(), baseDesde.getMonth() - 5, 1);
+    const end = new Date(baseDesde.getFullYear(), baseDesde.getMonth() + 1, 0);
+    const desde = start.toISOString().slice(0, 10);
+    const hasta = end.toISOString().slice(0, 10);
+
+    const placeholders = idsParam.map(() => '?').join(',');
+    const sql = `
+      SELECT
+        fac.Articulo,
+        YEAR(fac.Fecha) AS anio,
+        MONTH(fac.Fecha) AS mes,
+        SUM(fac.Cantidad) AS total
+      FROM factura AS fac
+      WHERE fac.Articulo IN (${placeholders})
+        AND fac.Fecha BETWEEN ? AND ?
+        AND fac.Estado <> 2
+      GROUP BY fac.Articulo, YEAR(fac.Fecha), MONTH(fac.Fecha)
+      ORDER BY fac.Articulo, anio, mes
+    `;
+    const params = [...idsParam, desde, hasta];
+    const [rows] = await pool.query(sql, params);
+
+    const data = {};
+    rows.forEach((r) => {
+      if (!data[r.Articulo]) data[r.Articulo] = [];
+      data[r.Articulo].push({
+        anio: r.anio,
+        mes: r.mes,
+        total: Number(r.total) || 0,
+      });
+    });
+
+    res.json({ desde, hasta, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar series de mercadería', error: error.message });
   }
 });
 
