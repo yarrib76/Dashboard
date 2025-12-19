@@ -1568,6 +1568,95 @@ app.get('/api/pedidos/clientes', async (req, res) => {
   }
 });
 
+app.get('/api/facturas', async (_req, res) => {
+  try {
+    const [facturas] = await pool.query(
+      `SELECT
+         COALESCE(f.id, f.NroFactura) AS id,
+         CONCAT(c.nombre, ' ', c.apellido) AS cliente,
+         f.NroFactura AS nroFactura,
+         ROUND(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END, 2) AS totales,
+         COALESCE(f.Envio, 0) AS envio,
+         COALESCE(f.totalEnvio, 0) AS totalConEnvio,
+         f.id_tipo_pago AS tipoPagoId,
+         tp.tipo_pago AS tipoPago,
+         f.id_estados_financiera AS estadoId,
+         ef.nombre AS estado,
+         DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
+         f.pagomixto AS pagoMixto,
+         ROUND(
+           CASE
+             WHEN COALESCE(f.totalEnvio, 0) = 0 THEN
+               (ROUND(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END, 2) -
+                ROUND(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END, 2) * 0.025)
+             ELSE
+               (COALESCE(f.totalEnvio, 0) - COALESCE(f.totalEnvio, 0) * 0.025)
+           END,
+           2
+         ) AS cobrar,
+         f.comentario
+       FROM facturah f
+       INNER JOIN clientes c ON c.id_clientes = f.id_clientes
+       INNER JOIN tipo_pagos tp ON tp.id_tipo_pagos = f.id_tipo_pago
+       INNER JOIN estados_financiera ef ON ef.id_estado = f.id_estados_financiera
+       ORDER BY f.NroFactura DESC`
+    );
+
+    const [tipoPagos] = await pool.query(
+      'SELECT id_tipo_pagos AS id, tipo_pago FROM tipo_pagos ORDER BY tipo_pago'
+    );
+    const [estados] = await pool.query(
+      'SELECT id_estado AS id, nombre FROM estados_financiera ORDER BY nombre'
+    );
+
+    res.json({ facturas, tipoPagos, estados });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar facturas', error: error.message });
+  }
+});
+
+app.put('/api/facturas/:id', async (req, res) => {
+  try {
+    const facturaId = Number(req.params.id);
+    if (!Number.isFinite(facturaId)) {
+      return res.status(400).json({ message: 'Id de factura inválido' });
+    }
+
+    const updates = [];
+    const params = [];
+    const { tipoPagoId, estadoId, comentario } = req.body || {};
+
+    if (tipoPagoId !== undefined) {
+      if (!Number.isFinite(Number(tipoPagoId))) {
+        return res.status(400).json({ message: 'tipoPagoId debe ser numérico' });
+      }
+      updates.push('id_tipo_pago = ?');
+      params.push(Number(tipoPagoId));
+    }
+    if (estadoId !== undefined) {
+      if (!Number.isFinite(Number(estadoId))) {
+        return res.status(400).json({ message: 'estadoId debe ser numérico' });
+      }
+      updates.push('id_estados_financiera = ?');
+      params.push(Number(estadoId));
+    }
+    if (comentario !== undefined) {
+      updates.push('comentario = ?');
+      params.push(comentario || '');
+    }
+
+    if (!updates.length) {
+      return res.status(400).json({ message: 'No hay campos para actualizar' });
+    }
+
+    params.push(facturaId);
+    await pool.query(`UPDATE facturah SET ${updates.join(', ')} WHERE NroFactura = ? LIMIT 1`, params);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar factura', error: error.message });
+  }
+});
+
 app.get('/api/salon/resumen', async (req, res) => {
   try {
     const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();

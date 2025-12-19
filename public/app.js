@@ -57,6 +57,48 @@ const samplePaqueteriaLista = [
     comentario: 'Sin transporte asignado',
   },
 ];
+const sampleFacturas = [
+  {
+    id: 1,
+    cliente: 'Cliente Demo',
+    nroFactura: 1501,
+    totales: 18500.5,
+    envio: 1200,
+    totalConEnvio: 19700.5,
+    tipoPagoId: 1,
+    tipoPago: 'Transferencia',
+    estadoId: 2,
+    estado: 'Cobrado',
+    fecha: '2025-12-01',
+    pagoMixto: 'No',
+    comentario: 'Sin notas',
+  },
+  {
+    id: 2,
+    cliente: 'Cliente Test',
+    nroFactura: 1499,
+    totales: 9200,
+    envio: 0,
+    totalConEnvio: 9200,
+    tipoPagoId: 2,
+    tipoPago: 'Tarjeta',
+    estadoId: 1,
+    estado: 'Pendiente',
+    fecha: '2025-11-28',
+    pagoMixto: 'Sí',
+    comentario: 'Pago mixto 50/50',
+  },
+];
+const sampleFacturasTipoPagos = [
+  { value: 1, label: 'Transferencia' },
+  { value: 2, label: 'Tarjeta' },
+  { value: 3, label: 'Efectivo' },
+];
+const sampleFacturasEstados = [
+  { value: 1, label: 'Pendiente' },
+  { value: 2, label: 'Cobrado' },
+  { value: 3, label: 'Anulado' },
+];
 
 const statusEncuestas = document.getElementById('status-encuestas');
 const statusProductividad = document.getElementById('status-productividad');
@@ -140,6 +182,7 @@ const viewIa = document.getElementById('view-ia');
 const viewSalon = document.getElementById('view-salon');
 const viewPedidos = document.getElementById('view-pedidos');
 const viewMercaderia = document.getElementById('view-mercaderia');
+const viewFacturas = document.getElementById('view-facturas');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -196,6 +239,22 @@ const statPedidosCantidad = document.getElementById('stat-pedidos-cantidad');
 const statPedidosTicket = document.getElementById('stat-pedidos-ticket');
 const pedidosStatus = document.getElementById('pedidos-status');
 const pedidosVendedorasChartEl = document.getElementById('chart-pedidos-vendedoras');
+const statusFacturas = document.getElementById('status-facturas');
+const tablaFacturasBody = document.querySelector('#tabla-facturas tbody');
+const facturasPrev = document.getElementById('facturas-prev');
+const facturasNext = document.getElementById('facturas-next');
+const facturasPageInfo = document.getElementById('facturas-page-info');
+const facturasPageSizeSelect = document.getElementById('facturas-page-size');
+const facturasTable = document.getElementById('tabla-facturas');
+const facturasRefresh = document.getElementById('facturas-refresh');
+const facturasFilterCliente = document.getElementById('filter-facturas-cliente');
+const facturasFilterFecha = document.getElementById('filter-facturas-fecha');
+const facturasFilterNro = document.getElementById('filter-facturas-nro');
+const facturasFilterTotal = document.getElementById('filter-facturas-total');
+const facturasFilterTotalEnvio = document.getElementById('filter-facturas-total-envio');
+const facturasFilterCobrar = document.getElementById('filter-facturas-cobrar');
+const facturasFilterTipoPago = document.getElementById('filter-facturas-tipo-pago');
+const facturasFilterEstado = document.getElementById('filter-facturas-estado');
 let clientesPage = 1;
 let clientesPageSize = 10;
 let clientesTotalPages = 1;
@@ -230,6 +289,31 @@ const mercProveedorSet = new Set();
 const mercMesSet = new Set();
 let mercImgZoom = 1;
 let mercChart = null;
+let facturasRows = [];
+let facturasTipoPagos = [];
+let facturasEstados = [];
+let facturasLoaded = false;
+let facturasPage = 1;
+let facturasPageSize = 10;
+let facturasTotalPages = 1;
+const facturasColumnWidths = [160, 110];
+const facturasFilters = {
+  cliente: '',
+  fecha: '',
+  nroFactura: '',
+  totales: '',
+  totalConEnvio: '',
+  cobrar: '',
+  tipoPago: '',
+  estado: '',
+};
+
+function textMatchesAllTokens(text, filter) {
+  if (!filter) return true;
+  const base = (text || '').toLowerCase();
+  const tokens = filter.split(/\s+/).filter(Boolean);
+  return tokens.every((t) => base.includes(t));
+}
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -254,6 +338,12 @@ function fillSelectOptions(selectEl, options) {
 
 function getSelectedMonths() {
   return Array.from(mercMesSet);
+}
+
+function calcularCobrar(row) {
+  const base = Number(row.totalConEnvio) || Number(row.totales) || 0;
+  const efectivo = base === 0 ? Number(row.totales) || 0 : base;
+  return Math.round((efectivo - efectivo * 0.025) * 100) / 100;
 }
 
 function initSalonResumen() {
@@ -2113,7 +2203,9 @@ function closeNoEncuestadosModal() {
 
 function initMenu() {
   const menu = document.getElementById('side-menu');
-  const items = document.querySelectorAll('.menu-item');
+  const navItems = document.querySelectorAll('.menu-item[data-target]');
+  const parentButtons = document.querySelectorAll('.menu-parent');
+  const groups = document.querySelectorAll('.menu-group');
   const mqMobile = window.matchMedia('(max-width: 960px)');
 
   const toggleMenu = (force) => {
@@ -2132,10 +2224,31 @@ function initMenu() {
 
   menu.addEventListener('mouseenter', () => menu.classList.add('expanded'));
   menu.addEventListener('mouseleave', () => menu.classList.remove('expanded'));
-  items.forEach((btn) => {
+  groups.forEach((group) => {
+    group.addEventListener('mouseenter', () => group.classList.add('open'));
+    group.addEventListener('mouseleave', () => group.classList.remove('open'));
+  });
+  parentButtons.forEach((parent) => {
+    parent.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const group = parent.closest('.menu-group');
+      const isOpen = group?.classList.contains('open');
+      groups.forEach((g) => g.classList.remove('open'));
+      if (group && !isOpen) group.classList.add('open');
+    });
+  });
+
+  navItems.forEach((btn) => {
     btn.addEventListener('click', () => {
-      items.forEach((b) => b.classList.remove('active'));
+      navItems.forEach((b) => b.classList.remove('active'));
+      parentButtons.forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
+      const group = btn.closest('.menu-group');
+      if (group) {
+        group.classList.add('open');
+        const parentBtn = group.querySelector('.menu-parent');
+        if (parentBtn) parentBtn.classList.add('active');
+      }
       if (btn.classList.contains('logout')) return;
       switchView(btn.dataset.target);
       if (mqMobile.matches) toggleMenu(false);
@@ -2282,8 +2395,325 @@ function formatDayLabel(year, month, dayNumber) {
   return `${weekday} ${String(dayNumber).padStart(2, '0')}`;
 }
 
+function normalizeFacturaRow(raw) {
+  const row = {
+    id: raw.id ?? raw.nroFactura ?? raw.NroFactura,
+    cliente: raw.cliente || raw.Cliente || '',
+    nroFactura: raw.nroFactura ?? raw.NroFactura ?? '',
+    totales: Number(raw.totales ?? raw.Totales ?? raw.total ?? 0),
+    envio: Number(raw.envio ?? raw.Envio ?? 0),
+    totalConEnvio: Number(raw.totalConEnvio ?? raw.TotalConEnvio ?? 0),
+    tipoPagoId: raw.tipoPagoId ?? raw.id_tipo_pago ?? raw.tipo_pago_id ?? null,
+    tipoPago: raw.tipoPago || raw.tipo_pago || '',
+    estadoId: raw.estadoId ?? raw.id_estado ?? raw.id_estados_financiera ?? null,
+    estado: raw.estado || raw.estado_financiera || raw.nombre || '',
+    fecha: raw.fecha || raw.created_at || raw.updated_at || '',
+    pagoMixto: raw.pagomixto ?? raw.pagoMixto ?? raw.pago_mixto ?? '',
+    comentario: raw.comentario || '',
+  };
+  const cobrarCalc = calcularCobrar(row);
+  return { ...row, cobrar: Number(raw.cobrar ?? cobrarCalc) };
+}
+
+function renderFacturasTabla(rows) {
+  if (!tablaFacturasBody) return;
+  initFacturasColumnWidthSetter();
+  const filteredRows = rows.filter((row) => {
+    const matchCliente = textMatchesAllTokens(row.cliente, facturasFilters.cliente);
+    const matchFecha = !facturasFilters.fecha || (row.fecha || '').includes(facturasFilters.fecha);
+    const matchNro = !facturasFilters.nroFactura || String(row.nroFactura || '').toLowerCase().includes(facturasFilters.nroFactura);
+    const matchTotal =
+      !facturasFilters.totales ||
+      String(row.totales || '')
+        .toLowerCase()
+        .includes(facturasFilters.totales);
+    const matchTotalEnv =
+      !facturasFilters.totalConEnvio ||
+      String(row.totalConEnvio || '')
+        .toLowerCase()
+        .includes(facturasFilters.totalConEnvio);
+    const matchCobrar =
+      !facturasFilters.cobrar ||
+      String(row.cobrar || '')
+        .toLowerCase()
+        .includes(facturasFilters.cobrar);
+    const matchTipoPago =
+      !facturasFilters.tipoPago ||
+      (row.tipoPago || '').toLowerCase().includes(facturasFilters.tipoPago) ||
+      String(row.tipoPagoId || '').includes(facturasFilters.tipoPago);
+    const matchEstado =
+      !facturasFilters.estado ||
+      (row.estado || '').toLowerCase().includes(facturasFilters.estado) ||
+      String(row.estadoId || '').includes(facturasFilters.estado);
+    return matchCliente && matchFecha && matchNro && matchTotal && matchTotalEnv && matchCobrar && matchTipoPago && matchEstado;
+  });
+  facturasTotalPages = Math.max(1, Math.ceil(filteredRows.length / facturasPageSize));
+  facturasPage = Math.min(facturasPage, facturasTotalPages);
+  const offset = (facturasPage - 1) * facturasPageSize;
+  const pageRows = filteredRows.slice(offset, offset + facturasPageSize);
+  tablaFacturasBody.innerHTML = '';
+  const opcionesPago = (facturasTipoPagos.length ? facturasTipoPagos : sampleFacturasTipoPagos).map((o) => ({
+    value: String(o.value),
+    label: o.label || o.nombre || o.tipo_pago || '',
+  }));
+  const opcionesEstado = (facturasEstados.length ? facturasEstados : sampleFacturasEstados).map((o) => ({
+    value: String(o.value),
+    label: o.label || o.nombre || '',
+  }));
+  pageRows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const selectPago = document.createElement('select');
+    selectPago.className = 'factura-select';
+    selectPago.dataset.id = row.id;
+    selectPago.dataset.field = 'tipoPagoId';
+    opcionesPago.forEach((opt) => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (String(row.tipoPagoId ?? '') === opt.value) option.selected = true;
+      selectPago.appendChild(option);
+    });
+    if (selectPago.selectedOptions[0]) selectPago.selectedOptions[0].style.fontWeight = '700';
+
+    const selectEstado = document.createElement('select');
+    selectEstado.className = 'factura-select';
+    selectEstado.dataset.id = row.id;
+    selectEstado.dataset.field = 'estadoId';
+    opcionesEstado.forEach((opt) => {
+      const option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (String(row.estadoId ?? '') === opt.value) option.selected = true;
+      selectEstado.appendChild(option);
+    });
+    if (selectEstado.selectedOptions[0]) selectEstado.selectedOptions[0].style.fontWeight = '700';
+
+    tr.innerHTML = `
+      <td>${row.cliente || ''}</td>
+      <td>${row.fecha ? formatDate(row.fecha) : ''}</td>
+      <td>${row.nroFactura || ''}</td>
+      <td>${formatMoney(row.totales)}</td>
+      <td>${formatMoney(row.envio)}</td>
+      <td>${formatMoney(row.totalConEnvio || row.totales)}</td>
+      <td>${formatMoney(row.cobrar)}</td>
+      <td class="factura-select-cell"></td>
+      <td class="factura-select-cell"></td>
+      <td>${row.pagoMixto || ''}</td>
+      <td class="factura-comment-cell"></td>
+    `;
+    tr.querySelector('.factura-select-cell:nth-child(8)').appendChild(selectPago);
+    tr.querySelector('.factura-select-cell:nth-child(9)').appendChild(selectEstado);
+    const commentInput = document.createElement('input');
+    commentInput.type = 'text';
+    commentInput.className = 'factura-input';
+    commentInput.dataset.id = row.id;
+    commentInput.dataset.field = 'comentario';
+    commentInput.value = row.comentario || '';
+    const commentCell = tr.querySelector('.factura-comment-cell');
+    if (commentCell) commentCell.appendChild(commentInput);
+    tablaFacturasBody.appendChild(tr);
+  });
+  if (facturasPageInfo) {
+    facturasPageInfo.textContent = `Página ${facturasPage} de ${facturasTotalPages}`;
+  }
+  if (facturasPrev) facturasPrev.disabled = facturasPage <= 1;
+  if (facturasNext) facturasNext.disabled = facturasPage >= facturasTotalPages;
+  if (statusFacturas) statusFacturas.textContent = `${filteredRows.length} facturas`;
+  applyFacturasStoredWidths();
+}
+
+function applyFacturasStoredWidths() {
+  if (!facturasTable || !facturasColumnWidths.length) return;
+  const rows = Array.from(facturasTable.querySelectorAll('tr'));
+  facturasColumnWidths.forEach((w, idx) => {
+    if (!w) return;
+    rows.forEach((row) => {
+      const cell = row.children[idx];
+      if (cell) {
+        cell.style.width = `${w}px`;
+        cell.style.minWidth = `${w}px`;
+        cell.style.maxWidth = `${w}px`;
+      }
+    });
+  });
+}
+
+function handleFacturaSelectChange(e) {
+  const control = e.target.closest('.factura-select, .factura-input');
+  if (!control) return;
+  const { id, field } = control.dataset;
+  if (!id || !field) return;
+  const value = control.value;
+  if (control.tagName === 'SELECT') {
+    Array.from(control.options).forEach((opt) => {
+      opt.style.fontWeight = opt.selected ? '700' : '400';
+    });
+  }
+  updateFacturaField(id, field, value);
+}
+
+async function loadFacturas() {
+  if (!tablaFacturasBody) return;
+  try {
+    if (statusFacturas) statusFacturas.textContent = 'Cargando...';
+    if (USE_SAMPLE_FALLBACK) {
+      facturasRows = sampleFacturas.map((r) => normalizeFacturaRow(r));
+      facturasTipoPagos = sampleFacturasTipoPagos;
+      facturasEstados = sampleFacturasEstados;
+      renderFacturasTabla(facturasRows);
+      facturasLoaded = true;
+      if (statusFacturas) statusFacturas.textContent = 'Modo muestra activo (USE_SAMPLE_FALLBACK)';
+      return;
+    }
+    const res = await fetch('/api/facturas');
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.toLowerCase().includes('application/json')) {
+      const text = await res.text();
+      throw new Error('Respuesta no es JSON (¿falta el endpoint /api/facturas?)');
+    }
+    const data = await res.json();
+    facturasTipoPagos = (data.tipoPagos || data.tiposPago || []).map((t) => ({
+      value: t.id ?? t.value,
+      label: t.tipo_pago || t.nombre || t.label,
+    }));
+    facturasEstados = (data.estados || []).map((t) => ({
+      value: t.id ?? t.value,
+      label: t.nombre || t.label,
+    }));
+    const rows = data.facturas || data.data || [];
+    facturasRows = rows.map((r) => normalizeFacturaRow(r));
+    facturasPage = 1;
+    renderFacturasTabla(facturasRows);
+    facturasLoaded = true;
+    if (statusFacturas) statusFacturas.textContent = `${rows.length} facturas`;
+  } catch (error) {
+    if (statusFacturas) statusFacturas.textContent = error.message || 'No se pudieron cargar las facturas';
+  }
+}
+
+async function updateFacturaField(id, field, value) {
+  const row = facturasRows.find((r) => String(r.id) === String(id));
+  const prevState = row ? { ...row } : null;
+  if (row) {
+    if (field === 'tipoPagoId') {
+      row.tipoPagoId = Number(value);
+      const match = facturasTipoPagos.find((o) => String(o.value) === String(value)) || {};
+      row.tipoPago = match.label || row.tipoPago || '';
+    } else if (field === 'estadoId') {
+      row.estadoId = Number(value);
+      const match = facturasEstados.find((o) => String(o.value) === String(value)) || {};
+      row.estado = match.label || row.estado || '';
+    } else if (field === 'comentario') {
+      row.comentario = value || '';
+    }
+    renderFacturasTabla(facturasRows);
+  }
+  if (USE_SAMPLE_FALLBACK) {
+    if (statusFacturas) statusFacturas.textContent = 'Cambio aplicado en modo muestra';
+    return;
+  }
+  try {
+    if (statusFacturas) statusFacturas.textContent = 'Guardando...';
+    const res = await fetch(`/api/facturas/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (!res.ok) throw new Error(`No se pudo actualizar (${res.status})`);
+    if (statusFacturas) statusFacturas.textContent = 'Actualizado';
+  } catch (error) {
+    if (prevState && row) {
+      Object.assign(row, prevState);
+      renderFacturasTabla(facturasRows);
+    }
+    const offlineMsg = !navigator.onLine ? 'Sin conexión. No se guardó el cambio.' : null;
+    const message = offlineMsg || error.message || 'No se pudo actualizar la factura';
+    if (statusFacturas) statusFacturas.textContent = message;
+    window.alert(message);
+  }
+}
+
+function initFacturasColumnWidthSetter() {
+  if (!facturasTable) return;
+  const headers = Array.from(facturasTable.querySelectorAll('thead th'));
+  if (!headers.length) return;
+  headers.forEach((th, idx) => {
+    if (th.dataset.widthListener === '1') return;
+    th.dataset.widthListener = '1';
+    th.addEventListener('dblclick', () => {
+      const currentWidth = th.getBoundingClientRect().width || 120;
+      const input = window.prompt('Ancho de columna (px):', String(Math.round(currentWidth)));
+      if (input === null) return;
+      const newWidth = Number(input);
+      if (!Number.isFinite(newWidth) || newWidth < 50) return;
+      facturasColumnWidths[idx] = newWidth;
+      applyFacturasStoredWidths();
+    });
+  });
+}
+
+function initFacturas() {
+  if (tablaFacturasBody) tablaFacturasBody.addEventListener('change', handleFacturaSelectChange);
+  if (facturasPrev)
+    facturasPrev.addEventListener('click', () => {
+      if (facturasPage > 1) {
+        facturasPage -= 1;
+        renderFacturasTabla(facturasRows);
+      }
+    });
+  if (facturasNext)
+    facturasNext.addEventListener('click', () => {
+      if (facturasPage < facturasTotalPages) {
+        facturasPage += 1;
+        renderFacturasTabla(facturasRows);
+      }
+    });
+  if (facturasPageSizeSelect) {
+    facturasPageSizeSelect.value = String(facturasPageSize);
+    facturasPageSizeSelect.addEventListener('change', () => {
+      facturasPageSize = Number(facturasPageSizeSelect.value) || 10;
+      facturasPage = 1;
+      renderFacturasTabla(facturasRows);
+    });
+  }
+  if (facturasRefresh) {
+    facturasRefresh.addEventListener('click', () => {
+      facturasPage = 1;
+      loadFacturas();
+    });
+  }
+  const filterInputs = [
+    { el: facturasFilterCliente, key: 'cliente' },
+    { el: facturasFilterFecha, key: 'fecha' },
+    { el: facturasFilterNro, key: 'nroFactura' },
+    { el: facturasFilterTotal, key: 'totales' },
+    { el: facturasFilterTotalEnvio, key: 'totalConEnvio' },
+    { el: facturasFilterCobrar, key: 'cobrar' },
+    { el: facturasFilterTipoPago, key: 'tipoPago' },
+    { el: facturasFilterEstado, key: 'estado' },
+  ];
+  filterInputs.forEach(({ el, key }) => {
+    if (!el) return;
+    el.addEventListener('input', (e) => {
+      facturasFilters[key] = (e.target.value || '').trim().toLowerCase();
+      facturasPage = 1;
+      renderFacturasTabla(facturasRows);
+    });
+  });
+}
+
 function switchView(target) {
-  const views = [viewDashboard, viewEmpleados, viewClientes, viewIa, viewSalon, viewPedidos, viewMercaderia];
+  const views = [
+    viewDashboard,
+    viewEmpleados,
+    viewClientes,
+    viewIa,
+    viewSalon,
+    viewPedidos,
+    viewMercaderia,
+    viewFacturas,
+  ];
   views.forEach((v) => v.classList.add('hidden'));
 
   if (target === 'empleados') {
@@ -2304,6 +2734,9 @@ function switchView(target) {
   } else if (target === 'mercaderia') {
     viewMercaderia.classList.remove('hidden');
     loadMercaderia();
+  } else if (target === 'facturas') {
+    viewFacturas.classList.remove('hidden');
+    if (!facturasLoaded) loadFacturas();
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2324,6 +2757,7 @@ initIaChat();
 initSalonResumen();
 initPedidosResumen();
 initMercaderia();
+initFacturas();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();
@@ -2332,3 +2766,4 @@ loadMensual(defaultYearMensual);
 loadVentas(defaultYearVentas);
 loadPaqueteria();
 loadPedidosClientes();
+

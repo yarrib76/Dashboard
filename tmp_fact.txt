@@ -1,0 +1,18 @@
+<section class="view hidden" id="view-facturas">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Facturas</h2>
+          <p class="status">Panel contable para consultar facturas.</p>
+        </div>
+        <span class="tag">Contabilidad</span>
+      </div>
+      <div class="card-body">
+        <p class="status">Selecciona el submenu "Facturas" para ver esta vista.</p>
+        <p class="muted">
+          Aquí podrás sumar filtros y reportes contables. Si necesitas un listado o consultas específicas,
+          avisá y lo agregamos.
+        </p>
+      </div>
+    </article>
+  </section>

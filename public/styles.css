@@ -929,6 +929,110 @@ input[type='month'] {
   gap: 8px;
 }
 
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.menu-parent {
+  justify-content: space-between;
+}
+
+.menu-parent .caret {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+
+.submenu {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 12px;
+}
+
+.side-menu.expanded .menu-group.open .submenu,
+.side-menu.open .menu-group.open .submenu {
+  display: flex;
+}
+
+.side-menu.expanded .menu-group.open .menu-parent .caret,
+.side-menu.open .menu-group.open .menu-parent .caret {
+  transform: rotate(90deg);
+}
+
+.submenu .menu-item {
+  padding-left: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.factura-select {
+  width: 100%;
+  min-width: 140px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff !important;
+  color: #0a0d18 !important;
+  font-weight: 600;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(123, 215, 255, 0.18);
+}
+
+.factura-select:focus {
+  outline: none;
+  border-color: rgba(123, 215, 255, 0.6);
+  box-shadow: 0 0 0 2px rgba(123, 215, 255, 0.25);
+}
+
+.factura-select option {
+  background: #fff !important;
+  color: #0a0d18 !important;
+  font-weight: 600;
+}
+
+.facturas-heading {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  margin-left: 0;
+}
+
+.facturas-filter-row th {
+  padding: 6px 8px;
+}
+
+.facturas-filter-row input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.factura-input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.facturas-filter-row input[type='search']::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
 .menu-item {
   cursor: pointer;
   width: 100%;
