@@ -301,9 +301,14 @@ function renderSalonVendedorasChart(rows) {
   if (!salonVendedorasChartEl) return;
   const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
   const values = rows.map((r) => Number(r.cantidad) || 0);
+  const totalV = values.reduce((acc, v) => acc + v, 0);
   if (chartSalonVendedoras) {
     chartSalonVendedoras.data.labels = labels;
     chartSalonVendedoras.data.datasets[0].data = values;
+    chartSalonVendedoras.options.plugins.tooltip.callbacks.label = (ctx) => {
+      const pct = totalV > 0 ? ((ctx.parsed.y / totalV) * 100).toFixed(1) : '0.0';
+      return `${ctx.parsed.y} ventas (${pct}%)`;
+    };
     chartSalonVendedoras.update();
     return;
   }
@@ -327,7 +332,10 @@ function renderSalonVendedorasChart(rows) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => ` ${ctx.parsed.y} ventas`,
+            label: (ctx) => {
+              const pct = totalV > 0 ? ((ctx.parsed.y / totalV) * 100).toFixed(1) : '0.0';
+              return `${ctx.parsed.y} ventas (${pct}%)`;
+            },
           },
         },
       },
@@ -337,6 +345,7 @@ function renderSalonVendedorasChart(rows) {
     },
   });
 }
+
 
 function initPedidosResumen() {
   if (!pedidosDesdeInput || !pedidosHastaInput) return;
