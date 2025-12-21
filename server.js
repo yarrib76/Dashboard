@@ -1680,6 +1680,50 @@ app.get('/api/comisiones/resumen', async (req, res) => {
   }
 });
 
+app.get('/api/comisiones/tardes', async (req, res) => {
+  try {
+    const year = Number.parseInt(req.query.year, 10);
+    const month = Number.parseInt(req.query.month, 10);
+    if (!year || !month) return res.status(400).json({ message: 'year y month requeridos' });
+
+    const desdeDate = new Date(year, month - 1, 1, 0, 0, 0);
+    const hastaDate = new Date(year, month, 1, 0, 0, 0);
+    const desde = formatDateTimeLocal(desdeDate);
+    const hasta = formatDateTimeLocal(hastaDate);
+
+    const [rows] = await pool.query(
+      `SELECT
+         u.id,
+         u.name AS nombre,
+         COALESCE(t.tardes, 0) AS tardes
+       FROM users u
+       LEFT JOIN (
+         SELECT
+           f.id_user,
+           CAST(SUM(
+             CASE
+               WHEN DAYOFWEEK(f.fecha_ingreso) = 7 AND TIMEDIFF(TIME(f.fecha_ingreso), '09:00:00') > '00:05:00' THEN 1
+               WHEN DAYOFWEEK(f.fecha_ingreso) <> 7 AND TIMEDIFF(TIME(f.fecha_ingreso), COALESCE(u2.hora_ingreso, '09:00:00')) > '00:05:00' THEN 1
+               ELSE 0
+             END
+           ) AS SIGNED) AS tardes
+         FROM fichaje f
+         INNER JOIN users u2 ON u2.id = f.id_user
+         WHERE f.fecha_ingreso >= ?
+           AND f.fecha_ingreso < ?
+         GROUP BY f.id_user
+       ) t ON t.id_user = u.id
+       WHERE u.id_roles NOT IN (1, 4)
+       ORDER BY COALESCE(t.tardes, 0) DESC, u.name ASC`,
+      [desde, hasta]
+    );
+
+    res.json({ data: rows, year, month });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar tardes de comisiones', error: error.message });
+  }
+});
+
 app.get('/api/salon/resumen', async (req, res) => {
   try {
     const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();

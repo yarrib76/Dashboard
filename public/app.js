@@ -99,6 +99,10 @@ const sampleFacturasEstados = [
   { value: 2, label: 'Cobrado' },
   { value: 3, label: 'Anulado' },
 ];
+const sampleComisionesTardes = [
+  { nombre: 'Empleado Demo', tardes: 6, descuento: 0 },
+  { nombre: 'Empleado Test', tardes: 5, descuento: 0 },
+];
 
 const statusEncuestas = document.getElementById('status-encuestas');
 const statusProductividad = document.getElementById('status-productividad');
@@ -266,6 +270,8 @@ const comisionesPorcentajeEl = document.getElementById('comisiones-total-porcent
 const comisionesEmpleadosEl = document.getElementById('comisiones-total-empleados');
 const comisionesPagarEl = document.getElementById('comisiones-total-pagar');
 const comisionesStatus = document.getElementById('status-comisiones');
+const comisionesTardesBody = document.querySelector('#tabla-comisiones-tardes tbody');
+const comisionesTardesStatus = document.getElementById('status-comisiones-tardes');
 let clientesPage = 1;
 let clientesPageSize = 10;
 let clientesTotalPages = 1;
@@ -322,6 +328,7 @@ let comisionesTotal = 0;
 let comisionesPorcentaje = 1.5;
 let comisionesEmpleados = 1;
 let comisionesLoaded = false;
+let comisionesTardesRows = [];
 
 function textMatchesAllTokens(text, filter) {
   if (!filter) return true;
@@ -2740,11 +2747,76 @@ function renderComisionesPanel() {
   const empleados = Math.max(1, Number(comisionesEmpleados) || 1);
   const porcentaje = Math.max(0, Number(comisionesPorcentaje) || 0);
   const total = Number(comisionesTotal) || 0;
-  const monto = empleados > 0 ? (total * (porcentaje / 100)) / empleados : 0;
+  const monto = getBaseComisionPorEmpleado();
   if (comisionesTotalEl) comisionesTotalEl.textContent = formatMoney(total);
   if (comisionesPorcentajeEl) comisionesPorcentajeEl.textContent = `${porcentaje.toFixed(2)}%`;
   if (comisionesEmpleadosEl) comisionesEmpleadosEl.textContent = String(empleados);
   if (comisionesPagarEl) comisionesPagarEl.textContent = formatMoney(monto);
+}
+
+function getTotalComisionPool() {
+  const porcentaje = Math.max(0, Number(comisionesPorcentaje) || 0);
+  const total = Number(comisionesTotal) || 0;
+  return total * (porcentaje / 100);
+}
+
+function getBaseComisionPorEmpleado() {
+  const empleados = Math.max(1, Number(comisionesEmpleados) || 1);
+  const pool = getTotalComisionPool();
+  return empleados > 0 ? pool / empleados : 0;
+}
+
+function renderComisionesTardes() {
+  if (!comisionesTardesBody) return;
+  comisionesTardesBody.innerHTML = '';
+  const baseComision = getBaseComisionPorEmpleado();
+  const prelim = comisionesTardesRows.map((row) => {
+    const desc = Math.max(0, Number(row.descuento) || 0);
+    const penalizado = desc > 0;
+    const deduccion = penalizado ? baseComision * (desc / 100) : 0;
+    const valor = baseComision - deduccion;
+    return { desc, penalizado, deduccion, valor };
+  });
+  const totalDeduccion = prelim.reduce((acc, r) => acc + r.deduccion, 0);
+  const beneficiarios = prelim.filter((r) => !r.penalizado).length || 0;
+  const extra = beneficiarios > 0 ? totalDeduccion / beneficiarios : 0;
+
+  comisionesTardesRows.forEach((row, idx) => {
+    const info = prelim[idx];
+    const valor = info.penalizado ? info.valor : info.valor + extra;
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = '100';
+    input.step = '0.1';
+    input.value = String(info.desc);
+    input.addEventListener('input', () => {
+      const val = Number(input.value);
+      comisionesTardesRows[idx].descuento = Number.isFinite(val) ? val : 0;
+      renderComisionesTardes();
+    });
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.nombre || ''}</td>
+      <td>${row.tardes ?? 0}</td>
+      <td class="comisiones-desc-cell"></td>
+      <td>${formatMoney(valor)}</td>
+    `;
+    const descCell = tr.querySelector('.comisiones-desc-cell');
+    if (descCell) descCell.appendChild(input);
+    comisionesTardesBody.appendChild(tr);
+  });
+}
+
+function getComisionesYearMonth() {
+  ensureComisionesFechas();
+  const desdeVal = comisionesDesdeInput?.value;
+  if (!desdeVal) {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  }
+  const d = new Date(`${desdeVal}T00:00:00`);
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
 async function loadComisionesResumen() {
@@ -2759,6 +2831,8 @@ async function loadComisionesResumen() {
       comisionesLoaded = true;
       renderComisionesPanel();
       if (comisionesStatus) comisionesStatus.textContent = 'Modo muestra activo (USE_SAMPLE_FALLBACK)';
+      comisionesTardesRows = sampleComisionesTardes;
+      renderComisionesTardes();
       return;
     }
     const params = new URLSearchParams({ desde, hasta });
@@ -2780,6 +2854,37 @@ async function loadComisionesResumen() {
   }
 }
 
+async function loadComisionesTardes() {
+  const { year, month } = getComisionesYearMonth();
+  try {
+    if (comisionesTardesStatus) comisionesTardesStatus.textContent = 'Cargando...';
+    if (USE_SAMPLE_FALLBACK) {
+      comisionesTardesRows = sampleComisionesTardes.map((r) => ({ ...r }));
+      renderComisionesTardes();
+      if (comisionesTardesStatus) comisionesTardesStatus.textContent = 'Modo muestra activo (USE_SAMPLE_FALLBACK)';
+      return;
+    }
+    const params = new URLSearchParams({ year, month });
+    const res = await fetch(`/api/comisiones/tardes?${params.toString()}`);
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.toLowerCase().includes('application/json')) {
+      const text = await res.text();
+      console.error('Respuesta inesperada comisiones/tardes:', text);
+      throw new Error('Respuesta no es JSON (falta /api/comisiones/tardes?)');
+    }
+    const data = await res.json();
+    comisionesTardesRows = (data.data || []).map((r) => ({
+      ...r,
+      descuento: 0,
+    }));
+    renderComisionesTardes();
+    if (comisionesTardesStatus) comisionesTardesStatus.textContent = '';
+  } catch (error) {
+    if (comisionesTardesStatus) comisionesTardesStatus.textContent = error.message || 'No se pudo cargar tardes';
+  }
+}
+
 function initComisiones() {
   ensureComisionesFechas();
   if (comisionesPorcentajeInput) {
@@ -2788,6 +2893,7 @@ function initComisiones() {
       const val = Number(comisionesPorcentajeInput.value);
       comisionesPorcentaje = Number.isFinite(val) ? val : comisionesPorcentaje;
       renderComisionesPanel();
+      renderComisionesTardes();
     });
   }
   if (comisionesEmpleadosInput) {
@@ -2796,24 +2902,28 @@ function initComisiones() {
       const val = Number(comisionesEmpleadosInput.value);
       comisionesEmpleados = Number.isFinite(val) && val > 0 ? val : comisionesEmpleados;
       renderComisionesPanel();
+      renderComisionesTardes();
     });
   }
   if (comisionesDesdeInput) {
     comisionesDesdeInput.addEventListener('change', () => {
       ensureComisionesFechas();
       loadComisionesResumen();
+      loadComisionesTardes();
     });
   }
   if (comisionesHastaInput) {
     comisionesHastaInput.addEventListener('change', () => {
       ensureComisionesFechas();
       loadComisionesResumen();
+      loadComisionesTardes();
     });
   }
   if (comisionesRefreshBtn) {
     comisionesRefreshBtn.addEventListener('click', () => {
       ensureComisionesFechas();
       loadComisionesResumen();
+      loadComisionesTardes();
     });
   }
   renderComisionesPanel();
@@ -2858,9 +2968,9 @@ function switchView(target) {
     viewComisiones.classList.remove('hidden');
     if (!comisionesLoaded) {
       loadComisionesResumen();
-    } else {
-      renderComisionesPanel();
     }
+    loadComisionesTardes();
+    renderComisionesPanel();
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
