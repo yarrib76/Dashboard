@@ -830,6 +830,7 @@ app.get('/api/empleados/tardes', async (req, res) => {
          t.diaNum,
          t.diaStr,
          t.primeraEntrada,
+         t.comentario,
          CASE
            WHEN DAYOFWEEK(t.diaStr) = 7 AND TIMEDIFF(TIME(t.primeraEntrada), '09:00:00') > '00:05:00' THEN 1
            WHEN DAYOFWEEK(t.diaStr) = 7 AND TIMEDIFF(TIME(t.primeraEntrada), '09:00:00') > '00:00:01' AND TIMEDIFF(TIME(t.primeraEntrada), '09:00:00') < '00:05:00' THEN 2
@@ -853,7 +854,8 @@ app.get('/api/empleados/tardes', async (req, res) => {
            DATE(f.fecha_ingreso) AS diaStr,
            DAY(f.fecha_ingreso) AS diaNum,
            MIN(f.fecha_ingreso) AS primeraEntrada,
-           COALESCE(MAX(u.hora_ingreso), '09:00:00') AS horaIngresoRef
+           COALESCE(MAX(u.hora_ingreso), '09:00:00') AS horaIngresoRef,
+           MAX(f.Comentarios) AS comentario
          FROM fichaje f
          INNER JOIN users u ON u.id = f.id_user
          WHERE f.id_user = ?
@@ -878,7 +880,7 @@ app.get('/api/empleados/tardes', async (req, res) => {
       else if (r.fichaje === 2) status = 'amarillo';
       else if (r.fichaje === 1) status = 'rojo';
       const minutos = r.diffSeconds != null ? Math.ceil(Math.max(0, Number(r.diffSeconds) || 0) / 60) : null;
-      entradasMap.set(key, { status, minutos });
+      entradasMap.set(key, { status, minutos, comentario: r.comentario || '' });
     });
 
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -887,9 +889,9 @@ app.get('/api/empleados/tardes', async (req, res) => {
       const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const entry = entradasMap.get(dateStr);
       if (entry) {
-        dias.push({ dia: d, status: entry.status, minutos: entry.minutos });
+        dias.push({ dia: d, status: entry.status, minutos: entry.minutos, comentario: entry.comentario || '' });
       } else {
-        dias.push({ dia: d, status: 'sin_registro', minutos: null });
+        dias.push({ dia: d, status: 'sin_registro', minutos: null, comentario: '' });
       }
     }
 
@@ -897,6 +899,27 @@ app.get('/api/empleados/tardes', async (req, res) => {
   } catch (error) {
     console.error('Error /api/empleados/tardes', error);
     res.status(500).json({ message: 'Error al cargar llegadas', error: error.message });
+  }
+});
+
+app.put('/api/empleados/tardes/comentario', async (req, res) => {
+  try {
+    const userId = Number.parseInt(req.body.userId, 10);
+    const comentario = req.body.comentario || '';
+    if (!userId) return res.status(400).json({ message: 'userId requerido' });
+    if (!req.body.fecha) return res.status(400).json({ message: 'fecha requerida' });
+    const fecha = parseISODate(req.body.fecha);
+    const fechaStr = fecha.toISOString().slice(0, 10);
+
+    await pool.query('UPDATE fichaje SET Comentarios = ? WHERE id_user = ? AND DATE(fecha_ingreso) = ?', [
+      comentario,
+      userId,
+      fechaStr,
+    ]);
+
+    res.json({ ok: true, fecha: fechaStr, comentario });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar comentario', error: error.message });
   }
 });
 

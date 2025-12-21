@@ -165,6 +165,10 @@ const calendarTitle = document.getElementById('calendar-title');
 const calendarClose = document.getElementById('calendar-close');
 const calendarGrid = document.getElementById('calendar-grid');
 const calendarStatus = document.getElementById('calendar-status');
+let calendarCurrentUserId = null;
+let calendarCurrentYear = null;
+let calendarCurrentMonth = null;
+let calendarDiasData = [];
 const neOverlay = document.getElementById('ne-overlay');
 const neTitle = document.getElementById('ne-title');
 const neClose = document.getElementById('ne-close');
@@ -2340,6 +2344,9 @@ function initNoEncuestadosModal() {
       if (e.target === neOverlay) closeNoEncuestadosModal();
     });
   }
+  if (calendarGrid) {
+    calendarGrid.addEventListener('click', onCalendarDayClick);
+  }
   if (nePrev)
     nePrev.addEventListener('click', () => {
       if (nePage > 1) loadNoEncuestados(nePage - 1);
@@ -2367,6 +2374,9 @@ async function loadCalendario(userId, nombre, year, month) {
   try {
     const safeYear = Number(year) || new Date().getFullYear();
     const safeMonth = Number(month) || new Date().getMonth() + 1;
+    calendarCurrentUserId = userId;
+    calendarCurrentYear = safeYear;
+    calendarCurrentMonth = safeMonth;
     calendarTitle.textContent = `Calendario de ${nombre} (${safeYear}-${String(safeMonth).padStart(2, '0')})`;
     calendarGrid.innerHTML = '';
     calendarStatus.textContent = 'Cargando...';
@@ -2376,7 +2386,11 @@ async function loadCalendario(userId, nombre, year, month) {
       throw new Error(errData.message || `Error ${res.status}`);
     }
     const data = await res.json();
-    renderCalendario(data.dias || [], safeYear, safeMonth);
+    calendarDiasData = (data.dias || []).map((d) => ({
+      ...d,
+      comentario: d.comentario || '',
+    }));
+    renderCalendario(calendarDiasData, safeYear, safeMonth);
     calendarStatus.textContent = '';
     calendarOverlay.classList.add('open');
   } catch (error) {
@@ -2401,9 +2415,19 @@ function renderCalendario(dias, year, month) {
         : 'gray';
     div.className = `day-card ${cls}`;
     const label = formatDayLabel(year, month, d.dia);
+    const hasComment = !!(d.comentario && String(d.comentario).trim());
+    const hasEntry = d.minutos !== null;
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d.dia).padStart(2, '0')}`;
+    div.dataset.date = dateStr;
+    div.dataset.comment = d.comentario || '';
+    div.dataset.hasEntry = hasEntry ? '1' : '0';
+    const commentAttr = hasComment ? ` title="${(d.comentario || '').replace(/"/g, "'")}"` : '';
     div.innerHTML = `
-      <p class="day-number">${label}</p>
+      <div class="day-head">
+        <p class="day-number">${label}</p>
+      </div>
       <p class="status">${d.minutos != null ? `${d.minutos} min tarde` : 'Sin registro'}</p>
+      ${hasComment ? `<div class="comment-indicator-wrap"><span class="comment-indicator"${commentAttr}>&#9993;</span></div>` : ''}
     `;
     calendarGrid.appendChild(div);
   });
@@ -2415,6 +2439,45 @@ function formatDayLabel(year, month, dayNumber) {
   const weekDays = ['DO', 'LU', 'MA', 'MI', 'JU', 'VI', 'SA'];
   const weekday = weekDays[date.getDay()] || '';
   return `${weekday} ${String(dayNumber).padStart(2, '0')}`;
+}
+
+async function saveCalendarioComentario(dateStr, comentario) {
+  if (!calendarCurrentUserId) return;
+  try {
+    calendarStatus.textContent = 'Guardando...';
+    if (USE_SAMPLE_FALLBACK) {
+      calendarStatus.textContent = 'Modo muestra activo (comentario no guardado)';
+      return;
+    }
+    const res = await fetch('/api/empleados/tardes/comentario', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: calendarCurrentUserId, fecha: dateStr, comentario }),
+    });
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    const match = calendarDiasData.find((d) => {
+      const dStr = `${calendarCurrentYear}-${String(calendarCurrentMonth).padStart(2, '0')}-${String(d.dia).padStart(2, '0')}`;
+      return dStr === dateStr;
+    });
+    if (match) match.comentario = comentario;
+    renderCalendario(calendarDiasData, calendarCurrentYear, calendarCurrentMonth);
+    calendarStatus.textContent = 'Comentario guardado';
+  } catch (error) {
+    calendarStatus.textContent = error.message || 'No se pudo guardar el comentario';
+    window.alert(calendarStatus.textContent);
+  }
+}
+
+function onCalendarDayClick(e) {
+  const card = e.target.closest('.day-card');
+  if (!card) return;
+  const hasEntry = card.dataset.hasEntry === '1';
+  if (!hasEntry) return;
+  const dateStr = card.dataset.date;
+  const current = card.dataset.comment || '';
+  const input = window.prompt('Comentario de llegada', current);
+  if (input === null) return;
+  saveCalendarioComentario(dateStr, input.trim());
 }
 
 function normalizeFacturaRow(raw) {
