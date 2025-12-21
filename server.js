@@ -1657,6 +1657,29 @@ app.put('/api/facturas/:id', async (req, res) => {
   }
 });
 
+app.get('/api/comisiones/resumen', async (req, res) => {
+  try {
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const desdeDate = req.query.desde ? parseISODate(req.query.desde) : inicioMes;
+    const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : hoy;
+    const desde = desdeDate.toISOString().slice(0, 10);
+    const hasta = hastaDate.toISOString().slice(0, 10);
+
+    const [[row]] = await pool.query(
+      `SELECT ROUND(SUM(CASE WHEN Descuento IS NOT NULL OR Descuento = 0 THEN Descuento ELSE total END), 2) AS totalFacturado
+       FROM facturah
+       WHERE DATE(fecha) BETWEEN ? AND ?`,
+      [desde, hasta]
+    );
+
+    const totalFacturado = Number(row?.totalFacturado) || 0;
+    res.json({ totalFacturado, desde, hasta });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al calcular comisiones', error: error.message });
+  }
+});
+
 app.get('/api/salon/resumen', async (req, res) => {
   try {
     const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();

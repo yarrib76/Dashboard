@@ -183,6 +183,7 @@ const viewSalon = document.getElementById('view-salon');
 const viewPedidos = document.getElementById('view-pedidos');
 const viewMercaderia = document.getElementById('view-mercaderia');
 const viewFacturas = document.getElementById('view-facturas');
+const viewComisiones = document.getElementById('view-comisiones');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -255,6 +256,16 @@ const facturasFilterTotalEnvio = document.getElementById('filter-facturas-total-
 const facturasFilterCobrar = document.getElementById('filter-facturas-cobrar');
 const facturasFilterTipoPago = document.getElementById('filter-facturas-tipo-pago');
 const facturasFilterEstado = document.getElementById('filter-facturas-estado');
+const comisionesDesdeInput = document.getElementById('comisiones-desde');
+const comisionesHastaInput = document.getElementById('comisiones-hasta');
+const comisionesPorcentajeInput = document.getElementById('comisiones-porcentaje');
+const comisionesEmpleadosInput = document.getElementById('comisiones-empleados');
+const comisionesRefreshBtn = document.getElementById('comisiones-refrescar');
+const comisionesTotalEl = document.getElementById('comisiones-total');
+const comisionesPorcentajeEl = document.getElementById('comisiones-total-porcentaje');
+const comisionesEmpleadosEl = document.getElementById('comisiones-total-empleados');
+const comisionesPagarEl = document.getElementById('comisiones-total-pagar');
+const comisionesStatus = document.getElementById('status-comisiones');
 let clientesPage = 1;
 let clientesPageSize = 10;
 let clientesTotalPages = 1;
@@ -307,6 +318,10 @@ const facturasFilters = {
   tipoPago: '',
   estado: '',
 };
+let comisionesTotal = 0;
+let comisionesPorcentaje = 1.5;
+let comisionesEmpleados = 1;
+let comisionesLoaded = false;
 
 function textMatchesAllTokens(text, filter) {
   if (!filter) return true;
@@ -2627,7 +2642,7 @@ async function updateFacturaField(id, field, value) {
       Object.assign(row, prevState);
       renderFacturasTabla(facturasRows);
     }
-    const offlineMsg = !navigator.onLine ? 'Sin conexión. No se guardó el cambio.' : null;
+    const offlineMsg = !navigator.onLine ? 'Sin conexion. No se guardo el cambio.' : null;
     const message = offlineMsg || error.message || 'No se pudo actualizar la factura';
     if (statusFacturas) statusFacturas.textContent = message;
     window.alert(message);
@@ -2703,6 +2718,107 @@ function initFacturas() {
   });
 }
 
+function toISODateInput(dateObj) {
+  return dateObj.toISOString().slice(0, 10);
+}
+
+function getDefaultComisionesRange() {
+  const hoy = new Date();
+  const hasta = new Date(hoy.getFullYear(), hoy.getMonth(), 19);
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 20);
+  return { desde: toISODateInput(desde), hasta: toISODateInput(hasta) };
+}
+
+function ensureComisionesFechas() {
+  if (!comisionesDesdeInput || !comisionesHastaInput) return;
+  const { desde, hasta } = getDefaultComisionesRange();
+  if (!comisionesDesdeInput.value) comisionesDesdeInput.value = desde;
+  if (!comisionesHastaInput.value) comisionesHastaInput.value = hasta;
+}
+
+function renderComisionesPanel() {
+  const empleados = Math.max(1, Number(comisionesEmpleados) || 1);
+  const porcentaje = Math.max(0, Number(comisionesPorcentaje) || 0);
+  const total = Number(comisionesTotal) || 0;
+  const monto = empleados > 0 ? (total * (porcentaje / 100)) / empleados : 0;
+  if (comisionesTotalEl) comisionesTotalEl.textContent = formatMoney(total);
+  if (comisionesPorcentajeEl) comisionesPorcentajeEl.textContent = `${porcentaje.toFixed(2)}%`;
+  if (comisionesEmpleadosEl) comisionesEmpleadosEl.textContent = String(empleados);
+  if (comisionesPagarEl) comisionesPagarEl.textContent = formatMoney(monto);
+}
+
+async function loadComisionesResumen() {
+  if (!comisionesDesdeInput || !comisionesHastaInput) return;
+  ensureComisionesFechas();
+  const desde = comisionesDesdeInput.value;
+  const hasta = comisionesHastaInput.value;
+  try {
+    if (comisionesStatus) comisionesStatus.textContent = 'Cargando...';
+    if (USE_SAMPLE_FALLBACK) {
+      comisionesTotal = 150000;
+      comisionesLoaded = true;
+      renderComisionesPanel();
+      if (comisionesStatus) comisionesStatus.textContent = 'Modo muestra activo (USE_SAMPLE_FALLBACK)';
+      return;
+    }
+    const params = new URLSearchParams({ desde, hasta });
+    const res = await fetch(`/api/comisiones/resumen?${params.toString()}`);
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.toLowerCase().includes('application/json')) {
+      const text = await res.text();
+      console.error('Respuesta inesperada comisiones:', text);
+      throw new Error('Respuesta no es JSON (falta /api/comisiones/resumen?)');
+    }
+    const data = await res.json();
+    comisionesTotal = Number(data.totalFacturado || 0);
+    comisionesLoaded = true;
+    renderComisionesPanel();
+    if (comisionesStatus) comisionesStatus.textContent = '';
+  } catch (error) {
+    if (comisionesStatus) comisionesStatus.textContent = error.message || 'No se pudo cargar comisiones';
+  }
+}
+
+function initComisiones() {
+  ensureComisionesFechas();
+  if (comisionesPorcentajeInput) {
+    comisionesPorcentajeInput.value = String(comisionesPorcentaje);
+    comisionesPorcentajeInput.addEventListener('input', () => {
+      const val = Number(comisionesPorcentajeInput.value);
+      comisionesPorcentaje = Number.isFinite(val) ? val : comisionesPorcentaje;
+      renderComisionesPanel();
+    });
+  }
+  if (comisionesEmpleadosInput) {
+    comisionesEmpleadosInput.value = String(comisionesEmpleados);
+    comisionesEmpleadosInput.addEventListener('input', () => {
+      const val = Number(comisionesEmpleadosInput.value);
+      comisionesEmpleados = Number.isFinite(val) && val > 0 ? val : comisionesEmpleados;
+      renderComisionesPanel();
+    });
+  }
+  if (comisionesDesdeInput) {
+    comisionesDesdeInput.addEventListener('change', () => {
+      ensureComisionesFechas();
+      loadComisionesResumen();
+    });
+  }
+  if (comisionesHastaInput) {
+    comisionesHastaInput.addEventListener('change', () => {
+      ensureComisionesFechas();
+      loadComisionesResumen();
+    });
+  }
+  if (comisionesRefreshBtn) {
+    comisionesRefreshBtn.addEventListener('click', () => {
+      ensureComisionesFechas();
+      loadComisionesResumen();
+    });
+  }
+  renderComisionesPanel();
+}
+
 function switchView(target) {
   const views = [
     viewDashboard,
@@ -2713,6 +2829,7 @@ function switchView(target) {
     viewPedidos,
     viewMercaderia,
     viewFacturas,
+    viewComisiones,
   ];
   views.forEach((v) => v.classList.add('hidden'));
 
@@ -2737,6 +2854,13 @@ function switchView(target) {
   } else if (target === 'facturas') {
     viewFacturas.classList.remove('hidden');
     if (!facturasLoaded) loadFacturas();
+  } else if (target === 'comisiones') {
+    viewComisiones.classList.remove('hidden');
+    if (!comisionesLoaded) {
+      loadComisionesResumen();
+    } else {
+      renderComisionesPanel();
+    }
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2758,6 +2882,7 @@ initSalonResumen();
 initPedidosResumen();
 initMercaderia();
 initFacturas();
+initComisiones();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();
@@ -2766,4 +2891,5 @@ loadMensual(defaultYearMensual);
 loadVentas(defaultYearVentas);
 loadPaqueteria();
 loadPedidosClientes();
+
 

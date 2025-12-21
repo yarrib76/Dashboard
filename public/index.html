@@ -55,13 +55,17 @@
               <span class="label">Contabilidad</span>
               <span class="caret">></span>
             </button>
-            <div class="submenu" data-parent="contabilidad">
-              <button class="menu-item submenu-item" data-target="facturas">
-                <span class="icon">#</span>
-                <span class="label">Facturas</span>
-              </button>
-            </div>
+          <div class="submenu" data-parent="contabilidad">
+            <button class="menu-item submenu-item" data-target="facturas">
+              <span class="icon">#</span>
+              <span class="label">Facturas</span>
+            </button>
+            <button class="menu-item submenu-item" data-target="comisiones">
+              <span class="icon">%</span>
+              <span class="label">Comisiones</span>
+            </button>
           </div>
+        </div>
           <button class="menu-item" data-target="mercaderia">
             <span class="icon">📦</span>
             <span class="label">Mercadería</span>
@@ -639,6 +643,55 @@
         </label>
       </div>
       <p class="status" id="status-facturas"></p>
+    </article>
+  </section>
+
+    <section class="view hidden" id="view-comisiones">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Comisiones</h2>
+          <p class="status">Calculador de comisiones por periodo.</p>
+        </div>
+      </div>
+      <div class="filters-row">
+        <label>
+          <span>Desde</span>
+          <input type="date" id="comisiones-desde" />
+        </label>
+        <label>
+          <span>Hasta</span>
+          <input type="date" id="comisiones-hasta" />
+        </label>
+        <label>
+          <span>% Comision</span>
+          <input type="number" id="comisiones-porcentaje" step="0.1" min="0" value="1.5" />
+        </label>
+        <label>
+          <span>Cant. empleados</span>
+          <input type="number" id="comisiones-empleados" min="1" value="1" />
+        </label>
+        <button id="comisiones-refrescar" type="button">Actualizar</button>
+      </div>
+      <div class="stat-grid">
+        <div class="stat">
+          <p class="label">Total facturado</p>
+          <p class="value" id="comisiones-total">$0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Porcentaje comision</p>
+          <p class="value" id="comisiones-total-porcentaje">1.5%</p>
+        </div>
+        <div class="stat">
+          <p class="label">Cantidad de empleados</p>
+          <p class="value" id="comisiones-total-empleados">1</p>
+        </div>
+        <div class="stat">
+          <p class="label">Comision a pagar</p>
+          <p class="value" id="comisiones-total-pagar">$0</p>
+        </div>
+      </div>
+      <p class="status" id="status-comisiones"></p>
     </article>
   </section>
   <div class="modal-overlay" id="merc-chart-overlay">
