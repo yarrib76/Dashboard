@@ -10,6 +10,10 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <link
+      rel="stylesheet"
+      href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css"
+    />
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   </head>
@@ -66,10 +70,23 @@
             </button>
           </div>
         </div>
-          <button class="menu-item" data-target="mercaderia">
-            <span class="icon">📦</span>
-            <span class="label">Mercadería</span>
-          </button>
+          <div class="menu-group" data-group="mercaderia">
+            <button class="menu-item menu-parent" data-toggle="mercaderia">
+              <span class="icon">📦</span>
+              <span class="label">Mercadería</span>
+              <span class="caret">></span>
+            </button>
+            <div class="submenu" data-parent="mercaderia">
+              <button class="menu-item submenu-item" data-target="mercaderia">
+                <span class="icon">📦</span>
+                <span class="label">Articulos Mas Vendido</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="abm">
+                <span class="icon">📦</span>
+                <span class="label">ABM</span>
+              </button>
+            </div>
+          </div>
         </nav>
         <button class="menu-item logout" id="logout-btn">
           <span class="icon">↩</span>
@@ -514,7 +531,7 @@
     <article class="card wide">
       <div class="actions between">
         <div>
-          <h2>Mercadería</h2>
+          <h2>Articulos Mas Vendido</h2>
           <p class="status">Gestión y seguimiento de mercadería</p>
         </div>
       </div>
@@ -580,6 +597,35 @@
         </label>
       </div>
       <p class="status" id="merc-status"></p>
+    </article>
+  </section>
+
+  <section class="view hidden" id="view-abm">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>ABM Articulos</h2>
+          <p class="status">Listado general de artículos con acciones rápidas.</p>
+        </div>
+        <button id="abm-refresh" type="button">Actualizar</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="abm-table">
+          <thead>
+            <tr>
+              <th data-sort="articulo">Articulo</th>
+              <th data-sort="detalle">Detalle</th>
+              <th data-sort="proveedorSku">ProveedorSKU</th>
+              <th data-sort="cantidad">Cantidad</th>
+              <th data-sort="enPedido">En Pedido</th>
+              <th data-sort="precioVenta">Precio Venta</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="status" id="abm-status"></p>
     </article>
   </section>
 
@@ -792,6 +838,24 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="abm-barcode-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Codigo de Barras</h3>
+        <button id="abm-barcode-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body barcode-body">
+        <div class="barcode-preview">
+          <svg id="abm-barcode-svg"></svg>
+          <p class="barcode-code" id="abm-barcode-code"></p>
+          <p class="barcode-text" id="abm-barcode-text"></p>
+        </div>
+        <button id="abm-barcode-print" type="button">Imprimir</button>
+        <p class="status" id="abm-barcode-status"></p>
+      </div>
+    </div>
+  </div>
+
     <div class="modal-overlay" id="modal-overlay">
       <div class="modal">
         <div class="modal-header">
@@ -887,6 +951,9 @@
       </div>
     </div>
 
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

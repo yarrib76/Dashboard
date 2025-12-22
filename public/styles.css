@@ -176,6 +176,11 @@ body.menu-open .menu-backdrop {
   text-align: left;
 }
 
+#abm-table th,
+#abm-table td {
+  border: 1px solid var(--border);
+}
+
 .table th[data-sort] {
   cursor: pointer;
   position: relative;
@@ -740,6 +745,96 @@ input[type='month'] {
 
 .table tbody tr:hover {
   background: rgba(123, 215, 255, 0.08);
+}
+
+#abm-table {
+  table-layout: fixed;
+}
+
+#abm-table th:nth-child(2),
+#abm-table td:nth-child(2) {
+  width: 34ch;
+  white-space: normal;
+}
+
+#abm-table th:nth-child(3),
+#abm-table td:nth-child(3) {
+  width: 12ch;
+  white-space: nowrap;
+}
+
+.abm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.abm-action {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 8px;
+}
+
+.barcode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  text-align: center;
+}
+
+.barcode-preview svg {
+  width: 260px;
+  height: 60px;
+}
+
+.barcode-code {
+  margin: 6px 0 0;
+  font-weight: 600;
+}
+
+.barcode-text {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #abm-barcode-overlay,
+  #abm-barcode-overlay * {
+    visibility: visible;
+  }
+
+  #abm-barcode-overlay {
+    position: static;
+    inset: auto;
+    display: block !important;
+    background: none;
+    padding: 0;
+  }
+
+  #abm-barcode-overlay .modal {
+    border: none;
+    box-shadow: none;
+    background: none;
+    max-width: none;
+  }
+
+  #abm-barcode-overlay .modal-header,
+  #abm-barcode-close,
+  #abm-barcode-status,
+  #abm-barcode-print {
+    display: none !important;
+  }
+
+  #abm-barcode-overlay .barcode-body {
+    padding: 0;
+  }
 }
 
 .badge {

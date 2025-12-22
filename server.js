@@ -1153,6 +1153,124 @@ app.get('/api/proveedores', async (_req, res) => {
   }
 });
 
+app.get('/api/mercaderia/abm', async (req, res) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(5, Number.parseInt(req.query.pageSize, 10) || 10));
+    const termRaw = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const term = termRaw ? `%${termRaw}%` : null;
+    const sortKey = typeof req.query.sort === 'string' ? req.query.sort.trim() : 'articulo';
+    const sortDir = req.query.dir === 'desc' ? 'desc' : 'asc';
+
+    const where = [];
+    const params = [];
+    if (term) {
+      where.push('(Arti.Articulo LIKE ? OR Arti.Detalle LIKE ? OR Arti.ProveedorSKU LIKE ?)');
+      params.push(term, term, term);
+    }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const sortMap = {
+      articulo: 'Arti.Articulo',
+      detalle: 'Arti.Detalle',
+      proveedorSku: 'Arti.ProveedorSKU',
+      cantidad: 'Arti.Cantidad',
+      enPedido: 'enPedido',
+      precioVenta: 'repoArt.PrecioVenta',
+    };
+    const orderBy = sortMap[sortKey] || sortMap.articulo;
+
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(DISTINCT Arti.Articulo) AS total
+       FROM articulos AS Arti
+       INNER JOIN reportearticulo AS repoArt ON Arti.Articulo = repoArt.Articulo
+       ${whereSql}`,
+      params
+    );
+
+    const total = Number(countRow?.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const offset = (safePage - 1) * pageSize;
+
+    const [rows] = await pool.query(
+      `SELECT
+         Arti.Articulo AS articulo,
+         Arti.Detalle AS detalle,
+         Arti.ProveedorSKU AS proveedorSku,
+         COALESCE(Arti.Cantidad, 0) AS cantidad,
+         COALESCE(SUM(CASE WHEN Control.estado = 1 THEN pedidoTemp.Cantidad ELSE 0 END), 0) AS enPedido,
+         repoArt.PrecioVenta AS precioVenta,
+         Arti.ImageName AS imageName,
+         Arti.Web AS web
+       FROM articulos AS Arti
+       LEFT JOIN pedidotemp AS pedidoTemp ON Arti.Articulo = pedidoTemp.Articulo
+       LEFT JOIN controlpedidos AS Control ON pedidoTemp.NroPedido = Control.nropedido
+       INNER JOIN reportearticulo AS repoArt ON Arti.Articulo = repoArt.Articulo
+       ${whereSql}
+       GROUP BY Arti.Articulo, Arti.Detalle, Arti.ProveedorSKU, Arti.Cantidad, repoArt.PrecioVenta, Arti.ImageName, Arti.Web
+       ORDER BY ${orderBy} ${sortDir}
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
+    );
+
+    res.json({
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+      data: rows || [],
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar ABM de mercaderia', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/abm/all', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         Arti.Articulo AS articulo,
+         Arti.Detalle AS detalle,
+         Arti.ProveedorSKU AS proveedorSku,
+         COALESCE(Arti.Cantidad, 0) AS cantidad,
+         COALESCE(SUM(CASE WHEN Control.estado = 1 THEN pedidoTemp.Cantidad ELSE 0 END), 0) AS enPedido,
+         repoArt.PrecioVenta AS precioVenta,
+         Arti.ImageName AS imageName,
+         Arti.Web AS web
+       FROM articulos AS Arti
+       LEFT JOIN pedidotemp AS pedidoTemp ON Arti.Articulo = pedidoTemp.Articulo
+       LEFT JOIN controlpedidos AS Control ON pedidoTemp.NroPedido = Control.nropedido
+       INNER JOIN reportearticulo AS repoArt ON Arti.Articulo = repoArt.Articulo
+       GROUP BY Arti.Articulo, Arti.Detalle, Arti.ProveedorSKU, Arti.Cantidad, repoArt.PrecioVenta, Arti.ImageName, Arti.Web
+       ORDER BY Arti.Articulo`
+    );
+    res.json({ total: rows.length, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar ABM completo', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/abm/image', async (req, res) => {
+  try {
+    const articulo = req.query.articulo;
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const latestStatusSubquery =
+      '(SELECT id_provecomerce FROM statusecomercesincro ORDER BY id_provecomerce DESC LIMIT 1)';
+    const [rows] = await pool.query(
+      `SELECT imagessrc
+       FROM statusecomercesincro
+       WHERE articulo = ?
+         AND id_provecomerce = ${latestStatusSubquery}
+       LIMIT 1`,
+      [articulo]
+    );
+    const row = rows[0] || {};
+    res.json({ articulo, imagessrc: row.imagessrc || '' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar imagen ABM', error: error.message });
+  }
+});
+
 app.get('/api/mercaderia/top', async (req, res) => {
   try {
     const hoy = new Date();

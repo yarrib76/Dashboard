@@ -190,6 +190,7 @@ const viewIa = document.getElementById('view-ia');
 const viewSalon = document.getElementById('view-salon');
 const viewPedidos = document.getElementById('view-pedidos');
 const viewMercaderia = document.getElementById('view-mercaderia');
+const viewAbm = document.getElementById('view-abm');
 const viewFacturas = document.getElementById('view-facturas');
 const viewComisiones = document.getElementById('view-comisiones');
 const mercDesde = document.getElementById('merc-desde');
@@ -232,6 +233,17 @@ const mercChartOverlay = document.getElementById('merc-chart-overlay');
 const mercChartClose = document.getElementById('merc-chart-close');
 const mercChartCanvas = document.getElementById('merc-chart');
 const mercChartStatus = document.getElementById('merc-chart-status');
+const abmRefreshBtn = document.getElementById('abm-refresh');
+const abmTableBody = document.querySelector('#abm-table tbody');
+const abmTableHead = document.querySelector('#abm-table thead');
+const abmStatus = document.getElementById('abm-status');
+const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
+const abmBarcodeClose = document.getElementById('abm-barcode-close');
+const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
+const abmBarcodeCode = document.getElementById('abm-barcode-code');
+const abmBarcodeText = document.getElementById('abm-barcode-text');
+const abmBarcodeStatus = document.getElementById('abm-barcode-status');
+const abmBarcodePrint = document.getElementById('abm-barcode-print');
 const salonDesdeInput = document.getElementById('salon-desde');
 const salonHastaInput = document.getElementById('salon-hasta');
 const salonActualizarBtn = document.getElementById('salon-actualizar');
@@ -310,6 +322,8 @@ const mercProveedorSet = new Set();
 const mercMesSet = new Set();
 let mercImgZoom = 1;
 let mercChart = null;
+let abmDataTable = null;
+let abmLoaded = false;
 let facturasRows = [];
 let facturasTipoPagos = [];
 let facturasEstados = [];
@@ -1018,6 +1032,186 @@ function setMercImgZoom(factor) {
   mercImgZoom = Math.max(0.5, Math.min(4, factor));
   if (mercImgFull) mercImgFull.style.transform = `scale(${mercImgZoom})`;
 }
+
+function escapeAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function completarDetalle(texto) {
+  const base = String(texto || '');
+  if (base.length >= 29) return base;
+  return base + '_'.repeat(29 - base.length);
+}
+
+function openAbmBarcode(articulo, detalle) {
+  if (!abmBarcodeOverlay) return;
+  const code = String(articulo || '').trim();
+  const texto = completarDetalle(detalle);
+  if (abmBarcodeCode) abmBarcodeCode.textContent = code;
+  if (abmBarcodeText) abmBarcodeText.textContent = texto;
+  if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
+  if (!window.JsBarcode || !abmBarcodeSvg) {
+    if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No se pudo generar el codigo de barras.';
+    abmBarcodeOverlay.classList.add('open');
+    return;
+  }
+  try {
+    window.JsBarcode(abmBarcodeSvg, code, {
+      format: 'EAN13',
+      width: 1,
+      height: 40,
+      displayValue: false,
+    });
+  } catch (error) {
+    if (abmBarcodeStatus) {
+      abmBarcodeStatus.textContent = error.message || 'Codigo de barras invalido.';
+    }
+  }
+  abmBarcodeOverlay.classList.add('open');
+}
+
+function closeAbmBarcode() {
+  if (abmBarcodeOverlay) abmBarcodeOverlay.classList.remove('open');
+}
+
+function renderAbmTable(rows) {
+  if (!abmTableBody) return;
+  abmTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.articulo || ''}</td>
+      <td>${row.detalle || ''}</td>
+      <td>${row.proveedorSku || ''}</td>
+      <td>${row.cantidad ?? 0}</td>
+      <td>${row.enPedido ?? 0}</td>
+      <td>${formatMoney(row.precioVenta || 0)}</td>
+      <td>
+        <div class="abm-actions">
+          <button type="button" class="abm-action" data-action="barcode" data-articulo="${row.articulo || ''}">
+            Codigo Barras
+          </button>
+          <button type="button" class="abm-action" data-action="edit" data-articulo="${row.articulo || ''}">
+            Modificar
+          </button>
+          <button type="button" class="abm-action" data-action="photo" data-articulo="${row.articulo || ''}">
+            Foto
+          </button>
+        </div>
+      </td>
+    `;
+    abmTableBody.appendChild(tr);
+  });
+}
+
+async function loadAbmDataTable(force = false) {
+  if (!abmTableBody) return;
+  try {
+    if (abmLoaded && !force) return;
+    if (abmStatus) abmStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/mercaderia/abm/all');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (abmDataTable) {
+      abmDataTable.clear();
+      abmDataTable.rows.add(rows);
+      abmDataTable.draw();
+    } else if (window.DataTable) {
+      abmDataTable = new DataTable('#abm-table', {
+        data: rows,
+        columns: [
+          { data: 'articulo' },
+          { data: 'detalle' },
+          { data: 'proveedorSku' },
+          { data: 'cantidad' },
+          { data: 'enPedido' },
+          {
+            data: 'precioVenta',
+            render: (data) => formatMoney(data || 0),
+          },
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) => `
+              <div class="abm-actions">
+                <button type="button" class="abm-action" data-action="barcode" data-articulo="${escapeAttr(row.articulo)}" data-detalle="${escapeAttr(row.detalle)}">
+                  Codigo Barras
+                </button>
+                <button type="button" class="abm-action" data-action="edit" data-articulo="${escapeAttr(row.articulo)}">
+                  Modificar
+                </button>
+                <button type="button" class="abm-action" data-action="photo" data-articulo="${escapeAttr(row.articulo)}">
+                  Foto
+                </button>
+              </div>
+            `,
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[0, 'asc']],
+        autoWidth: false,
+      });
+    }
+    abmLoaded = true;
+    if (abmStatus) {
+      abmStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados';
+    }
+  } catch (error) {
+    if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar ABM';
+  }
+}
+
+function initAbm() {
+  if (!viewAbm) return;
+  if (abmRefreshBtn)
+    abmRefreshBtn.addEventListener('click', () => {
+      abmLoaded = false;
+      loadAbmDataTable(true);
+    });
+  loadAbmDataTable();
+  if (abmTableBody) {
+    abmTableBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.abm-action');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const articulo = btn.dataset.articulo;
+      if (!articulo) return;
+      if (action === 'photo') {
+        try {
+          if (abmStatus) abmStatus.textContent = 'Cargando foto...';
+          const res = await fetchJSON(`/api/mercaderia/abm/image?articulo=${encodeURIComponent(articulo)}`);
+          if (res.imagessrc) {
+            openMercImage(res.imagessrc);
+            if (abmStatus) abmStatus.textContent = '';
+          } else if (abmStatus) {
+            abmStatus.textContent = 'Sin foto disponible.';
+          }
+        } catch (error) {
+          if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar foto';
+        }
+      } else if (action === 'barcode') {
+        const detalle = btn.dataset.detalle || '';
+        openAbmBarcode(articulo, detalle);
+      }
+    });
+  }
+  if (abmBarcodeClose) abmBarcodeClose.addEventListener('click', closeAbmBarcode);
+  if (abmBarcodeOverlay)
+    abmBarcodeOverlay.addEventListener('click', (e) => {
+      if (e.target === abmBarcodeOverlay) closeAbmBarcode();
+    });
+  if (abmBarcodePrint)
+    abmBarcodePrint.addEventListener('click', () => {
+      window.print();
+    });
+}
+
 function renderPedidosVendedorasChart(rows) {
   if (!pedidosVendedorasChartEl) return;
   const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
@@ -3001,6 +3195,7 @@ function switchView(target) {
     viewSalon,
     viewPedidos,
     viewMercaderia,
+    viewAbm,
     viewFacturas,
     viewComisiones,
   ];
@@ -3024,6 +3219,9 @@ function switchView(target) {
   } else if (target === 'mercaderia') {
     viewMercaderia.classList.remove('hidden');
     loadMercaderia();
+  } else if (target === 'abm') {
+    viewAbm.classList.remove('hidden');
+    loadAbmDataTable();
   } else if (target === 'facturas') {
     viewFacturas.classList.remove('hidden');
     if (!facturasLoaded) loadFacturas();
@@ -3054,6 +3252,7 @@ initIaChat();
 initSalonResumen();
 initPedidosResumen();
 initMercaderia();
+initAbm();
 initFacturas();
 initComisiones();
 loadTransportes();
