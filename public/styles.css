@@ -779,14 +779,14 @@ input[type='month'] {
 .barcode-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   text-align: center;
 }
 
 .barcode-preview svg {
-  width: 260px;
-  height: 60px;
+  width: 320px;
+  height: 80px;
 }
 
 .barcode-code {
@@ -801,6 +801,16 @@ input[type='month'] {
 }
 
 @media print {
+  @page {
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -811,8 +821,9 @@ input[type='month'] {
   }
 
   #abm-barcode-overlay {
-    position: static;
-    inset: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
     display: block !important;
     background: none;
     padding: 0;
@@ -834,6 +845,13 @@ input[type='month'] {
 
   #abm-barcode-overlay .barcode-body {
     padding: 0;
+    align-items: center;
+    text-align: center;
+  }
+
+  .barcode-preview svg {
+    width: 380px;
+    height: 100px;
   }
 }
 
