@@ -283,6 +283,12 @@ input[type='month'] {
   align-items: center;
 }
 
+.actions.inline.no-wrap {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 .actions.inline > label,
 .actions.inline > button {
   margin: 0;
@@ -317,6 +323,38 @@ input[type='month'] {
 
 .actions.between {
   justify-content: space-between;
+}
+
+.abm-actions-header {
+  flex-wrap: nowrap;
+}
+
+.abm-actions-header > .actions.inline {
+  margin-left: auto;
+}
+
+.abm-footer-actions {
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.abm-batch-table-wrap {
+  max-height: 45vh;
+  overflow: auto;
+}
+
+.abm-link-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.abm-link-btn:hover {
+  border-color: rgba(123, 215, 255, 0.7);
 }
 
 .heading {
@@ -757,6 +795,12 @@ input[type='month'] {
   white-space: normal;
 }
 
+#abm-table th:nth-child(1),
+#abm-table td:nth-child(1) {
+  width: 16ch;
+  white-space: nowrap;
+}
+
 #abm-table th:nth-child(3),
 #abm-table td:nth-child(3) {
   width: 12ch;
@@ -779,25 +823,193 @@ input[type='month'] {
 .barcode-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
   text-align: center;
 }
 
+.barcode-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
 .barcode-preview svg {
-  width: 320px;
-  height: 80px;
+  width: 300px;
+  height: 75px;
+  display: block;
 }
 
 .barcode-code {
-  margin: 6px 0 0;
+  margin: 0;
   font-weight: 600;
 }
 
 .barcode-text {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.abm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.abm-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.abm-form-grid input,
+.abm-form-grid select,
+.abm-form-grid textarea {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+
+.abm-form-grid select,
+.abm-form-grid select option {
+  font-weight: 700;
+  color: #fff;
+}
+
+.abm-form-grid select {
+  color: #fff;
+  background: #0c0f1a;
+}
+
+.abm-form-grid textarea {
+  resize: vertical;
+}
+
+.abm-inline-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.abm-inline-group input {
+  flex: 1;
+  min-width: 0;
+}
+
+.abm-icon-btn {
+  padding: 8px 10px;
+  font-size: 14px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+}
+
+.modal.modal-wide {
+  max-width: 1400px;
+}
+
+.modal.modal-wide .modal-body {
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.abm-loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  z-index: 9999;
+}
+
+.abm-form-grid.abm-batch-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.abm-loading {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.abm-form-grid .abm-span-2 {
+  grid-column: span 2;
+}
+
+.abm-form-grid .abm-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.abm-radio-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.abm-form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.abm-calc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 36px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.abm-calc-btn:hover {
+  border-color: rgba(123, 215, 255, 0.6);
+}
+
+.abm-calc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.abm-calc-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.abm-calc-grid input {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
 }
 
 @media print {
@@ -850,8 +1062,8 @@ input[type='month'] {
   }
 
   .barcode-preview svg {
-    width: 380px;
-    height: 100px;
+    width: 340px;
+    height: 90px;
   }
 }
 

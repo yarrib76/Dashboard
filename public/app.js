@@ -244,6 +244,89 @@ const abmBarcodeCode = document.getElementById('abm-barcode-code');
 const abmBarcodeText = document.getElementById('abm-barcode-text');
 const abmBarcodeStatus = document.getElementById('abm-barcode-status');
 const abmBarcodePrint = document.getElementById('abm-barcode-print');
+const abmEditOverlay = document.getElementById('abm-edit-overlay');
+const abmEditClose = document.getElementById('abm-edit-close');
+const abmEditCancel = document.getElementById('abm-edit-cancel');
+const abmEditForm = document.getElementById('abm-edit-form');
+const abmEditStatus = document.getElementById('abm-edit-status');
+const abmEditSave = document.getElementById('abm-edit-save');
+const abmCalcOpen = document.getElementById('abm-calc-open');
+const abmCalcOverlay = document.getElementById('abm-calc-overlay');
+const abmCalcClose = document.getElementById('abm-calc-close');
+const abmCalcStatus = document.getElementById('abm-calc-status');
+const abmCalcPesos = document.getElementById('abm-calc-pesos');
+const abmCalcDolares = document.getElementById('abm-calc-dolares');
+const abmCalcVenta = document.getElementById('abm-calc-venta');
+const abmCalcGastos = document.getElementById('abm-calc-gastos');
+const abmCalcGanancia = document.getElementById('abm-calc-ganancia');
+const abmNewBtn = document.getElementById('abm-new');
+const abmBatchCalcOpen = document.getElementById('abm-batch-calc-open');
+const abmBatchCalcOverlay = document.getElementById('abm-batch-calc-overlay');
+const abmBatchCalcClose = document.getElementById('abm-batch-calc-close');
+const abmBatchCalcStatus = document.getElementById('abm-batch-calc-status');
+const abmBatchCalcPesos = document.getElementById('abm-batch-calc-pesos');
+const abmBatchCalcDolares = document.getElementById('abm-batch-calc-dolares');
+const abmBatchCalcVenta = document.getElementById('abm-batch-calc-venta');
+const abmBatchCalcGastos = document.getElementById('abm-batch-calc-gastos');
+const abmBatchCalcGanancia = document.getElementById('abm-batch-calc-ganancia');
+const abmBatchOverlay = document.getElementById('abm-batch-overlay');
+const abmBatchClose = document.getElementById('abm-batch-close');
+const abmBatchForm = document.getElementById('abm-batch-form');
+const abmBatchFormStatus = document.getElementById('abm-batch-form-status');
+const abmBatchStatus = document.getElementById('abm-batch-status');
+const abmBatchAdd = document.getElementById('abm-batch-add');
+const abmBatchSubmit = document.getElementById('abm-batch-submit');
+const abmBatchArticuloInput = document.getElementById('abm-batch-articulo');
+const abmBatchDetalleInput = document.getElementById('abm-batch-detalle');
+const abmBatchCantidadActualInput = document.getElementById('abm-batch-cantidad-actual');
+const abmBatchRestaInput = document.getElementById('abm-batch-resta');
+const abmBatchCantidadInput = document.getElementById('abm-batch-cantidad');
+const abmBatchPrecioOrigenInput = document.getElementById('abm-batch-precio-origen');
+const abmBatchPrecioConvertidoInput = document.getElementById('abm-batch-precio-convertido');
+const abmBatchDolaresInput = document.getElementById('abm-batch-dolares');
+const abmBatchPesosInput = document.getElementById('abm-batch-pesos');
+const abmBatchManualInput = document.getElementById('abm-batch-manual');
+const abmBatchPrecioManualInput = document.getElementById('abm-batch-precio-manual');
+const abmBatchGastosInput = document.getElementById('abm-batch-gastos');
+const abmBatchGananciaInput = document.getElementById('abm-batch-ganancia');
+const abmBatchProveedorSelect = document.getElementById('abm-batch-proveedor');
+const abmBatchProveedorLoading = document.getElementById('abm-batch-proveedor-loading');
+const abmBatchPaisInput = document.getElementById('abm-batch-pais');
+const abmBatchGastosProveedorInput = document.getElementById('abm-batch-gastos-proveedor');
+const abmBatchGananciaProveedorInput = document.getElementById('abm-batch-ganancia-proveedor');
+const abmBatchOrdenInput = document.getElementById('abm-batch-orden');
+const abmBatchObservacionesInput = document.getElementById('abm-batch-observaciones');
+const abmBatchSearchBtn = document.getElementById('abm-batch-search');
+const abmBatchTableEl = document.getElementById('abm-batch-table');
+const abmPickOverlay = document.getElementById('abm-pick-overlay');
+const abmPickClose = document.getElementById('abm-pick-close');
+const abmPickTableEl = document.getElementById('abm-pick-table');
+const abmPickStatus = document.getElementById('abm-pick-status');
+const abmPickLoading = document.getElementById('abm-pick-loading');
+const abmPedidosOverlay = document.getElementById('abm-pedidos-overlay');
+const abmPedidosClose = document.getElementById('abm-pedidos-close');
+const abmPedidosTableBody = document.querySelector('#abm-pedidos-table tbody');
+const abmPedidosStatus = document.getElementById('abm-pedidos-status');
+const abmArticuloInput = document.getElementById('abm-articulo');
+const abmDetalleInput = document.getElementById('abm-detalle');
+const abmCantidadActualInput = document.getElementById('abm-cantidad-actual');
+const abmRestaInput = document.getElementById('abm-resta');
+const abmCantidadInput = document.getElementById('abm-cantidad');
+const abmPrecioOrigenInput = document.getElementById('abm-precio-origen');
+const abmPrecioConvertidoInput = document.getElementById('abm-precio-convertido');
+const abmDolaresInput = document.getElementById('abm-dolares');
+const abmPesosInput = document.getElementById('abm-pesos');
+const abmManualInput = document.getElementById('abm-manual');
+const abmPrecioManualInput = document.getElementById('abm-precio-manual');
+const abmGastosInput = document.getElementById('abm-gastos');
+const abmGananciaInput = document.getElementById('abm-ganancia');
+const abmProveedorSelect = document.getElementById('abm-proveedor');
+const abmPaisInput = document.getElementById('abm-pais');
+const abmGastosProveedorInput = document.getElementById('abm-gastos-proveedor');
+const abmGananciaProveedorInput = document.getElementById('abm-ganancia-proveedor');
+const abmOrdenInput = document.getElementById('abm-orden');
+const abmObservacionesInput = document.getElementById('abm-observaciones');
+const abmProveedorLoading = document.getElementById('abm-proveedor-loading');
 const salonDesdeInput = document.getElementById('salon-desde');
 const salonHastaInput = document.getElementById('salon-hasta');
 const salonActualizarBtn = document.getElementById('salon-actualizar');
@@ -324,6 +407,15 @@ let mercImgZoom = 1;
 let mercChart = null;
 let abmDataTable = null;
 let abmLoaded = false;
+let abmProvidersLoaded = false;
+let abmCurrentArticulo = null;
+let abmDolarRate = null;
+let abmBatchTable = null;
+let abmPickTable = null;
+let abmBatchProvidersLoaded = false;
+let abmBatchCurrentArticulo = null;
+let abmPickLoaded = false;
+const abmBatchItems = new Map();
 let facturasRows = [];
 let facturasTipoPagos = [];
 let facturasEstados = [];
@@ -1079,6 +1171,585 @@ function closeAbmBarcode() {
   if (abmBarcodeOverlay) abmBarcodeOverlay.classList.remove('open');
 }
 
+function setAbmModo(opcion) {
+  const isManual = opcion === 'opcion_manual';
+  if (abmPrecioConvertidoInput) abmPrecioConvertidoInput.disabled = isManual;
+  if (abmPrecioManualInput) abmPrecioManualInput.disabled = !isManual;
+  if (abmGastosInput) abmGastosInput.disabled = !isManual;
+  if (abmGananciaInput) abmGananciaInput.disabled = !isManual;
+}
+
+function setAbmBatchModo(opcion) {
+  const isManual = opcion === 'opcion_manual';
+  if (abmBatchPrecioConvertidoInput) abmBatchPrecioConvertidoInput.disabled = isManual;
+  if (abmBatchPrecioManualInput) abmBatchPrecioManualInput.disabled = !isManual;
+  if (abmBatchGastosInput) abmBatchGastosInput.disabled = !isManual;
+  if (abmBatchGananciaInput) abmBatchGananciaInput.disabled = !isManual;
+}
+
+function clearAbmBatchForm() {
+  if (abmBatchArticuloInput) abmBatchArticuloInput.value = '';
+  if (abmBatchDetalleInput) abmBatchDetalleInput.value = '';
+  if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = '';
+  if (abmBatchCantidadInput) abmBatchCantidadInput.value = '';
+  if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = '';
+  if (abmBatchPrecioConvertidoInput) abmBatchPrecioConvertidoInput.value = '';
+  if (abmBatchPrecioManualInput) abmBatchPrecioManualInput.value = '';
+  if (abmBatchGastosInput) abmBatchGastosInput.value = '';
+  if (abmBatchGananciaInput) abmBatchGananciaInput.value = '';
+  if (abmBatchObservacionesInput) abmBatchObservacionesInput.value = '';
+  if (abmBatchRestaInput) abmBatchRestaInput.checked = false;
+  abmBatchCurrentArticulo = null;
+}
+
+function ayudaPrecio(valor) {
+  let precio = Math.round((Number(valor) || 0) * 100) / 100;
+  let guard = 0;
+  let result =
+    Math.round((precio / 0.05) * 100) / 100 - Math.floor(Math.round((precio / 0.05) * 100) / 100);
+  while (result !== 0 && guard < 10000) {
+    precio = Math.round((precio - 0.01) * 100) / 100;
+    result = Math.round((precio / 0.05) * 100) / 100 - Math.floor(Math.round((precio / 0.05) * 100) / 100);
+    guard += 1;
+  }
+  return precio;
+}
+
+function setCalcValues({ pesos = 0, dolares = 0, venta = 0, gastos = 0, ganancia = 0 }) {
+  if (abmCalcPesos) abmCalcPesos.value = pesos;
+  if (abmCalcDolares) abmCalcDolares.value = dolares;
+  if (abmCalcVenta) abmCalcVenta.value = venta;
+  if (abmCalcGastos) abmCalcGastos.value = gastos;
+  if (abmCalcGanancia) abmCalcGanancia.value = ganancia;
+}
+
+function setBatchCalcValues({ pesos = 0, dolares = 0, venta = 0, gastos = 0, ganancia = 0 }) {
+  if (abmBatchCalcPesos) abmBatchCalcPesos.value = pesos;
+  if (abmBatchCalcDolares) abmBatchCalcDolares.value = dolares;
+  if (abmBatchCalcVenta) abmBatchCalcVenta.value = venta;
+  if (abmBatchCalcGastos) abmBatchCalcGastos.value = gastos;
+  if (abmBatchCalcGanancia) abmBatchCalcGanancia.value = ganancia;
+}
+
+async function loadAbmDolarRate() {
+  if (abmDolarRate !== null) return abmDolarRate;
+  try {
+    const res = await fetchJSON('/api/dolar');
+    const rate = Number(res.precioDolar ?? res.PrecioDolar ?? res.valor ?? 0) || 0;
+    abmDolarRate = rate;
+    return abmDolarRate;
+  } catch (_err) {
+    return 0;
+  }
+}
+
+async function openAbmCalc() {
+  if (!abmCalcOverlay) return;
+  if (abmCalcStatus) abmCalcStatus.textContent = '';
+  if (!abmProvidersLoaded && abmCalcStatus) {
+    abmCalcStatus.textContent = 'Cargando proveedores...';
+  }
+
+  const isManual = !!abmManualInput?.checked;
+  const isDolares = !!abmDolaresInput?.checked;
+  if (isManual) {
+    const precioManual = Number(abmPrecioManualInput?.value) || 0;
+    const gastos = Number(abmGastosInput?.value) || 0;
+    const ganancia = Number(abmGananciaInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioManual * gastos);
+    const precioVenta = ayudaPrecio(precioManual * ganancia * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  } else if (isDolares) {
+    const dolar = await loadAbmDolarRate();
+    if (!dolar && abmCalcStatus) {
+      abmCalcStatus.textContent = 'No se pudo cargar el dolar.';
+    }
+    const precioConvertido = Number(abmPrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmGananciaProveedorInput?.value) || 0;
+    const precioConvertidoDolar = precioConvertido * (dolar || 0);
+    const precioEnPesos = ayudaPrecio(precioConvertidoDolar * gastos);
+    const precioVenta = ayudaPrecio(precioConvertidoDolar * ganancia * gastos);
+    const precioEnDolares = ayudaPrecio(precioConvertido * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: precioEnDolares, venta: precioVenta, gastos, ganancia });
+  } else {
+    const precioConvertido = Number(abmPrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmGananciaProveedorInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioConvertido * gastos);
+    const precioVenta = ayudaPrecio(precioConvertido * ganancia * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  }
+
+  abmCalcOverlay.classList.add('open');
+}
+
+function closeAbmCalc() {
+  if (abmCalcOverlay) abmCalcOverlay.classList.remove('open');
+}
+
+async function openAbmBatchCalc() {
+  if (!abmBatchCalcOverlay) return;
+  if (abmBatchCalcStatus) abmBatchCalcStatus.textContent = '';
+  if (!abmBatchProvidersLoaded && abmBatchCalcStatus) {
+    abmBatchCalcStatus.textContent = 'Cargando proveedores...';
+  }
+  const isManual = !!abmBatchManualInput?.checked;
+  const isDolares = !!abmBatchDolaresInput?.checked;
+  if (isManual) {
+    const precioManual = Number(abmBatchPrecioManualInput?.value) || 0;
+    const gastos = Number(abmBatchGastosInput?.value) || 0;
+    const ganancia = Number(abmBatchGananciaInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioManual * gastos);
+    const precioVenta = ayudaPrecio(precioManual * ganancia * gastos);
+    setBatchCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  } else if (isDolares) {
+    const dolar = await loadAbmDolarRate();
+    if (!dolar && abmBatchCalcStatus) {
+      abmBatchCalcStatus.textContent = 'No se pudo cargar el dolar.';
+    }
+    const precioConvertido = Number(abmBatchPrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmBatchGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmBatchGananciaProveedorInput?.value) || 0;
+    const precioConvertidoDolar = precioConvertido * (dolar || 0);
+    const precioEnPesos = ayudaPrecio(precioConvertidoDolar * gastos);
+    const precioVenta = ayudaPrecio(precioConvertidoDolar * ganancia * gastos);
+    const precioEnDolares = ayudaPrecio(precioConvertido * gastos);
+    setBatchCalcValues({ pesos: precioEnPesos, dolares: precioEnDolares, venta: precioVenta, gastos, ganancia });
+  } else {
+    const precioConvertido = Number(abmBatchPrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmBatchGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmBatchGananciaProveedorInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioConvertido * gastos);
+    const precioVenta = ayudaPrecio(precioConvertido * ganancia * gastos);
+    setBatchCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  }
+  abmBatchCalcOverlay.classList.add('open');
+}
+
+function closeAbmBatchCalc() {
+  if (abmBatchCalcOverlay) abmBatchCalcOverlay.classList.remove('open');
+}
+
+async function loadAbmProveedores(selected) {
+  if (!abmProveedorSelect) return;
+  try {
+    if (abmProveedorLoading) abmProveedorLoading.style.display = 'block';
+    const res = await fetchJSON('/api/proveedores/select');
+    const data = Array.isArray(res.data) ? res.data : [];
+    abmProveedorSelect.innerHTML = '';
+    data.forEach((row) => {
+      const opt = document.createElement('option');
+      opt.value = row.Nombre || row.nombre || '';
+      opt.textContent = row.Nombre || row.nombre || '';
+      abmProveedorSelect.appendChild(opt);
+    });
+    if (selected) abmProveedorSelect.value = selected;
+    abmProvidersLoaded = true;
+    if (abmEditSave) abmEditSave.disabled = false;
+    if (abmProveedorLoading) abmProveedorLoading.style.display = 'none';
+  } catch (_err) {
+    if (abmEditStatus) abmEditStatus.textContent = 'No se pudieron cargar proveedores.';
+    if (abmEditSave) abmEditSave.disabled = true;
+    if (abmProveedorLoading) abmProveedorLoading.style.display = 'none';
+  }
+}
+
+async function loadAbmBatchProveedores(selected) {
+  if (!abmBatchProveedorSelect) return;
+  try {
+    if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'block';
+    const res = await fetchJSON('/api/proveedores/select');
+    const data = Array.isArray(res.data) ? res.data : [];
+    abmBatchProveedorSelect.innerHTML = '';
+    data.forEach((row) => {
+      const opt = document.createElement('option');
+      opt.value = row.Nombre || row.nombre || '';
+      opt.textContent = row.Nombre || row.nombre || '';
+      abmBatchProveedorSelect.appendChild(opt);
+    });
+    if (selected) abmBatchProveedorSelect.value = selected;
+    abmBatchProvidersLoaded = true;
+    if (abmBatchAdd) abmBatchAdd.disabled = false;
+    if (abmBatchSubmit) abmBatchSubmit.disabled = false;
+    if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'none';
+  } catch (_err) {
+    if (abmBatchFormStatus) abmBatchFormStatus.textContent = 'No se pudieron cargar proveedores.';
+    if (abmBatchAdd) abmBatchAdd.disabled = true;
+    if (abmBatchSubmit) abmBatchSubmit.disabled = true;
+    if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'none';
+  }
+}
+
+async function loadProveedorMeta(nombre) {
+  if (!nombre) return;
+  try {
+    const params = new URLSearchParams({ proveedor_name: nombre });
+    const res = await fetchJSON(`/api/proveedores/select?${params.toString()}`);
+    const row = Array.isArray(res.data) ? res.data[0] : res.data;
+    if (!row) return;
+    if (abmPaisInput) abmPaisInput.value = row.Pais || row.pais || '';
+    if (abmGastosProveedorInput) abmGastosProveedorInput.value = row.Gastos ?? row.gastos ?? '';
+    if (abmGananciaProveedorInput) abmGananciaProveedorInput.value = row.Ganancia ?? row.ganancia ?? '';
+  } catch (_err) {
+    /* silencioso */
+  }
+}
+
+async function loadBatchProveedorMeta(nombre) {
+  if (!nombre) return;
+  try {
+    const params = new URLSearchParams({ proveedor_name: nombre });
+    const res = await fetchJSON(`/api/proveedores/select?${params.toString()}`);
+    const row = Array.isArray(res.data) ? res.data[0] : res.data;
+    if (!row) return;
+    if (abmBatchPaisInput) abmBatchPaisInput.value = row.Pais || row.pais || '';
+    if (abmBatchGastosProveedorInput) abmBatchGastosProveedorInput.value = row.Gastos ?? row.gastos ?? '';
+    if (abmBatchGananciaProveedorInput) abmBatchGananciaProveedorInput.value = row.Ganancia ?? row.ganancia ?? '';
+  } catch (_err) {
+    /* silencioso */
+  }
+}
+
+async function openAbmEdit(articulo) {
+  if (!abmEditOverlay) return;
+  abmCurrentArticulo = articulo;
+  if (abmEditSave) abmEditSave.disabled = true;
+  if (abmProveedorLoading) abmProveedorLoading.style.display = 'block';
+  if (abmEditStatus) abmEditStatus.textContent = 'Cargando...';
+  try {
+    const [artRes, ordenRes] = await Promise.all([
+      fetchJSON(`/api/mercaderia/abm/articulo?articulo=${encodeURIComponent(articulo)}`),
+      fetchJSON('/api/ordencompras'),
+    ]);
+    const row = artRes.data || {};
+    if (!abmProvidersLoaded) {
+      await loadAbmProveedores(row.Proveedor || row.proveedor || '');
+    } else if (abmProveedorSelect) {
+      abmProveedorSelect.value = row.Proveedor || row.proveedor || '';
+      if (abmEditSave) abmEditSave.disabled = false;
+      if (abmProveedorLoading) abmProveedorLoading.style.display = 'none';
+    }
+    if (abmArticuloInput) abmArticuloInput.value = row.Articulo || row.articulo || articulo || '';
+    if (abmDetalleInput) abmDetalleInput.value = row.Detalle || row.detalle || '';
+    if (abmCantidadActualInput) abmCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
+    if (abmCantidadInput) abmCantidadInput.value = '';
+    if (abmPrecioOrigenInput) abmPrecioOrigenInput.value = row.PrecioOrigen ?? row.precioOrigen ?? '';
+    if (abmPrecioConvertidoInput)
+      abmPrecioConvertidoInput.value = row.PrecioConvertido ?? row.precioConvertido ?? '';
+    if (abmPrecioManualInput) abmPrecioManualInput.value = row.PrecioManual ?? row.precioManual ?? '';
+    if (abmGastosInput) abmGastosInput.value = row.Gastos ?? row.gastos ?? '';
+    if (abmGananciaInput) abmGananciaInput.value = row.Ganancia ?? row.ganancia ?? '';
+    if (abmObservacionesInput) abmObservacionesInput.value = '';
+    if (abmOrdenInput) abmOrdenInput.value = ordenRes.numeroOrden ?? ordenRes.NumeroOrden ?? '';
+
+    const moneda = row.Moneda || row.moneda || '';
+    if (moneda === 'uSs') {
+      if (abmDolaresInput) abmDolaresInput.checked = true;
+      setAbmModo('opcion_dolares');
+    } else if (moneda === 'ARG') {
+      if (abmPesosInput) abmPesosInput.checked = true;
+      setAbmModo('opcion_pesos');
+    } else {
+      if (abmManualInput) abmManualInput.checked = true;
+      setAbmModo('opcion_manual');
+    }
+    await loadProveedorMeta(abmProveedorSelect?.value);
+    if (abmEditStatus) abmEditStatus.textContent = '';
+    abmEditOverlay.classList.add('open');
+  } catch (error) {
+    if (abmEditStatus) abmEditStatus.textContent = error.message || 'Error al cargar articulo';
+  }
+}
+
+function closeAbmEdit() {
+  if (abmEditOverlay) abmEditOverlay.classList.remove('open');
+}
+
+async function openAbmBatch() {
+  if (!abmBatchOverlay) return;
+  if (abmBatchFormStatus) abmBatchFormStatus.textContent = '';
+  if (abmBatchStatus) abmBatchStatus.textContent = '';
+  if (abmBatchAdd) abmBatchAdd.disabled = true;
+  if (abmBatchSubmit) abmBatchSubmit.disabled = true;
+  if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'block';
+  try {
+    const ordenRes = await fetchJSON('/api/ordencompras');
+    if (abmBatchOrdenInput) abmBatchOrdenInput.value = ordenRes.numeroOrden ?? ordenRes.NumeroOrden ?? '';
+    if (!abmBatchProvidersLoaded) {
+      await loadAbmBatchProveedores('');
+    } else {
+      if (abmBatchAdd) abmBatchAdd.disabled = false;
+      if (abmBatchSubmit) abmBatchSubmit.disabled = false;
+      if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'none';
+    }
+    abmBatchItems.clear();
+    renderBatchTable();
+    clearAbmBatchForm();
+    abmBatchOverlay.classList.add('open');
+  } catch (error) {
+    if (abmBatchFormStatus) abmBatchFormStatus.textContent = error.message || 'No se pudo abrir.';
+  }
+}
+
+function closeAbmBatch() {
+  if (abmBatchOverlay) abmBatchOverlay.classList.remove('open');
+}
+
+async function openAbmPick() {
+  if (!abmPickOverlay) return;
+  if (abmPickStatus) abmPickStatus.textContent = '';
+  if (abmPickOverlay) abmPickOverlay.classList.add('open');
+  if (!abmPickLoaded) {
+    if (abmPickLoading) abmPickLoading.style.display = 'flex';
+    await loadAbmPickTable();
+    if (abmPickLoading) abmPickLoading.style.display = 'none';
+  } else if (abmPickTable) {
+    abmPickTable.search('').draw();
+    const searchInput = abmPickTableEl
+      ?.closest('.dataTables_wrapper')
+      ?.querySelector('input[type="search"]');
+    if (searchInput) searchInput.value = '';
+  }
+  if (!focusAbmPickSearch()) {
+    setTimeout(focusAbmPickSearch, 150);
+    setTimeout(focusAbmPickSearch, 350);
+  }
+}
+
+function closeAbmPick() {
+  if (abmPickOverlay) abmPickOverlay.classList.remove('open');
+}
+
+function focusAbmPickSearch() {
+  const searchInput = abmPickTableEl
+    ?.closest('.dataTables_wrapper')
+    ?.querySelector('input[type="search"]');
+  if (searchInput) {
+    searchInput.focus();
+    searchInput.select();
+    return true;
+  }
+  return false;
+}
+
+function setBatchFormFromArticulo(row) {
+  if (!row) return;
+  abmBatchCurrentArticulo = row.Articulo || row.articulo || '';
+  if (abmBatchArticuloInput) abmBatchArticuloInput.value = row.Articulo || row.articulo || '';
+  if (abmBatchDetalleInput) abmBatchDetalleInput.value = row.Detalle || row.detalle || '';
+  if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
+  if (abmBatchCantidadInput) abmBatchCantidadInput.value = '';
+  if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = row.PrecioOrigen ?? row.precioOrigen ?? '';
+  if (abmBatchPrecioConvertidoInput)
+    abmBatchPrecioConvertidoInput.value = row.PrecioConvertido ?? row.precioConvertido ?? '';
+  if (abmBatchPrecioManualInput) abmBatchPrecioManualInput.value = row.PrecioManual ?? row.precioManual ?? '';
+  if (abmBatchGastosInput) abmBatchGastosInput.value = row.Gastos ?? row.gastos ?? '';
+  if (abmBatchGananciaInput) abmBatchGananciaInput.value = row.Ganancia ?? row.ganancia ?? '';
+  if (abmBatchObservacionesInput) abmBatchObservacionesInput.value = '';
+  const moneda = row.Moneda || row.moneda || '';
+  if (moneda === 'uSs') {
+    if (abmBatchDolaresInput) abmBatchDolaresInput.checked = true;
+    setAbmBatchModo('opcion_dolares');
+  } else if (moneda === 'ARG') {
+    if (abmBatchPesosInput) abmBatchPesosInput.checked = true;
+    setAbmBatchModo('opcion_pesos');
+  } else {
+    if (abmBatchManualInput) abmBatchManualInput.checked = true;
+    setAbmBatchModo('opcion_manual');
+  }
+  if (abmBatchProveedorSelect && (row.Proveedor || row.proveedor)) {
+    abmBatchProveedorSelect.value = row.Proveedor || row.proveedor || '';
+  }
+  loadBatchProveedorMeta(abmBatchProveedorSelect?.value);
+}
+
+function setBatchFormFromItem(item) {
+  if (!item) return;
+  abmBatchCurrentArticulo = item.articulo || '';
+  if (abmBatchArticuloInput) abmBatchArticuloInput.value = item.articulo || '';
+  if (abmBatchDetalleInput) abmBatchDetalleInput.value = item.detalle || '';
+  if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = item.cantidadActual ?? '';
+  if (abmBatchCantidadInput) abmBatchCantidadInput.value = item.cantidadDelta ?? 0;
+  if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = item.precioOrigen ?? '';
+  if (abmBatchPrecioConvertidoInput) abmBatchPrecioConvertidoInput.value = item.precioConvertido ?? '';
+  if (abmBatchPrecioManualInput) abmBatchPrecioManualInput.value = item.precioManual ?? '';
+  if (abmBatchGastosInput) abmBatchGastosInput.value = item.gastos ?? '';
+  if (abmBatchGananciaInput) abmBatchGananciaInput.value = item.ganancia ?? '';
+  if (abmBatchObservacionesInput) abmBatchObservacionesInput.value = item.observaciones || '';
+  if (abmBatchRestaInput) abmBatchRestaInput.checked = !!item.resta;
+  if (abmBatchProveedorSelect) abmBatchProveedorSelect.value = item.proveedor || '';
+  if (abmBatchPaisInput) abmBatchPaisInput.value = item.paisProveedor || '';
+  if (abmBatchGastosProveedorInput) abmBatchGastosProveedorInput.value = item.gastosProveedor ?? '';
+  if (abmBatchGananciaProveedorInput) abmBatchGananciaProveedorInput.value = item.gananciaProveedor ?? '';
+  if (item.opcion === 'opcion_dolares') {
+    if (abmBatchDolaresInput) abmBatchDolaresInput.checked = true;
+    setAbmBatchModo('opcion_dolares');
+  } else if (item.opcion === 'opcion_pesos') {
+    if (abmBatchPesosInput) abmBatchPesosInput.checked = true;
+    setAbmBatchModo('opcion_pesos');
+  } else {
+    if (abmBatchManualInput) abmBatchManualInput.checked = true;
+    setAbmBatchModo('opcion_manual');
+  }
+}
+
+async function loadAbmPickTable() {
+  if (!abmPickTableEl) return;
+  try {
+    if (abmPickStatus) abmPickStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/mercaderia/abm/all');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (abmPickTable) {
+      abmPickTable.clear();
+      abmPickTable.rows.add(rows);
+      abmPickTable.draw();
+    } else if (window.DataTable) {
+      abmPickTable = new DataTable('#abm-pick-table', {
+        data: rows,
+        columns: [
+          { data: 'articulo' },
+          { data: 'detalle' },
+          { data: 'cantidad' },
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) => `
+              <button type="button" class="abm-pick-add" data-articulo="${escapeAttr(row.articulo)}">
+                Agregar
+              </button>
+            `,
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[0, 'asc']],
+        autoWidth: false,
+      });
+      abmPickTable.on('draw', () => {
+        focusAbmPickSearch();
+      });
+      setTimeout(() => {
+        const searchInput = abmPickTableEl
+          ?.closest('.dataTables_wrapper')
+          ?.querySelector('input[type="search"]');
+        if (searchInput) {
+          searchInput.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Tab' || ev.shiftKey) return;
+            const firstBtn = abmPickTableEl.querySelector('tbody .abm-pick-add');
+            if (firstBtn) {
+              ev.preventDefault();
+              firstBtn.focus();
+            }
+          });
+        }
+      }, 0);
+    }
+    abmPickLoaded = true;
+    if (abmPickStatus) abmPickStatus.textContent = rows.length ? `Total articulos: ${rows.length}` : 'Sin resultados';
+  } catch (error) {
+    if (abmPickStatus) abmPickStatus.textContent = error.message || 'Error al cargar articulos';
+  } finally {
+    if (abmPickLoading) abmPickLoading.style.display = 'none';
+  }
+}
+
+function getBatchItemsArray() {
+  return Array.from(abmBatchItems.values());
+}
+
+function renderBatchTable() {
+  if (!abmBatchTableEl) return;
+  const rows = getBatchItemsArray().map((item) => {
+    const precio = item.opcion === 'opcion_manual' ? item.precioManual : item.precioConvertido;
+    return {
+      ...item,
+      precioDisplay: precio,
+    };
+  });
+  if (abmBatchTable) {
+    abmBatchTable.clear();
+    abmBatchTable.rows.add(rows);
+    abmBatchTable.draw();
+  } else if (window.DataTable) {
+    abmBatchTable = new DataTable('#abm-batch-table', {
+      data: rows,
+      columns: [
+        { data: 'articulo' },
+        { data: 'detalle' },
+        { data: 'cantidadDelta' },
+        { data: 'precioOrigen' },
+        { data: 'precioDisplay' },
+        { data: 'proveedor' },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) => `
+            <div class="abm-actions">
+              <button type="button" class="abm-batch-edit" data-articulo="${escapeAttr(row.articulo)}">Modificar</button>
+              <button type="button" class="abm-batch-remove" data-articulo="${escapeAttr(row.articulo)}">Eliminar</button>
+            </div>
+          `,
+        },
+      ],
+      pageLength: 10,
+      lengthMenu: [10, 25, 50],
+      deferRender: true,
+      order: [[0, 'asc']],
+      autoWidth: false,
+    });
+  }
+}
+
+function renderAbmPedidos(rows) {
+  if (!abmPedidosTableBody) return;
+  abmPedidosTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.nropedido ?? ''}</td>
+      <td>${row.cliente || ''}</td>
+      <td>${row.cantidad ?? ''}</td>
+      <td>${row.fecha || ''}</td>
+      <td>${row.vendedora || ''}</td>
+      <td>${row.total ?? ''}</td>
+      <td>${row.ordenWeb ?? ''}</td>
+    `;
+    abmPedidosTableBody.appendChild(tr);
+  });
+}
+
+async function openAbmPedidos(articulo) {
+  if (!abmPedidosOverlay) return;
+  if (abmPedidosStatus) abmPedidosStatus.textContent = 'Cargando...';
+  if (abmPedidosTableBody) abmPedidosTableBody.innerHTML = '';
+  try {
+    const res = await fetchJSON(`/api/mercaderia/abm/pedidos?articulo=${encodeURIComponent(articulo)}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    renderAbmPedidos(rows);
+    if (abmPedidosStatus) {
+      abmPedidosStatus.textContent = rows.length ? `Pedidos: ${rows.length}` : 'Sin pedidos.';
+    }
+    abmPedidosOverlay.classList.add('open');
+  } catch (error) {
+    if (abmPedidosStatus) abmPedidosStatus.textContent = error.message || 'Error al cargar pedidos.';
+    abmPedidosOverlay.classList.add('open');
+  }
+}
+
+function upsertBatchItem(item) {
+  if (!item?.articulo) return;
+  abmBatchItems.set(String(item.articulo), item);
+  renderBatchTable();
+}
+
+function removeBatchItem(articulo) {
+  if (!articulo) return;
+  abmBatchItems.delete(String(articulo));
+  renderBatchTable();
+}
+
 function renderAbmTable(rows) {
   if (!abmTableBody) return;
   abmTableBody.innerHTML = '';
@@ -1128,7 +1799,19 @@ async function loadAbmDataTable(force = false) {
           { data: 'detalle' },
           { data: 'proveedorSku' },
           { data: 'cantidad' },
-          { data: 'enPedido' },
+          {
+            data: 'enPedido',
+            render: (data, type, row) => {
+              if (type !== 'display') return data;
+              const value = Number(data) || 0;
+              if (value <= 0) return value;
+              return `
+                <button type="button" class="abm-link-btn abm-pedido-link" data-articulo="${escapeAttr(row.articulo)}">
+                  ${value}
+                </button>
+              `;
+            },
+          },
           {
             data: 'precioVenta',
             render: (data) => formatMoney(data || 0),
@@ -1177,6 +1860,12 @@ function initAbm() {
   loadAbmDataTable();
   if (abmTableBody) {
     abmTableBody.addEventListener('click', async (e) => {
+      const pedidosBtn = e.target.closest('.abm-pedido-link');
+      if (pedidosBtn) {
+        const articulo = pedidosBtn.dataset.articulo;
+        if (articulo) openAbmPedidos(articulo);
+        return;
+      }
       const btn = e.target.closest('.abm-action');
       if (!btn) return;
       const action = btn.dataset.action;
@@ -1198,6 +1887,8 @@ function initAbm() {
       } else if (action === 'barcode') {
         const detalle = btn.dataset.detalle || '';
         openAbmBarcode(articulo, detalle);
+      } else if (action === 'edit') {
+        openAbmEdit(articulo);
       }
     });
   }
@@ -1209,6 +1900,229 @@ function initAbm() {
   if (abmBarcodePrint)
     abmBarcodePrint.addEventListener('click', () => {
       window.print();
+    });
+  if (abmCalcOpen) abmCalcOpen.addEventListener('click', openAbmCalc);
+  if (abmCalcClose) abmCalcClose.addEventListener('click', closeAbmCalc);
+  if (abmCalcOverlay)
+    abmCalcOverlay.addEventListener('click', (e) => {
+      if (e.target === abmCalcOverlay) closeAbmCalc();
+    });
+  if (abmBatchCalcOpen) abmBatchCalcOpen.addEventListener('click', openAbmBatchCalc);
+  if (abmBatchCalcClose) abmBatchCalcClose.addEventListener('click', closeAbmBatchCalc);
+  if (abmBatchCalcOverlay)
+    abmBatchCalcOverlay.addEventListener('click', (e) => {
+      if (e.target === abmBatchCalcOverlay) closeAbmBatchCalc();
+    });
+  if (abmPedidosClose) abmPedidosClose.addEventListener('click', () => abmPedidosOverlay?.classList.remove('open'));
+  if (abmPedidosOverlay)
+    abmPedidosOverlay.addEventListener('click', (e) => {
+      if (e.target === abmPedidosOverlay) abmPedidosOverlay.classList.remove('open');
+    });
+  if (abmEditClose) abmEditClose.addEventListener('click', closeAbmEdit);
+  if (abmEditCancel) abmEditCancel.addEventListener('click', closeAbmEdit);
+  if (abmEditOverlay)
+    abmEditOverlay.addEventListener('click', (e) => {
+      if (e.target === abmEditOverlay) closeAbmEdit();
+    });
+  if (abmDolaresInput) abmDolaresInput.addEventListener('change', () => setAbmModo('opcion_dolares'));
+  if (abmPesosInput) abmPesosInput.addEventListener('change', () => setAbmModo('opcion_pesos'));
+  if (abmManualInput) abmManualInput.addEventListener('change', () => setAbmModo('opcion_manual'));
+  if (abmProveedorSelect)
+    abmProveedorSelect.addEventListener('change', (e) => {
+      loadProveedorMeta(e.target.value);
+    });
+  if (abmNewBtn) abmNewBtn.addEventListener('click', openAbmBatch);
+  if (abmBatchClose) abmBatchClose.addEventListener('click', closeAbmBatch);
+  if (abmBatchSearchBtn) abmBatchSearchBtn.addEventListener('click', openAbmPick);
+  if (abmPickClose) abmPickClose.addEventListener('click', closeAbmPick);
+  if (abmPickOverlay)
+    abmPickOverlay.addEventListener('click', (e) => {
+      if (e.target === abmPickOverlay) closeAbmPick();
+    });
+  if (abmBatchDolaresInput) abmBatchDolaresInput.addEventListener('change', () => setAbmBatchModo('opcion_dolares'));
+  if (abmBatchPesosInput) abmBatchPesosInput.addEventListener('change', () => setAbmBatchModo('opcion_pesos'));
+  if (abmBatchManualInput) abmBatchManualInput.addEventListener('change', () => setAbmBatchModo('opcion_manual'));
+  if (abmBatchProveedorSelect)
+    abmBatchProveedorSelect.addEventListener('change', (e) => {
+      loadBatchProveedorMeta(e.target.value);
+    });
+  if (abmBatchForm)
+    abmBatchForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+    });
+  if (abmPickTableEl)
+    abmPickTableEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.abm-pick-add');
+      if (!btn) return;
+      const articulo = btn.dataset.articulo;
+      if (!articulo) return;
+      try {
+        const res = await fetchJSON(`/api/mercaderia/abm/articulo?articulo=${encodeURIComponent(articulo)}`);
+        setBatchFormFromArticulo(res.data || {});
+        if (abmBatchFormStatus) abmBatchFormStatus.textContent = '';
+        closeAbmPick();
+        if (abmBatchCantidadInput) {
+          abmBatchCantidadInput.focus();
+          abmBatchCantidadInput.select();
+        }
+      } catch (error) {
+        if (abmPickStatus) abmPickStatus.textContent = error.message || 'No se pudo cargar articulo';
+      }
+    });
+  if (abmBatchAdd)
+    abmBatchAdd.addEventListener('click', () => {
+      if (!abmBatchCurrentArticulo) {
+        if (abmBatchFormStatus) abmBatchFormStatus.textContent = 'Selecciona un articulo.';
+        return;
+      }
+      if (!abmBatchProvidersLoaded || !abmBatchProveedorSelect?.value) {
+        if (abmBatchFormStatus) abmBatchFormStatus.textContent = 'Espera a que cargue el proveedor.';
+        return;
+      }
+      const opcion = abmBatchDolaresInput?.checked
+        ? 'opcion_dolares'
+        : abmBatchPesosInput?.checked
+          ? 'opcion_pesos'
+          : 'opcion_manual';
+      const item = {
+        articulo: abmBatchCurrentArticulo,
+        detalle: abmBatchDetalleInput?.value || '',
+        cantidadActual: Number(abmBatchCantidadActualInput?.value) || 0,
+        cantidadDelta: Number(abmBatchCantidadInput?.value) || 0,
+        resta: !!abmBatchRestaInput?.checked,
+        precioOrigen: Number(abmBatchPrecioOrigenInput?.value) || 0,
+        precioConvertido: Number(abmBatchPrecioConvertidoInput?.value) || 0,
+        precioManual: Number(abmBatchPrecioManualInput?.value) || 0,
+        gastos: Number(abmBatchGastosInput?.value) || 0,
+        ganancia: Number(abmBatchGananciaInput?.value) || 0,
+        proveedor: abmBatchProveedorSelect?.value || '',
+        observaciones: abmBatchObservacionesInput?.value || '',
+        opcion,
+        paisProveedor: abmBatchPaisInput?.value || '',
+        gastosProveedor: Number(abmBatchGastosProveedorInput?.value) || 0,
+        gananciaProveedor: Number(abmBatchGananciaProveedorInput?.value) || 0,
+      };
+      upsertBatchItem(item);
+      clearAbmBatchForm();
+      if (abmBatchFormStatus) abmBatchFormStatus.textContent = 'Agregado.';
+    });
+  if (abmBatchTableEl)
+    abmBatchTableEl.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.abm-batch-edit');
+      const delBtn = e.target.closest('.abm-batch-remove');
+      if (editBtn) {
+        const articulo = editBtn.dataset.articulo;
+        const item = abmBatchItems.get(String(articulo));
+        if (item) setBatchFormFromItem(item);
+      } else if (delBtn) {
+        const articulo = delBtn.dataset.articulo;
+        removeBatchItem(articulo);
+      }
+    });
+  if (abmBatchSubmit)
+    abmBatchSubmit.addEventListener('click', async () => {
+      const items = getBatchItemsArray();
+      if (!items.length) {
+        if (abmBatchStatus) abmBatchStatus.textContent = 'No hay articulos para modificar.';
+        return;
+      }
+      if (abmBatchSubmit) abmBatchSubmit.disabled = true;
+      if (abmBatchStatus) abmBatchStatus.textContent = 'Guardando...';
+      try {
+        const res = await fetch('/api/mercaderia/abm/batch', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ordenCompra: Number(abmBatchOrdenInput?.value) || 0,
+            items,
+          }),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(errText || `Error ${res.status}`);
+        }
+        const data = await res.json();
+        if (abmBatchStatus) abmBatchStatus.textContent = 'Operacion completada.';
+        if (abmDataTable && Array.isArray(data?.data)) {
+          data.data.forEach((row) => {
+            abmDataTable.rows().every(function updateRow() {
+              const current = this.data();
+              if (String(current.articulo) === String(row.articulo)) {
+                this.data({ ...current, ...row });
+              }
+            });
+          });
+          abmDataTable.draw(false);
+        }
+        if (abmBatchOrdenInput) {
+          const currentOrden = Number(abmBatchOrdenInput.value) || 0;
+          abmBatchOrdenInput.value = currentOrden + 1;
+        }
+        abmBatchItems.clear();
+        renderBatchTable();
+        clearAbmBatchForm();
+      } catch (error) {
+        if (abmBatchStatus) abmBatchStatus.textContent = error.message || 'Error al guardar.';
+      } finally {
+        if (abmBatchSubmit) abmBatchSubmit.disabled = false;
+      }
+    });
+  if (abmEditForm)
+    abmEditForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!abmCurrentArticulo) return;
+      if (!abmProvidersLoaded || !abmProveedorSelect?.value) {
+        if (abmEditStatus) abmEditStatus.textContent = 'Espera a que cargue el proveedor.';
+        return;
+      }
+      const opcion = abmDolaresInput?.checked
+        ? 'opcion_dolares'
+        : abmPesosInput?.checked
+          ? 'opcion_pesos'
+          : 'opcion_manual';
+      const payload = {
+        detalle: abmDetalleInput?.value || '',
+        cantidadDelta: Number(abmCantidadInput?.value) || 0,
+        resta: !!abmRestaInput?.checked,
+        precioOrigen: Number(abmPrecioOrigenInput?.value) || 0,
+        precioConvertido: Number(abmPrecioConvertidoInput?.value) || 0,
+        precioManual: Number(abmPrecioManualInput?.value) || 0,
+        gastos: Number(abmGastosInput?.value) || 0,
+        ganancia: Number(abmGananciaInput?.value) || 0,
+        proveedor: abmProveedorSelect?.value || '',
+        observaciones: abmObservacionesInput?.value || '',
+        ordenCompra: Number(abmOrdenInput?.value) || 0,
+        opcion,
+        paisProveedor: abmPaisInput?.value || '',
+        gastosProveedor: Number(abmGastosProveedorInput?.value) || 0,
+        gananciaProveedor: Number(abmGananciaProveedorInput?.value) || 0,
+      };
+      try {
+        if (abmEditStatus) abmEditStatus.textContent = 'Guardando...';
+        const res = await fetch(`/api/mercaderia/abm/articulo/${encodeURIComponent(abmCurrentArticulo)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(errText || `Error ${res.status}`);
+        }
+        const data = await res.json();
+        if (abmEditStatus) abmEditStatus.textContent = 'Actualizado';
+        if (abmDataTable && data?.data) {
+          abmDataTable.rows().every(function updateRow() {
+            const row = this.data();
+            if (String(row.articulo) === String(data.data.articulo)) {
+              this.data({ ...row, ...data.data });
+            }
+          });
+          abmDataTable.draw(false);
+        }
+        closeAbmEdit();
+      } catch (error) {
+        if (abmEditStatus) abmEditStatus.textContent = error.message || 'No se pudo guardar';
+      }
     });
 }
 

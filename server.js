@@ -1153,6 +1153,57 @@ app.get('/api/proveedores', async (_req, res) => {
   }
 });
 
+app.get('/api/proveedores/select', async (req, res) => {
+  try {
+    const nombre = req.query.proveedor_name;
+    if (nombre) {
+      const [rows] = await pool.query(
+        `SELECT Nombre, Pais, Gastos, Ganancia
+         FROM proveedores
+         WHERE Nombre = ?
+         LIMIT 1`,
+        [nombre]
+      );
+      res.json({ data: rows || [] });
+      return;
+    }
+    const [rows] = await pool.query(
+      `SELECT Nombre, Pais, Gastos, Ganancia
+       FROM proveedores
+       ORDER BY Nombre`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar proveedores select', error: error.message });
+  }
+});
+
+app.get('/api/ordencompras', async (_req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT NumeroOrden
+       FROM ordencompras
+       LIMIT 1`
+    );
+    res.json({ numeroOrden: row?.NumeroOrden ?? 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar orden de compras', error: error.message });
+  }
+});
+
+app.get('/api/dolar', async (_req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT PrecioDolar
+       FROM PrecioDolar
+       LIMIT 1`
+    );
+    res.json({ precioDolar: row?.PrecioDolar ?? 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar dolar', error: error.message });
+  }
+});
+
 app.get('/api/mercaderia/abm', async (req, res) => {
   try {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
@@ -1250,6 +1301,375 @@ app.get('/api/mercaderia/abm/all', async (_req, res) => {
   }
 });
 
+app.get('/api/mercaderia/abm/articulo', async (req, res) => {
+  try {
+    const articulo = req.query.articulo;
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         Articulo,
+         Detalle,
+         Cantidad,
+         PrecioOrigen,
+         PrecioConvertido,
+         Moneda,
+         PrecioManual,
+         Gastos,
+         Ganancia,
+         Proveedor,
+         Observaciones
+       FROM articulos
+       WHERE Articulo = ?
+       LIMIT 1`,
+      [articulo]
+    );
+    const row = rows[0] || null;
+    if (!row) return res.status(404).json({ message: 'articulo no encontrado' });
+    res.json({ data: row });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulo', error: error.message });
+  }
+});
+
+app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const articulo = req.params.id;
+    const {
+      detalle,
+      cantidadDelta = 0,
+      resta = false,
+      precioOrigen = 0,
+      precioConvertido = 0,
+      precioManual = 0,
+      gastos = 0,
+      ganancia = 0,
+      proveedor = '',
+      observaciones = '',
+      ordenCompra = 0,
+      opcion = 'opcion_manual',
+      paisProveedor = '',
+      gastosProveedor = 0,
+      gananciaProveedor = 0,
+    } = req.body || {};
+
+    const [[row]] = await conn.query(
+      `SELECT Cantidad
+       FROM articulos
+       WHERE Articulo = ?
+       LIMIT 1`,
+      [articulo]
+    );
+    if (!row) return res.status(404).json({ message: 'articulo no encontrado' });
+    const baseCantidad = Number(row.Cantidad) || 0;
+    const delta = Number(cantidadDelta) || 0;
+    const nuevaCantidad = resta ? baseCantidad - delta : baseCantidad + delta;
+
+    let moneda = '';
+    let precioConvertidoFinal = Number(precioConvertido) || 0;
+    let precioManualFinal = 0;
+    let gastosFinal = 0;
+    let gananciaFinal = 0;
+    if (opcion === 'opcion_dolares') {
+      moneda = 'uSs';
+      precioManualFinal = 0;
+    } else if (opcion === 'opcion_pesos') {
+      moneda = 'ARG';
+      precioManualFinal = 0;
+    } else {
+      moneda = '';
+      precioConvertidoFinal = 0;
+      precioManualFinal = Number(precioManual) || 0;
+      gastosFinal = Number(gastos) || 0;
+      gananciaFinal = Number(ganancia) || 0;
+    }
+
+    await conn.query(
+      `UPDATE articulos
+       SET Detalle = ?,
+           Cantidad = ?,
+           PrecioOrigen = ?,
+           PrecioConvertido = ?,
+           Moneda = ?,
+           PrecioManual = ?,
+           Gastos = ?,
+           Ganancia = ?,
+           Proveedor = ?,
+           Observaciones = ?
+       WHERE Articulo = ?
+       LIMIT 1`,
+      [
+        detalle || '',
+        nuevaCantidad,
+        Number(precioOrigen) || 0,
+        precioConvertidoFinal,
+        moneda,
+        precioManualFinal,
+        gastosFinal,
+        gananciaFinal,
+        proveedor || '',
+        observaciones || '',
+        articulo,
+      ]
+    );
+
+    const tipoOrden = resta ? 1 : 2;
+    const precioArgen = opcion === 'opcion_manual' ? precioManualFinal : precioConvertidoFinal;
+    const compraGastos = opcion === 'opcion_manual' ? Number(gastos) || 0 : Number(gastosProveedor) || 0;
+    const compraGanancia = opcion === 'opcion_manual' ? Number(ganancia) || 0 : Number(gananciaProveedor) || 0;
+    const now = new Date();
+    const fechaCompra = formatDateTimeLocal(now);
+
+    const compraColumns = [
+      'OrdenCompra',
+      'Articulo',
+      'Detalle',
+      'Cantidad',
+      'PrecioOrigen',
+      'PrecioArgen',
+      'Gastos',
+      'Ganancia',
+      'Proveedor',
+      'Pais',
+      'FechaCompra',
+      'TipoOrden',
+      'Observaciones',
+    ];
+    const compraValues = [
+      Number(ordenCompra) || 0,
+      articulo,
+      detalle || '',
+      delta,
+      Number(precioOrigen) || 0,
+      precioArgen,
+      compraGastos,
+      compraGanancia,
+      proveedor || '',
+      paisProveedor || '',
+      fechaCompra,
+      tipoOrden,
+      observaciones || '',
+    ];
+
+    try {
+      await conn.query(
+        `INSERT INTO compras (${compraColumns.join(',')})
+         VALUES (${compraColumns.map(() => '?').join(',')})`,
+        compraValues
+      );
+    } catch (error) {
+      if (error.code === 'ER_BAD_FIELD_ERROR') {
+        const idx = compraColumns.indexOf('Ganancia');
+        const cols = compraColumns.filter((c) => c !== 'Ganancia');
+        const vals = compraValues.filter((_, i) => i !== idx);
+        await conn.query(
+          `INSERT INTO compras (${cols.join(',')})
+           VALUES (${cols.map(() => '?').join(',')})`,
+          vals
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    await conn.query('UPDATE ordencompras SET NumeroOrden = NumeroOrden + 1');
+    await conn.commit();
+
+    res.json({
+      ok: true,
+      data: {
+        articulo,
+        detalle: detalle || '',
+        cantidad: nuevaCantidad,
+        proveedor: proveedor || '',
+      },
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al actualizar articulo', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/mercaderia/abm/batch', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const { ordenCompra = 0, items = [] } = req.body || {};
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items requerido' });
+    }
+    const seen = new Set();
+    for (const item of items) {
+      const articulo = item?.articulo;
+      if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+      if (seen.has(String(articulo))) {
+        return res.status(400).json({ message: `articulo duplicado: ${articulo}` });
+      }
+      seen.add(String(articulo));
+    }
+
+    const updated = [];
+    for (const item of items) {
+      const articulo = item.articulo;
+      const [[row]] = await conn.query(
+        `SELECT Cantidad
+         FROM articulos
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [articulo]
+      );
+      if (!row) throw new Error(`articulo no encontrado: ${articulo}`);
+      const baseCantidad = Number(row.Cantidad) || 0;
+      const delta = Number(item.cantidadDelta) || 0;
+      const resta = !!item.resta;
+      const nuevaCantidad = resta ? baseCantidad - delta : baseCantidad + delta;
+
+      let moneda = '';
+      let precioConvertidoFinal = Number(item.precioConvertido) || 0;
+      let precioManualFinal = 0;
+      let gastosFinal = 0;
+      let gananciaFinal = 0;
+      if (item.opcion === 'opcion_dolares') {
+        moneda = 'uSs';
+        precioManualFinal = 0;
+      } else if (item.opcion === 'opcion_pesos') {
+        moneda = 'ARG';
+        precioManualFinal = 0;
+      } else {
+        moneda = '';
+        precioConvertidoFinal = 0;
+        precioManualFinal = Number(item.precioManual) || 0;
+        gastosFinal = Number(item.gastos) || 0;
+        gananciaFinal = Number(item.ganancia) || 0;
+      }
+
+      await conn.query(
+        `UPDATE articulos
+         SET Detalle = ?,
+             Cantidad = ?,
+             PrecioOrigen = ?,
+             PrecioConvertido = ?,
+             Moneda = ?,
+             PrecioManual = ?,
+             Gastos = ?,
+             Ganancia = ?,
+             Proveedor = ?,
+             Observaciones = ?
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [
+          item.detalle || '',
+          nuevaCantidad,
+          Number(item.precioOrigen) || 0,
+          precioConvertidoFinal,
+          moneda,
+          precioManualFinal,
+          gastosFinal,
+          gananciaFinal,
+          item.proveedor || '',
+          item.observaciones || '',
+          articulo,
+        ]
+      );
+
+      const tipoOrden = resta ? 1 : 2;
+      const precioArgen = item.opcion === 'opcion_manual' ? precioManualFinal : precioConvertidoFinal;
+      const compraGastos = item.opcion === 'opcion_manual' ? Number(item.gastos) || 0 : Number(item.gastosProveedor) || 0;
+      const compraGanancia =
+        item.opcion === 'opcion_manual' ? Number(item.ganancia) || 0 : Number(item.gananciaProveedor) || 0;
+      const now = new Date();
+      const fechaCompra = formatDateTimeLocal(now);
+      const orden = Number(item.ordenCompra ?? ordenCompra) || 0;
+
+      const compraColumns = [
+        'OrdenCompra',
+        'Articulo',
+        'Detalle',
+        'Cantidad',
+        'PrecioOrigen',
+        'PrecioArgen',
+        'Gastos',
+        'Ganancia',
+        'Proveedor',
+        'Pais',
+        'FechaCompra',
+        'TipoOrden',
+        'Observaciones',
+      ];
+      const compraValues = [
+        orden,
+        articulo,
+        item.detalle || '',
+        delta,
+        Number(item.precioOrigen) || 0,
+        precioArgen,
+        compraGastos,
+        compraGanancia,
+        item.proveedor || '',
+        item.paisProveedor || '',
+        fechaCompra,
+        tipoOrden,
+        item.observaciones || '',
+      ];
+
+      try {
+        await conn.query(
+          `INSERT INTO compras (${compraColumns.join(',')})
+           VALUES (${compraColumns.map(() => '?').join(',')})`,
+          compraValues
+        );
+      } catch (error) {
+        if (error.code === 'ER_BAD_FIELD_ERROR') {
+          const idx = compraColumns.indexOf('Ganancia');
+          const cols = compraColumns.filter((c) => c !== 'Ganancia');
+          const vals = compraValues.filter((_, i) => i !== idx);
+          await conn.query(
+            `INSERT INTO compras (${cols.join(',')})
+             VALUES (${cols.map(() => '?').join(',')})`,
+            vals
+          );
+        } else {
+          throw error;
+        }
+      }
+
+      updated.push({
+        articulo,
+        detalle: item.detalle || '',
+        cantidad: nuevaCantidad,
+        proveedor: item.proveedor || '',
+      });
+    }
+
+    await conn.query('UPDATE ordencompras SET NumeroOrden = NumeroOrden + 1');
+    await conn.commit();
+
+    res.json({ ok: true, data: updated });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al actualizar articulos', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/mercaderia/abm/image', async (req, res) => {
   try {
     const articulo = req.query.articulo;
@@ -1268,6 +1688,43 @@ app.get('/api/mercaderia/abm/image', async (req, res) => {
     res.json({ articulo, imagessrc: row.imagessrc || '' });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar imagen ABM', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/abm/pedidos', async (req, res) => {
+  try {
+    const articulo = req.query.articulo;
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         cp.nropedido,
+         CONCAT(c.nombre, ' ', c.apellido) AS cliente,
+         SUM(pt.Cantidad) AS cantidad,
+         DATE_FORMAT(cp.fecha, '%Y-%m-%d') AS fecha,
+         cp.vendedora,
+         cp.total,
+         cp.ordenweb
+       FROM pedidotemp pt
+       INNER JOIN controlpedidos cp ON pt.NroPedido = cp.nropedido
+       LEFT JOIN clientes c ON c.id_clientes = cp.id_cliente
+       WHERE pt.Articulo = ?
+         AND cp.estado = 1
+       GROUP BY cp.nropedido, c.nombre, c.apellido, cp.fecha, cp.vendedora, cp.total, cp.ordenweb
+       ORDER BY cp.fecha DESC`,
+      [articulo]
+    );
+    const data = rows.map((row) => ({
+      nropedido: row.nropedido,
+      cliente: row.cliente || '',
+      cantidad: row.cantidad ?? 0,
+      fecha: row.fecha || '',
+      vendedora: row.vendedora || '',
+      total: row.total,
+      ordenWeb: row.ordenweb || '',
+    }));
+    res.json({ articulo, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos del articulo', error: error.message });
   }
 });
 

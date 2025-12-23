@@ -529,7 +529,7 @@
 
   <section class="view hidden" id="view-mercaderia">
     <article class="card wide">
-      <div class="actions between">
+      <div class="actions between abm-actions-header">
         <div>
           <h2>Articulos Mas Vendido</h2>
           <p class="status">Gestión y seguimiento de mercadería</p>
@@ -607,7 +607,9 @@
           <h2>ABM Articulos</h2>
           <p class="status">Listado general de artículos con acciones rápidas.</p>
         </div>
-        <button id="abm-refresh" type="button">Actualizar</button>
+        <div class="actions inline no-wrap">
+          <button id="abm-refresh" type="button">Actualizar</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table class="table" id="abm-table">
@@ -624,6 +626,9 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+      <div class="actions inline abm-footer-actions">
+        <button id="abm-new" type="button">Modificar Articulos</button>
       </div>
       <p class="status" id="abm-status"></p>
     </article>
@@ -852,6 +857,338 @@
         </div>
         <button id="abm-barcode-print" type="button">Imprimir</button>
         <p class="status" id="abm-barcode-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-edit-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Modificar Articulo</h3>
+        <button id="abm-edit-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="abm-edit-form">
+          <div class="abm-form-grid">
+            <label>
+              <span>Articulo</span>
+              <input type="text" id="abm-articulo" readonly />
+            </label>
+            <label class="abm-span-2">
+              <span>Detalle</span>
+              <input type="text" id="abm-detalle" required />
+            </label>
+            <label>
+              <span>Cantidad actual</span>
+              <input type="number" id="abm-cantidad-actual" readonly />
+            </label>
+            <label class="abm-inline">
+              <span>Resta Articulo</span>
+              <input type="checkbox" id="abm-resta" />
+            </label>
+            <label>
+              <span>Cantidad</span>
+              <input type="number" id="abm-cantidad" />
+            </label>
+            <label>
+              <span>Precio Origen</span>
+              <input type="number" step="any" id="abm-precio-origen" required />
+            </label>
+            <label>
+              <span>Precio Convertido</span>
+              <input type="number" step="any" id="abm-precio-convertido" required />
+            </label>
+            <div class="abm-radio-group">
+              <label><input type="radio" name="abm-opcion" id="abm-dolares" value="opcion_dolares" /> Dolares</label>
+              <label><input type="radio" name="abm-opcion" id="abm-pesos" value="opcion_pesos" /> Pesos</label>
+              <label><input type="radio" name="abm-opcion" id="abm-manual" value="opcion_manual" /> Manual</label>
+            </div>
+            <label>
+              <span>Precio Manual</span>
+              <input type="number" step="any" id="abm-precio-manual" />
+            </label>
+            <label>
+              <span>Gastos</span>
+              <input type="number" step="any" id="abm-gastos" />
+            </label>
+            <label>
+              <span>Ganancia</span>
+              <input type="number" step="any" id="abm-ganancia" />
+            </label>
+            <label>
+              <span>Proveedor</span>
+              <select id="abm-proveedor"></select>
+              <small class="abm-loading" id="abm-proveedor-loading">Cargando proveedores...</small>
+            </label>
+            <label>
+              <span>Pais</span>
+              <input type="text" id="abm-pais" readonly />
+            </label>
+            <label>
+              <span>Gastos Proveedor</span>
+              <input type="number" step="any" id="abm-gastos-proveedor" readonly />
+            </label>
+            <label>
+              <span>Ganancia Proveedor</span>
+              <input type="number" step="any" id="abm-ganancia-proveedor" readonly />
+            </label>
+            <label class="abm-inline">
+              <span>Numero de Orden</span>
+              <input type="number" id="abm-orden" readonly />
+            </label>
+            <label class="abm-inline">
+              <button type="button" id="abm-calc-open" class="abm-calc-btn" title="Calculadora">🧮</button>
+            </label>
+            <label class="abm-span-2">
+              <span>Observaciones</span>
+              <textarea id="abm-observaciones" rows="4"></textarea>
+            </label>
+          </div>
+          <div class="abm-form-actions">
+            <button type="submit" id="abm-edit-save">Guardar</button>
+            <button type="button" id="abm-edit-cancel">Cancelar</button>
+          </div>
+          <p class="status" id="abm-edit-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-batch-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Modificar Articulos</h3>
+        <button id="abm-batch-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="abm-batch-form">
+          <div class="abm-form-grid abm-batch-grid">
+            <label class="abm-span-2">
+              <span>Articulo</span>
+              <div class="abm-inline-group">
+                <input type="text" id="abm-batch-articulo" readonly />
+                <button type="button" id="abm-batch-search" class="abm-icon-btn" title="Buscar articulo">🔍</button>
+              </div>
+            </label>
+            <label class="abm-span-2">
+              <span>Detalle</span>
+              <input type="text" id="abm-batch-detalle" required />
+            </label>
+            <label>
+              <span>Cantidad actual</span>
+              <input type="number" id="abm-batch-cantidad-actual" readonly />
+            </label>
+            <label class="abm-inline">
+              <span>Resta Articulo</span>
+              <input type="checkbox" id="abm-batch-resta" />
+            </label>
+            <label>
+              <span>Cantidad</span>
+              <input type="number" id="abm-batch-cantidad" />
+            </label>
+            <label>
+              <span>Precio Origen</span>
+              <input type="number" step="any" id="abm-batch-precio-origen" required />
+            </label>
+            <label>
+              <span>Precio Convertido</span>
+              <input type="number" step="any" id="abm-batch-precio-convertido" required />
+            </label>
+            <div class="abm-radio-group">
+              <label><input type="radio" name="abm-batch-opcion" id="abm-batch-dolares" value="opcion_dolares" /> Dolares</label>
+              <label><input type="radio" name="abm-batch-opcion" id="abm-batch-pesos" value="opcion_pesos" /> Pesos</label>
+              <label><input type="radio" name="abm-batch-opcion" id="abm-batch-manual" value="opcion_manual" /> Manual</label>
+            </div>
+            <label>
+              <span>Precio Manual</span>
+              <input type="number" step="any" id="abm-batch-precio-manual" />
+            </label>
+            <label>
+              <span>Gastos</span>
+              <input type="number" step="any" id="abm-batch-gastos" />
+            </label>
+            <label>
+              <span>Ganancia</span>
+              <input type="number" step="any" id="abm-batch-ganancia" />
+            </label>
+            <label>
+              <span>Proveedor</span>
+              <select id="abm-batch-proveedor"></select>
+              <small class="abm-loading" id="abm-batch-proveedor-loading">Cargando proveedores...</small>
+            </label>
+            <label>
+              <span>Pais</span>
+              <input type="text" id="abm-batch-pais" readonly />
+            </label>
+            <label>
+              <span>Gastos Proveedor</span>
+              <input type="number" step="any" id="abm-batch-gastos-proveedor" readonly />
+            </label>
+            <label>
+              <span>Ganancia Proveedor</span>
+              <input type="number" step="any" id="abm-batch-ganancia-proveedor" readonly />
+            </label>
+            <label class="abm-inline">
+              <span>Numero de Orden</span>
+              <input type="number" id="abm-batch-orden" readonly />
+            </label>
+            <label class="abm-inline">
+              <button type="button" id="abm-batch-calc-open" class="abm-calc-btn" title="Calculadora">🧮</button>
+            </label>
+            <label class="abm-span-2">
+              <span>Observaciones</span>
+              <textarea id="abm-batch-observaciones" rows="3"></textarea>
+            </label>
+          </div>
+          <div class="abm-form-actions">
+            <button type="button" id="abm-batch-add">Agregar a orden</button>
+          </div>
+          <p class="status" id="abm-batch-form-status"></p>
+        </form>
+
+        <div class="table-wrap abm-batch-table-wrap">
+          <table class="table" id="abm-batch-table">
+            <thead>
+              <tr>
+                <th>Articulo</th>
+                <th>Detalle</th>
+                <th>Cantidad</th>
+                <th>Precio Origen</th>
+                <th>Precio</th>
+                <th>Proveedor</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions inline abm-footer-actions">
+          <button type="button" id="abm-batch-submit">Modificar</button>
+        </div>
+        <p class="status" id="abm-batch-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-pick-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Seleccionar Articulo</h3>
+        <button id="abm-pick-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="abm-pick-table">
+            <thead>
+              <tr>
+                <th>Articulo</th>
+                <th>Detalle</th>
+                <th>Cantidad</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="abm-pick-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="abm-loading-overlay" id="abm-pick-loading">Cargando...</div>
+
+  <div class="modal-overlay" id="abm-batch-calc-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Calculadora</h3>
+        <button id="abm-batch-calc-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="status" id="abm-batch-calc-status"></p>
+        <div class="abm-calc-grid">
+          <label>
+            <span>Pesos</span>
+            <input type="number" step="any" id="abm-batch-calc-pesos" readonly />
+          </label>
+          <label>
+            <span>Dolares</span>
+            <input type="number" step="any" id="abm-batch-calc-dolares" readonly />
+          </label>
+          <label>
+            <span>Precio de Venta</span>
+            <input type="number" step="any" id="abm-batch-calc-venta" readonly />
+          </label>
+          <label>
+            <span>Gastos</span>
+            <input type="number" step="any" id="abm-batch-calc-gastos" readonly />
+          </label>
+          <label>
+            <span>Ganancia</span>
+            <input type="number" step="any" id="abm-batch-calc-ganancia" readonly />
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-calc-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Calculadora</h3>
+        <button id="abm-calc-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="status" id="abm-calc-status"></p>
+        <div class="abm-calc-grid">
+          <label>
+            <span>Pesos</span>
+            <input type="number" step="any" id="abm-calc-pesos" readonly />
+          </label>
+          <label>
+            <span>Dolares</span>
+            <input type="number" step="any" id="abm-calc-dolares" readonly />
+          </label>
+          <label>
+            <span>Precio de Venta</span>
+            <input type="number" step="any" id="abm-calc-venta" readonly />
+          </label>
+          <label>
+            <span>Gastos</span>
+            <input type="number" step="any" id="abm-calc-gastos" readonly />
+          </label>
+          <label>
+            <span>Ganancia</span>
+            <input type="number" step="any" id="abm-calc-ganancia" readonly />
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-pedidos-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Pedidos</h3>
+        <button id="abm-pedidos-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="abm-pedidos-table">
+            <thead>
+              <tr>
+                <th>Numero Pedido</th>
+                <th>Cliente</th>
+                <th>Cantidad</th>
+                <th>Fecha</th>
+                <th>Vendedora</th>
+                <th>Total</th>
+                <th>OrdenWeb</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="abm-pedidos-status"></p>
       </div>
     </div>
   </div>
