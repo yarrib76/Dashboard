@@ -836,22 +836,22 @@ input[type='month'] {
 }
 
 .barcode-preview svg {
-  width: 260px;
-  height: 60px;
+  width: 320px;
+  height: 80px;
   display: block;
 }
 
 .barcode-code {
   margin: 0;
   font-weight: 600;
-  font-size: 5px;
+  font-size: 10px;
   line-height: 1;
 }
 
 .barcode-text {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1;
 }
 
@@ -1067,12 +1067,13 @@ input[type='month'] {
 
   .barcode-preview svg {
     width: 6cm;
-    height: 1.5cm;
+    height: 1.7cm;
     margin-bottom: 0;
   }
 
   .barcode-preview {
     gap: 0;
+    max-width: 6cm;
   }
 
   .barcode-code {
@@ -1080,13 +1081,38 @@ input[type='month'] {
     line-height: 1;
     font-weight: 700;
     margin-top: 0;
+    font-family: "Arial Black", Arial, sans-serif;
+    color: #000;
   }
 
   .barcode-text {
-    font-size: 8pt;
+    font-size: 7pt;
     line-height: 1;
     font-weight: 700;
     margin-top: 0;
+    font-family: "Arial Black", Arial, sans-serif;
+    color: #000;
+    max-width: 6cm;
+    white-space: pre-line;
+    word-break: break-word;
+  }
+
+  .barcode-preview.is-compact .barcode-code {
+    font-size: 8pt;
+  }
+
+  .barcode-preview.is-compact .barcode-text {
+    font-size: 6pt;
+    line-height: 0.95;
+  }
+
+  .barcode-preview.is-tight .barcode-code {
+    font-size: 7pt;
+  }
+
+  .barcode-preview.is-tight .barcode-text {
+    font-size: 5.5pt;
+    line-height: 0.9;
   }
 }
 

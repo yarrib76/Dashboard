@@ -244,6 +244,7 @@ const abmBarcodeCode = document.getElementById('abm-barcode-code');
 const abmBarcodeText = document.getElementById('abm-barcode-text');
 const abmBarcodeStatus = document.getElementById('abm-barcode-status');
 const abmBarcodePrint = document.getElementById('abm-barcode-print');
+const abmBarcodePreview = document.querySelector('#abm-barcode-overlay .barcode-preview');
 const abmEditOverlay = document.getElementById('abm-edit-overlay');
 const abmEditClose = document.getElementById('abm-edit-close');
 const abmEditCancel = document.getElementById('abm-edit-cancel');
@@ -1141,13 +1142,71 @@ function completarDetalle(texto) {
   return base + '_'.repeat(29 - base.length);
 }
 
+function balanceDetalle(texto) {
+  const cleaned = String(texto || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  if (cleaned.length <= 30) return cleaned;
+  const words = cleaned.split(' ');
+  if (words.length < 2) return cleaned;
+  const target = Math.ceil(cleaned.length / 2);
+  let line1 = '';
+  let line2 = '';
+  for (let i = 0; i < words.length; i += 1) {
+    const next = line1 ? `${line1} ${words[i]}` : words[i];
+    if (next.length <= target || line1.length === 0) {
+      line1 = next;
+    } else {
+      line2 = words.slice(i).join(' ');
+      break;
+    }
+  }
+  if (!line2) return cleaned;
+  return `${line1}\n${line2}`;
+}
+
+function crearDigitoControl(codigoBarras) {
+  const base = String(codigoBarras || '');
+  if (base.length !== 12) return '';
+  const codTmp = (`0000000000000000${base}`).slice(-17);
+  let bPal = 3;
+  let calTotal = 0;
+  for (let numC = 0; numC <= 17; numC += 1) {
+    const num = Number(codTmp.substr(numC, 1)) || 0;
+    calTotal += num * bPal;
+    bPal = 4 - bPal;
+  }
+  let digito = calTotal % 10;
+  digito = digito === 0 ? 0 : 10 - digito;
+  return String(digito);
+}
+
+function buildCodigoBarras(articulo) {
+  const raw = String(articulo || '').replace(/\D/g, '');
+  if (!raw) return '';
+  if (raw.length === 13) return raw;
+  if (raw.length === 12) return raw + crearDigitoControl(raw);
+  if (raw.length <= 8) {
+    const base = `7798${raw}`;
+    if (base.length === 12) return base + crearDigitoControl(base);
+  }
+  return raw;
+}
+
 function openAbmBarcode(articulo, detalle) {
   if (!abmBarcodeOverlay) return;
-  const code = String(articulo || '').trim();
-  const texto = completarDetalle(detalle);
+  const code = buildCodigoBarras(articulo);
+  const texto = balanceDetalle(detalle);
   if (abmBarcodeCode) abmBarcodeCode.textContent = code;
   if (abmBarcodeText) abmBarcodeText.textContent = texto;
   if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
+  if (abmBarcodePreview) {
+    abmBarcodePreview.classList.remove('is-compact', 'is-tight');
+    if (texto.length > 55) {
+      abmBarcodePreview.classList.add('is-tight');
+    } else if (texto.length > 40) {
+      abmBarcodePreview.classList.add('is-compact');
+    }
+  }
   if (!window.JsBarcode || !abmBarcodeSvg) {
     if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No se pudo generar el codigo de barras.';
     abmBarcodeOverlay.classList.add('open');
@@ -1159,6 +1218,7 @@ function openAbmBarcode(articulo, detalle) {
       width: 1,
       height: 40,
       displayValue: false,
+      flat: true,
     });
   } catch (error) {
     if (abmBarcodeStatus) {
