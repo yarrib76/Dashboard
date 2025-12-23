@@ -307,6 +307,7 @@ const abmPedidosOverlay = document.getElementById('abm-pedidos-overlay');
 const abmPedidosClose = document.getElementById('abm-pedidos-close');
 const abmPedidosTableBody = document.querySelector('#abm-pedidos-table tbody');
 const abmPedidosStatus = document.getElementById('abm-pedidos-status');
+const abmPedidosDetalle = document.getElementById('abm-pedidos-detalle');
 const abmArticuloInput = document.getElementById('abm-articulo');
 const abmDetalleInput = document.getElementById('abm-detalle');
 const abmCantidadActualInput = document.getElementById('abm-cantidad-actual');
@@ -1598,7 +1599,7 @@ async function loadAbmPickTable() {
   if (!abmPickTableEl) return;
   try {
     if (abmPickStatus) abmPickStatus.textContent = 'Cargando...';
-    const res = await fetchJSON('/api/mercaderia/abm/all');
+    const res = await fetchJSON('/api/mercaderia/abm/pick');
     const rows = Array.isArray(res.data) ? res.data : [];
     if (abmPickTable) {
       abmPickTable.clear();
@@ -1720,10 +1721,11 @@ function renderAbmPedidos(rows) {
   });
 }
 
-async function openAbmPedidos(articulo) {
+async function openAbmPedidos(articulo, detalle) {
   if (!abmPedidosOverlay) return;
   if (abmPedidosStatus) abmPedidosStatus.textContent = 'Cargando...';
   if (abmPedidosTableBody) abmPedidosTableBody.innerHTML = '';
+  if (abmPedidosDetalle) abmPedidosDetalle.textContent = detalle ? `Detalle: ${detalle}` : '';
   try {
     const res = await fetchJSON(`/api/mercaderia/abm/pedidos?articulo=${encodeURIComponent(articulo)}`);
     const rows = Array.isArray(res.data) ? res.data : [];
@@ -1863,7 +1865,9 @@ function initAbm() {
       const pedidosBtn = e.target.closest('.abm-pedido-link');
       if (pedidosBtn) {
         const articulo = pedidosBtn.dataset.articulo;
-        if (articulo) openAbmPedidos(articulo);
+        const row = pedidosBtn.closest('tr');
+        const detalle = row?.querySelector('td:nth-child(2)')?.textContent?.trim() || '';
+        if (articulo) openAbmPedidos(articulo, detalle);
         return;
       }
       const btn = e.target.closest('.abm-action');

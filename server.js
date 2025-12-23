@@ -1301,6 +1301,22 @@ app.get('/api/mercaderia/abm/all', async (_req, res) => {
   }
 });
 
+app.get('/api/mercaderia/abm/pick', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         Articulo AS articulo,
+         Detalle AS detalle,
+         COALESCE(Cantidad, 0) AS cantidad
+       FROM articulos
+       ORDER BY Articulo`
+    );
+    res.json({ total: rows.length, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos para seleccionar', error: error.message });
+  }
+});
+
 app.get('/api/mercaderia/abm/articulo', async (req, res) => {
   try {
     const articulo = req.query.articulo;

@@ -836,20 +836,23 @@ input[type='month'] {
 }
 
 .barcode-preview svg {
-  width: 300px;
-  height: 75px;
+  width: 260px;
+  height: 60px;
   display: block;
 }
 
 .barcode-code {
   margin: 0;
   font-weight: 600;
+  font-size: 5px;
+  line-height: 1;
 }
 
 .barcode-text {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .abm-form-grid {
@@ -1059,11 +1062,31 @@ input[type='month'] {
     padding: 0;
     align-items: center;
     text-align: center;
+    gap: 0;
   }
 
   .barcode-preview svg {
-    width: 340px;
-    height: 90px;
+    width: 6cm;
+    height: 1.5cm;
+    margin-bottom: 0;
+  }
+
+  .barcode-preview {
+    gap: 0;
+  }
+
+  .barcode-code {
+    font-size: 9pt;
+    line-height: 1;
+    font-weight: 700;
+    margin-top: 0;
+  }
+
+  .barcode-text {
+    font-size: 8pt;
+    line-height: 1;
+    font-weight: 700;
+    margin-top: 0;
   }
 }
 
