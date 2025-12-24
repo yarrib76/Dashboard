@@ -12,6 +12,18 @@
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.3);
 }
 
+body.theme-light {
+  --bg: #f5f7fb;
+  --panel: rgba(10, 20, 40, 0.06);
+  --panel-strong: rgba(10, 20, 40, 0.12);
+  --accent: #2563eb;
+  --accent-2: #0ea5e9;
+  --text: #182033;
+  --muted: #5c6b85;
+  --border: rgba(10, 20, 40, 0.12);
+  --shadow: 0 18px 40px rgba(10, 20, 40, 0.12);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -24,6 +36,76 @@ body {
     radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.14), transparent 32%),
     var(--bg);
   color: var(--text);
+}
+
+body.theme-light {
+  background: radial-gradient(circle at 20% 20%, rgba(37, 99, 235, 0.12), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.12), transparent 35%),
+    var(--bg);
+}
+
+body.theme-light .side-menu {
+  background: rgba(245, 247, 251, 0.9);
+}
+
+body.theme-light .card,
+body.theme-light .modal,
+body.theme-light .tag,
+body.theme-light .user-block,
+body.theme-light .menu-theme {
+  background: #ffffff;
+  border-color: rgba(10, 20, 40, 0.12);
+  box-shadow: 0 12px 28px rgba(10, 20, 40, 0.08);
+}
+
+body.theme-light .table thead th {
+  background: #eef2f8;
+  color: #1f2a44;
+}
+
+body.theme-light .table tbody tr:nth-child(odd) {
+  background: rgba(10, 20, 40, 0.03);
+}
+
+body.theme-light .table tbody tr:hover {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+body.theme-light .table,
+body.theme-light .table th,
+body.theme-light .table td {
+  color: #1f2a44;
+  border-color: rgba(10, 20, 40, 0.12);
+}
+
+body.theme-light input,
+body.theme-light select,
+body.theme-light textarea {
+  background: #ffffff;
+  color: #1f2a44;
+  border-color: rgba(10, 20, 40, 0.15);
+}
+
+body.theme-light .modal-controls input[type='search'] {
+  background: #ffffff;
+  color: #1f2a44;
+}
+
+body.theme-light .menu-item,
+body.theme-light .submenu .menu-item {
+  background: rgba(10, 20, 40, 0.04);
+  color: #1f2a44;
+}
+
+body.theme-light .menu-item.active,
+body.theme-light .menu-item:hover {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
+  color: #162238;
+}
+
+body.theme-light .modal-overlay {
+  background: rgba(10, 20, 40, 0.35);
 }
 
 .page {
@@ -1331,6 +1413,71 @@ input[type='month'] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.menu-theme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.menu-theme .label {
+  font-size: 13px;
+}
+
+.theme-switch {
+  margin-left: auto;
+  position: relative;
+  width: 44px;
+  height: 24px;
+}
+
+.theme-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.theme-switch .switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border);
+  transition: background 0.2s ease;
+}
+
+.theme-switch .switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--text);
+  transition: transform 0.2s ease;
+}
+
+.theme-switch input:checked + .switch-track {
+  background: rgba(37, 99, 235, 0.35);
+}
+
+.theme-switch input:checked + .switch-track::after {
+  transform: translateX(20px);
+}
+
+.side-menu:not(.expanded) .menu-theme .label {
+  display: none;
+}
+
+.side-menu:not(.expanded) .menu-theme {
+  justify-content: center;
 }
 
 .menu-group {

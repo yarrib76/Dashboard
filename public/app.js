@@ -116,6 +116,8 @@ const statusEmpleados = document.getElementById('status-empleados');
 const statusPedidosClientes = document.getElementById('status-pedidos-clientes');
 const menuToggle = document.getElementById('menu-toggle');
 const menuBackdrop = document.getElementById('menu-backdrop');
+const themeToggle = document.getElementById('theme-toggle');
+const themeLabel = document.getElementById('theme-label');
 const mesEmpleados = document.getElementById('mes-empleados');
 const tablaEmpleadosBody = document.querySelector('#tabla-empleados tbody');
 const filtroRoles = document.getElementById('filtro-roles');
@@ -3399,6 +3401,26 @@ function closeNoEncuestadosModal() {
   if (neOverlay) neOverlay.classList.remove('open');
 }
 
+function applyTheme(mode) {
+  const isLight = mode === 'light';
+  document.body.classList.toggle('theme-light', isLight);
+  if (themeToggle) themeToggle.checked = isLight;
+  if (themeLabel) themeLabel.textContent = isLight ? 'Claro' : 'Dark';
+}
+
+function initThemeToggle() {
+  if (!themeToggle) return;
+  const saved = localStorage.getItem('themeMode');
+  if (saved === 'light' || saved === 'dark') {
+    applyTheme(saved);
+  }
+  themeToggle.addEventListener('change', () => {
+    const mode = themeToggle.checked ? 'light' : 'dark';
+    applyTheme(mode);
+    localStorage.setItem('themeMode', mode);
+  });
+}
+
 function initMenu() {
   const menu = document.getElementById('side-menu');
   const navItems = document.querySelectorAll('.menu-item[data-target]');
@@ -3419,6 +3441,7 @@ function initMenu() {
 
   if (menuToggle) menuToggle.addEventListener('click', () => toggleMenu());
   if (menuBackdrop) menuBackdrop.addEventListener('click', () => toggleMenu(false));
+  initThemeToggle();
 
   menu.addEventListener('mouseenter', () => menu.classList.add('expanded'));
   menu.addEventListener('mouseleave', () => menu.classList.remove('expanded'));
