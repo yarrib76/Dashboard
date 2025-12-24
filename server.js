@@ -1,6 +1,8 @@
 ﻿require('dotenv').config();
 
 const express = require('express');
+const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
+const { processAbmBatch } = require('./lib/abmBatchService');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const path = require('path');
@@ -1381,26 +1383,15 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
     if (!row) return res.status(404).json({ message: 'articulo no encontrado' });
     const baseCantidad = Number(row.Cantidad) || 0;
     const delta = Number(cantidadDelta) || 0;
-    const nuevaCantidad = resta ? baseCantidad - delta : baseCantidad + delta;
+    const nuevaCantidad = computeNuevaCantidad(baseCantidad, delta, resta);
 
-    let moneda = '';
-    let precioConvertidoFinal = Number(precioConvertido) || 0;
-    let precioManualFinal = 0;
-    let gastosFinal = 0;
-    let gananciaFinal = 0;
-    if (opcion === 'opcion_dolares') {
-      moneda = 'uSs';
-      precioManualFinal = 0;
-    } else if (opcion === 'opcion_pesos') {
-      moneda = 'ARG';
-      precioManualFinal = 0;
-    } else {
-      moneda = '';
-      precioConvertidoFinal = 0;
-      precioManualFinal = Number(precioManual) || 0;
-      gastosFinal = Number(gastos) || 0;
-      gananciaFinal = Number(ganancia) || 0;
-    }
+    const { moneda, precioConvertidoFinal, precioManualFinal, gastosFinal, gananciaFinal } =
+      resolveArticuloValores(opcion, {
+        precioConvertido,
+        precioManual,
+        gastos,
+        ganancia,
+      });
 
     await conn.query(
       `UPDATE articulos
@@ -1432,9 +1423,14 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
     );
 
     const tipoOrden = resta ? 1 : 2;
-    const precioArgen = opcion === 'opcion_manual' ? precioManualFinal : precioConvertidoFinal;
-    const compraGastos = opcion === 'opcion_manual' ? Number(gastos) || 0 : Number(gastosProveedor) || 0;
-    const compraGanancia = opcion === 'opcion_manual' ? Number(ganancia) || 0 : Number(gananciaProveedor) || 0;
+    const { precioArgen, compraGastos, compraGanancia } = resolveCompraValores(opcion, {
+      precioManualFinal,
+      precioConvertidoFinal,
+      gastos,
+      ganancia,
+      gastosProveedor,
+      gananciaProveedor,
+    });
     const now = new Date();
     const fechaCompra = formatDateTimeLocal(now);
 
@@ -1522,153 +1518,7 @@ app.put('/api/mercaderia/abm/batch', async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
     const { ordenCompra = 0, items = [] } = req.body || {};
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'items requerido' });
-    }
-    const seen = new Set();
-    for (const item of items) {
-      const articulo = item?.articulo;
-      if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
-      if (seen.has(String(articulo))) {
-        return res.status(400).json({ message: `articulo duplicado: ${articulo}` });
-      }
-      seen.add(String(articulo));
-    }
-
-    const updated = [];
-    for (const item of items) {
-      const articulo = item.articulo;
-      const [[row]] = await conn.query(
-        `SELECT Cantidad
-         FROM articulos
-         WHERE Articulo = ?
-         LIMIT 1`,
-        [articulo]
-      );
-      if (!row) throw new Error(`articulo no encontrado: ${articulo}`);
-      const baseCantidad = Number(row.Cantidad) || 0;
-      const delta = Number(item.cantidadDelta) || 0;
-      const resta = !!item.resta;
-      const nuevaCantidad = resta ? baseCantidad - delta : baseCantidad + delta;
-
-      let moneda = '';
-      let precioConvertidoFinal = Number(item.precioConvertido) || 0;
-      let precioManualFinal = 0;
-      let gastosFinal = 0;
-      let gananciaFinal = 0;
-      if (item.opcion === 'opcion_dolares') {
-        moneda = 'uSs';
-        precioManualFinal = 0;
-      } else if (item.opcion === 'opcion_pesos') {
-        moneda = 'ARG';
-        precioManualFinal = 0;
-      } else {
-        moneda = '';
-        precioConvertidoFinal = 0;
-        precioManualFinal = Number(item.precioManual) || 0;
-        gastosFinal = Number(item.gastos) || 0;
-        gananciaFinal = Number(item.ganancia) || 0;
-      }
-
-      await conn.query(
-        `UPDATE articulos
-         SET Detalle = ?,
-             Cantidad = ?,
-             PrecioOrigen = ?,
-             PrecioConvertido = ?,
-             Moneda = ?,
-             PrecioManual = ?,
-             Gastos = ?,
-             Ganancia = ?,
-             Proveedor = ?,
-             Observaciones = ?
-         WHERE Articulo = ?
-         LIMIT 1`,
-        [
-          item.detalle || '',
-          nuevaCantidad,
-          Number(item.precioOrigen) || 0,
-          precioConvertidoFinal,
-          moneda,
-          precioManualFinal,
-          gastosFinal,
-          gananciaFinal,
-          item.proveedor || '',
-          item.observaciones || '',
-          articulo,
-        ]
-      );
-
-      const tipoOrden = resta ? 1 : 2;
-      const precioArgen = item.opcion === 'opcion_manual' ? precioManualFinal : precioConvertidoFinal;
-      const compraGastos = item.opcion === 'opcion_manual' ? Number(item.gastos) || 0 : Number(item.gastosProveedor) || 0;
-      const compraGanancia =
-        item.opcion === 'opcion_manual' ? Number(item.ganancia) || 0 : Number(item.gananciaProveedor) || 0;
-      const now = new Date();
-      const fechaCompra = formatDateTimeLocal(now);
-      const orden = Number(item.ordenCompra ?? ordenCompra) || 0;
-
-      const compraColumns = [
-        'OrdenCompra',
-        'Articulo',
-        'Detalle',
-        'Cantidad',
-        'PrecioOrigen',
-        'PrecioArgen',
-        'Gastos',
-        'Ganancia',
-        'Proveedor',
-        'Pais',
-        'FechaCompra',
-        'TipoOrden',
-        'Observaciones',
-      ];
-      const compraValues = [
-        orden,
-        articulo,
-        item.detalle || '',
-        delta,
-        Number(item.precioOrigen) || 0,
-        precioArgen,
-        compraGastos,
-        compraGanancia,
-        item.proveedor || '',
-        item.paisProveedor || '',
-        fechaCompra,
-        tipoOrden,
-        item.observaciones || '',
-      ];
-
-      try {
-        await conn.query(
-          `INSERT INTO compras (${compraColumns.join(',')})
-           VALUES (${compraColumns.map(() => '?').join(',')})`,
-          compraValues
-        );
-      } catch (error) {
-        if (error.code === 'ER_BAD_FIELD_ERROR') {
-          const idx = compraColumns.indexOf('Ganancia');
-          const cols = compraColumns.filter((c) => c !== 'Ganancia');
-          const vals = compraValues.filter((_, i) => i !== idx);
-          await conn.query(
-            `INSERT INTO compras (${cols.join(',')})
-             VALUES (${cols.map(() => '?').join(',')})`,
-            vals
-          );
-        } else {
-          throw error;
-        }
-      }
-
-      updated.push({
-        articulo,
-        detalle: item.detalle || '',
-        cantidad: nuevaCantidad,
-        proveedor: item.proveedor || '',
-      });
-    }
-
-    await conn.query('UPDATE ordencompras SET NumeroOrden = NumeroOrden + 1');
+    const updated = await processAbmBatch(conn, ordenCompra, items);
     await conn.commit();
 
     res.json({ ok: true, data: updated });
