@@ -1509,6 +1509,10 @@ input[type='month'] {
   display: block;
 }
 
+.user-tabs {
+  margin-top: 6px;
+}
+
 .roles-layout {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
@@ -1521,6 +1525,27 @@ input[type='month'] {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
+}
+
+.roles-list input[type='search'] {
+  width: 100%;
+  margin-bottom: 10px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+#users-pagination {
+  margin-top: 10px;
+  justify-content: space-between;
+}
+
+#users-pagination button {
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .roles-header {
@@ -1745,6 +1770,21 @@ input[type='month'] {
 
 .menu-item.logout {
   margin-top: auto;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+}
+
+.empty-state h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--muted);
 }
 
 .pagination {

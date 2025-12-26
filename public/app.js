@@ -125,6 +125,23 @@ const rolesTitle = document.getElementById('roles-title');
 const rolesStatus = document.getElementById('roles-status');
 const rolesAdd = document.getElementById('roles-add');
 const rolesSave = document.getElementById('roles-save');
+const usersList = document.getElementById('users-list');
+const usersTitle = document.getElementById('users-title');
+const usersStatus = document.getElementById('users-status');
+const usersSave = document.getElementById('users-save');
+const usersSearch = document.getElementById('users-search');
+const usersPrev = document.getElementById('users-prev');
+const usersNext = document.getElementById('users-next');
+const usersPageInfo = document.getElementById('users-page-info');
+const userNameInput = document.getElementById('user-name-input');
+const userEmailInput = document.getElementById('user-email-input');
+const userRoleSelect = document.getElementById('user-role-select');
+const userVendedoraSelect = document.getElementById('user-vendedora-select');
+const userHoraIngreso = document.getElementById('user-hora-ingreso');
+const userHoraEgreso = document.getElementById('user-hora-egreso');
+const userPassInput = document.getElementById('user-pass-input');
+const userPassConfirm = document.getElementById('user-pass-confirm');
+const userPassSave = document.getElementById('user-pass-save');
 const mesEmpleados = document.getElementById('mes-empleados');
 const tablaEmpleadosBody = document.querySelector('#tabla-empleados tbody');
 const filtroRoles = document.getElementById('filtro-roles');
@@ -203,6 +220,7 @@ const viewAbm = document.getElementById('view-abm');
 const viewConfiguracion = document.getElementById('view-configuracion');
 const viewFacturas = document.getElementById('view-facturas');
 const viewComisiones = document.getElementById('view-comisiones');
+const viewNoPermission = document.getElementById('view-no-permission');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -3048,7 +3066,7 @@ function getFirstAllowedView(perms = {}) {
     'comisiones',
     'configuracion',
   ];
-  return order.find((key) => perms[key] !== false) || 'dashboard';
+  return order.find((key) => perms[key] !== false) || '';
 }
 
 async function loadCurrentUser() {
@@ -3072,7 +3090,11 @@ async function loadCurrentUser() {
     currentPermissions = data?.permissions || {};
     applyMenuPermissions(currentPermissions);
     const firstAllowed = getFirstAllowedView(currentPermissions);
-    switchView(firstAllowed);
+    if (!firstAllowed && viewNoPermission) {
+      switchView('no-permission');
+    } else {
+      switchView(firstAllowed);
+    }
     if (Number.isFinite(Number(data.sessionIdleMinutes))) {
       sessionIdleMinutes = Number(data.sessionIdleMinutes) || sessionIdleMinutes;
     }
@@ -3504,6 +3526,13 @@ const permissionGroups = [
 
 let rolesData = [];
 let currentRoleId = '';
+let usersData = [];
+let currentUserId = '';
+let rolesOptions = [];
+let vendedorasOptions = [];
+let usersSearchTerm = '';
+let usersPage = 1;
+const usersPageSize = 10;
 
 function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
@@ -3642,6 +3671,195 @@ function initConfigTabs() {
       const target = tab.dataset.tab;
       const panel = document.getElementById(`tab-${target}`);
       if (panel) panel.classList.add('active');
+    });
+  });
+}
+
+async function loadUsers() {
+  if (!usersStatus) return;
+  usersStatus.textContent = 'Cargando usuarios...';
+  const [usersRes, rolesRes, vendRes] = await Promise.all([
+    fetchJSON('/api/config/usuarios'),
+    fetchJSON('/api/roles'),
+    fetchJSON('/api/config/vendedoras'),
+  ]);
+  usersData = usersRes.data || [];
+  rolesOptions = rolesRes.data || [];
+  vendedorasOptions = vendRes.data || [];
+  currentUserId = usersData[0]?.id ? String(usersData[0].id) : '';
+  usersStatus.textContent = '';
+}
+
+function renderUsersList() {
+  if (!usersList) return;
+  usersList.innerHTML = '';
+  const term = (usersSearchTerm || '').toLowerCase();
+  const filtered = usersData.filter((u) => {
+    if (!term) return true;
+    return (
+      String(u.name || '').toLowerCase().includes(term) ||
+      String(u.email || '').toLowerCase().includes(term)
+    );
+  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / usersPageSize));
+  usersPage = Math.min(usersPage, totalPages);
+  const start = (usersPage - 1) * usersPageSize;
+  const pageRows = filtered.slice(start, start + usersPageSize);
+  pageRows.forEach((u) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `role-item${String(u.id) === currentUserId ? ' active' : ''}`;
+    btn.textContent = u.name || u.email || `Usuario ${u.id}`;
+    btn.addEventListener('click', () => {
+      currentUserId = String(u.id);
+      renderUsersList();
+      renderUserForm();
+    });
+    usersList.appendChild(btn);
+  });
+  if (usersPageInfo) usersPageInfo.textContent = `Pagina ${usersPage} de ${totalPages}`;
+}
+
+function renderSelectOptions(select, items, valueKey, labelKey, includeEmpty = true) {
+  if (!select) return;
+  select.innerHTML = '';
+  if (includeEmpty) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Sin asignar';
+    select.appendChild(opt);
+  }
+  items.forEach((item) => {
+    const opt = document.createElement('option');
+    opt.value = String(item[valueKey]);
+    opt.textContent = item[labelKey];
+    select.appendChild(opt);
+  });
+}
+
+function renderUserForm() {
+  const user = usersData.find((u) => String(u.id) === currentUserId);
+  if (!user) return;
+  if (usersTitle) usersTitle.textContent = `Detalle - ${user.name || user.email || user.id}`;
+  if (userNameInput) userNameInput.value = user.name || '';
+  if (userEmailInput) userEmailInput.value = user.email || '';
+  renderSelectOptions(userRoleSelect, rolesOptions, 'id', 'name', false);
+  renderSelectOptions(userVendedoraSelect, vendedorasOptions, 'id', 'nombre');
+  if (userRoleSelect) userRoleSelect.value = user.id_roles ? String(user.id_roles) : '';
+  if (userVendedoraSelect) userVendedoraSelect.value = user.id_vendedoras ? String(user.id_vendedoras) : '';
+  if (userHoraIngreso) userHoraIngreso.value = user.hora_ingreso || '';
+  if (userHoraEgreso) userHoraEgreso.value = user.hora_egreso || '';
+}
+
+async function initUsersModule() {
+  if (!usersList) return;
+  try {
+    await loadUsers();
+    renderUsersList();
+    renderUserForm();
+  } catch (error) {
+    if (usersStatus) usersStatus.textContent = error.message || 'No se pudieron cargar usuarios.';
+  }
+  if (usersSave)
+    usersSave.addEventListener('click', async () => {
+      const user = usersData.find((u) => String(u.id) === currentUserId);
+      if (!user) return;
+      try {
+        if (usersStatus) usersStatus.textContent = 'Guardando...';
+        const payload = {
+          name: userNameInput?.value || '',
+          email: userEmailInput?.value || '',
+          id_roles: Number(userRoleSelect?.value) || null,
+          id_vendedoras: Number(userVendedoraSelect?.value) || null,
+          hora_ingreso: userHoraIngreso?.value || null,
+          hora_egreso: userHoraEgreso?.value || null,
+        };
+        const res = await fetch(`/api/config/usuarios/${encodeURIComponent(user.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `Error ${res.status}`);
+        }
+        const updated = await res.json();
+        const idx = usersData.findIndex((u) => String(u.id) === String(user.id));
+        if (idx >= 0) usersData[idx] = updated.user;
+        renderUsersList();
+        renderUserForm();
+        if (usersStatus) usersStatus.textContent = 'Usuario actualizado.';
+      } catch (error) {
+        if (usersStatus) usersStatus.textContent = error.message || 'No se pudo guardar.';
+      }
+    });
+  if (usersSearch)
+    usersSearch.addEventListener('input', () => {
+      usersSearchTerm = usersSearch.value || '';
+      usersPage = 1;
+      renderUsersList();
+    });
+  if (usersPrev)
+    usersPrev.addEventListener('click', () => {
+      usersPage = Math.max(1, usersPage - 1);
+      renderUsersList();
+    });
+  if (usersNext)
+    usersNext.addEventListener('click', () => {
+      usersPage += 1;
+      renderUsersList();
+    });
+  if (userPassSave)
+    userPassSave.addEventListener('click', async () => {
+      const user = usersData.find((u) => String(u.id) === currentUserId);
+      if (!user) return;
+      const pass = userPassInput?.value || '';
+      const confirm = userPassConfirm?.value || '';
+      if (!pass || pass.length < 6) {
+        if (usersStatus) usersStatus.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+        return;
+      }
+      if (pass !== confirm) {
+        if (usersStatus) usersStatus.textContent = 'Las contraseñas no coinciden.';
+        return;
+      }
+      try {
+        if (usersStatus) usersStatus.textContent = 'Actualizando contraseña...';
+        const res = await fetch(`/api/config/usuarios/${encodeURIComponent(user.id)}/password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pass }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `Error ${res.status}`);
+        }
+        if (userPassInput) userPassInput.value = '';
+        if (userPassConfirm) userPassConfirm.value = '';
+        if (usersStatus) usersStatus.textContent = 'Contraseña actualizada.';
+      } catch (error) {
+        if (usersStatus) usersStatus.textContent = error.message || 'No se pudo actualizar.';
+      }
+    });
+}
+
+function initUserTabs() {
+  const tabs = document.querySelectorAll('.user-tabs .tab');
+  const editPanel = document.getElementById('tab-user-edit');
+  const passPanel = document.getElementById('tab-user-pass');
+  if (!tabs.length || !editPanel || !passPanel) return;
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      tabs.forEach((t) => t.classList.remove('active'));
+      editPanel.classList.remove('active');
+      passPanel.classList.remove('active');
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      if (target === 'user-pass') {
+        passPanel.classList.add('active');
+      } else {
+        editPanel.classList.add('active');
+      }
     });
   });
 }
@@ -4413,6 +4631,24 @@ function initComisiones() {
 }
 
 function switchView(target) {
+  if (target === 'no-permission' && viewNoPermission) {
+    const views = [
+      viewDashboard,
+      viewEmpleados,
+      viewClientes,
+      viewIa,
+      viewSalon,
+      viewPedidos,
+      viewMercaderia,
+      viewAbm,
+      viewConfiguracion,
+      viewFacturas,
+      viewComisiones,
+    ];
+    views.forEach((v) => v.classList.add('hidden'));
+    viewNoPermission.classList.remove('hidden');
+    return;
+  }
   if (currentPermissions && currentPermissions[target] === false) {
     const fallback = getFirstAllowedView(currentPermissions);
     if (fallback && fallback !== target) {
@@ -4468,6 +4704,8 @@ function switchView(target) {
     }
     loadComisionesTardes();
     renderComisionesPanel();
+  } else if (target === 'no-permission' && viewNoPermission) {
+    viewNoPermission.classList.remove('hidden');
   } else {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4493,6 +4731,8 @@ initFacturas();
 initComisiones();
 initRolesModule();
 initConfigTabs();
+initUsersModule();
+initUserTabs();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();

@@ -1232,6 +1232,88 @@ app.put('/api/roles/:id/permissions', async (req, res) => {
   }
 });
 
+app.get('/api/config/usuarios', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso
+       FROM users
+       ORDER BY name`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar usuarios', error: error.message });
+  }
+});
+
+app.get('/api/config/vendedoras', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, nombre
+       FROM vendedores
+       ORDER BY nombre`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar vendedoras', error: error.message });
+  }
+});
+
+app.put('/api/config/usuarios/:id', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
+    const {
+      name = '',
+      email = '',
+      id_roles = null,
+      id_vendedoras = null,
+      hora_ingreso = null,
+      hora_egreso = null,
+    } = req.body || {};
+    await pool.query(
+      `UPDATE users
+       SET name = ?, email = ?, id_roles = ?, id_vendedoras = ?, hora_ingreso = ?, hora_egreso = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [
+        name,
+        email,
+        id_roles || null,
+        id_vendedoras || null,
+        hora_ingreso || null,
+        hora_egreso || null,
+        userId,
+      ]
+    );
+    const [[row]] = await pool.query(
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+    res.json({ ok: true, user: row || {} });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar usuario', error: error.message });
+  }
+});
+
+app.put('/api/config/usuarios/:id/password', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
+    const { password } = req.body || {};
+    if (!password || String(password).length < 6) {
+      return res.status(400).json({ message: 'password invalido' });
+    }
+    const hash = await bcrypt.hash(String(password), 10);
+    await pool.query('UPDATE users SET password = ? WHERE id = ? LIMIT 1', [hash, userId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar password', error: error.message });
+  }
+});
+
 app.get('/api/encuestas/mes', async (_req, res) => {
   try {
     const currentYear = new Date().getFullYear();
