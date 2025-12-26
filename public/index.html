@@ -25,7 +25,7 @@
           <div class="avatar" id="user-avatar">👤</div>
           <div class="user-info">
             <p class="user-name" id="user-name">Usuario</p>
-            <p class="user-role">Equipo</p>
+            <p class="user-role" id="user-role">Equipo</p>
           </div>
         </div>
         <nav class="menu-items">
@@ -87,6 +87,10 @@
               </button>
             </div>
           </div>
+          <button class="menu-item" data-target="configuracion">
+            <span class="icon">⚙</span>
+            <span class="label">Configuracion</span>
+          </button>
         </nav>
         <div class="menu-theme">
           <span class="icon">T</span>
@@ -642,8 +646,51 @@
     </article>
   </section>
 
+  <section class="view hidden" id="view-configuracion">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Configuracion</h2>
+          <p class="status">Gestion de permisos por rol.</p>
+        </div>
+      </div>
+      <div class="tabs" id="config-tabs">
+        <button class="tab active" data-tab="roles">Roles</button>
+        <button class="tab" data-tab="usuarios">Usuarios</button>
+        <button class="tab" data-tab="perfiles">Perfiles</button>
+      </div>
+      <div class="tab-panel active" id="tab-roles">
+        <div class="roles-layout">
+          <div class="roles-list">
+            <div class="roles-header">
+              <h3>Roles</h3>
+              <button type="button" id="roles-add">Nuevo</button>
+            </div>
+            <div id="roles-list"></div>
+          </div>
+          <div class="roles-perms">
+            <div class="roles-header">
+              <h3 id="roles-title">Permisos</h3>
+              <button type="button" id="roles-save">Guardar</button>
+            </div>
+            <div class="perm-group">
+              <h4>Acceso a vistas</h4>
+              <div id="roles-perms-groups"></div>
+            </div>
+            <p class="status" id="roles-status"></p>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-usuarios">
+        <p class="status">Proximamente: gestion de usuarios.</p>
+      </div>
+      <div class="tab-panel" id="tab-perfiles">
+        <p class="status">Proximamente: perfiles y grupos.</p>
+      </div>
+    </article>
+  </section>
 
-    <section class="view hidden" id="view-facturas">
+  <section class="view hidden" id="view-facturas">
     <article class="card wide">
       <div class="actions between">
         <div class="facturas-heading inline">

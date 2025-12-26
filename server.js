@@ -156,6 +156,60 @@ const pool = mysql.createPool({
   timezone: 'Z',
 });
 
+let userRoleColumn = null;
+let userRoleChecked = false;
+
+async function getUserRoleColumn() {
+  if (userRoleChecked) return userRoleColumn;
+  userRoleChecked = true;
+  try {
+    const [rows] = await pool.query(
+      `SELECT COLUMN_NAME
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'users'
+         AND COLUMN_NAME IN ('role', 'rol')
+       ORDER BY FIELD(COLUMN_NAME, 'role', 'rol')
+       LIMIT 1`
+    );
+    userRoleColumn = rows?.[0]?.COLUMN_NAME || null;
+  } catch (_err) {
+    userRoleColumn = null;
+  }
+  return userRoleColumn;
+}
+
+async function getUserRoleNameById(userId) {
+  if (!userId) return '';
+  try {
+    const [rows] = await safeQuery(
+      `SELECT r.tipo_role AS roleName
+       FROM RolesWeb r
+       INNER JOIN users u ON u.id_roles = r.id_roles
+       WHERE u.id = ?
+       LIMIT 1`,
+      [userId]
+    );
+    return rows?.[0]?.roleName || '';
+  } catch (_err) {
+    return '';
+  }
+}
+
+const ROLE_PERMISSIONS = [
+  'dashboard',
+  'empleados',
+  'clientes',
+  'ia',
+  'salon',
+  'pedidos',
+  'facturas',
+  'comisiones',
+  'mercaderia',
+  'abm',
+  'configuracion',
+];
+
 async function safeQuery(sql, params = []) {
   try {
     return await pool.query(sql, params);
@@ -1018,10 +1072,11 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Email y contraseña son requeridos' });
     }
 
-    const [rows] = await safeQuery(
-      'SELECT id, name, email, password FROM users WHERE email = ? LIMIT 1',
-      [email]
-    );
+    const roleColumn = await getUserRoleColumn();
+    const selectCols = roleColumn
+      ? `id, name, email, password, id_roles, ${roleColumn}`
+      : 'id, name, email, password, id_roles';
+    const [rows] = await safeQuery(`SELECT ${selectCols} FROM users WHERE email = ? LIMIT 1`, [email]);
     const user = rows[0];
     if (!user) {
       console.warn('[login] usuario no encontrado', email);
@@ -1034,14 +1089,19 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
+    let userRole = roleColumn ? user[roleColumn] : '';
+    if (!userRole) {
+      userRole = await getUserRoleNameById(user.id);
+    }
     const token = signToken({
       id: user.id,
       email: user.email,
       name: user.name,
+      role: userRole || '',
       iat: Date.now(),
     });
     setAuthCookie(res, token, req);
-    res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email } });
+    res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: userRole || '' } });
   } catch (error) {
     console.error('[login] error', error);
     res.status(500).json({ message: 'Error al iniciar sesión', error: error.message, code: error.code });
@@ -1065,10 +1125,111 @@ app.get('/api/me', (req, res) => {
   if (!payload) {
     return res.status(401).json({ message: 'No autorizado' });
   }
-  res.json({
-    user: { id: payload.id, name: payload.name, email: payload.email },
-    sessionIdleMinutes: SESSION_MAX_IDLE_MINUTES,
-  });
+  (async () => {
+    let role = payload.role || '';
+    if (!role) {
+      role = await getUserRoleNameById(payload.id);
+    }
+    let permissions = {};
+    try {
+      const [rows] = await pool.query(
+        `SELECT rp.permiso, rp.habilitado
+         FROM RolesPermisos rp
+         INNER JOIN users u ON u.id_roles = rp.id_roles
+         WHERE u.id = ?`,
+        [payload.id]
+      );
+      permissions = (rows || []).reduce((acc, row) => {
+        acc[row.permiso] = !!row.habilitado;
+        return acc;
+      }, {});
+    } catch (_err) {
+      permissions = {};
+    }
+    res.json({
+      user: { id: payload.id, name: payload.name, email: payload.email, role },
+      permissions,
+      sessionIdleMinutes: SESSION_MAX_IDLE_MINUTES,
+    });
+  })();
+});
+
+app.get('/api/roles', async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id_roles AS id, tipo_role AS name
+       FROM RolesWeb
+       ORDER BY tipo_role`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar roles', error: error.message });
+  }
+});
+
+app.get('/api/roles/:id/permissions', async (req, res) => {
+  try {
+    const roleId = Number(req.params.id);
+    if (!Number.isFinite(roleId)) return res.status(400).json({ message: 'id_roles invalido' });
+    const [rows] = await pool.query(
+      `SELECT permiso, habilitado
+       FROM RolesPermisos
+       WHERE id_roles = ?`,
+      [roleId]
+    );
+    res.json({ roleId, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar permisos', error: error.message });
+  }
+});
+
+app.put('/api/roles/:id/permissions', async (req, res) => {
+  let conn;
+  try {
+    const roleId = Number(req.params.id);
+    if (!Number.isFinite(roleId)) return res.status(400).json({ message: 'id_roles invalido' });
+    const permissions = req.body?.permissions;
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ message: 'permissions requerido' });
+    }
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [[roleRow]] = await conn.query(
+      'SELECT id_roles FROM RolesWeb WHERE id_roles = ? LIMIT 1',
+      [roleId]
+    );
+    if (!roleRow) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'rol no encontrado' });
+    }
+
+    await conn.query('DELETE FROM RolesPermisos WHERE id_roles = ?', [roleId]);
+
+    const rows = ROLE_PERMISSIONS.map((permiso) => [
+      roleId,
+      permiso,
+      permissions[permiso] ? 1 : 0,
+    ]);
+    if (rows.length) {
+      await conn.query(
+        'INSERT INTO RolesPermisos (id_roles, permiso, habilitado) VALUES ?',
+        [rows]
+      );
+    }
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al guardar permisos', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
 });
 
 app.get('/api/encuestas/mes', async (_req, res) => {
@@ -1282,20 +1443,26 @@ app.get('/api/mercaderia/abm/all', async (_req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT
-         Arti.Articulo AS articulo,
-         Arti.Detalle AS detalle,
-         Arti.ProveedorSKU AS proveedorSku,
-         COALESCE(Arti.Cantidad, 0) AS cantidad,
-         COALESCE(SUM(CASE WHEN Control.estado = 1 THEN pedidoTemp.Cantidad ELSE 0 END), 0) AS enPedido,
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         art.ProveedorSKU AS proveedorSku,
+         COALESCE(art.Cantidad, 0) AS cantidad,
+         COALESCE(ped.enPedido, 0) AS enPedido,
          repoArt.PrecioVenta AS precioVenta,
-         Arti.ImageName AS imageName,
-         Arti.Web AS web
-       FROM articulos AS Arti
-       LEFT JOIN pedidotemp AS pedidoTemp ON Arti.Articulo = pedidoTemp.Articulo
-       LEFT JOIN controlpedidos AS Control ON pedidoTemp.NroPedido = Control.nropedido
-       INNER JOIN reportearticulo AS repoArt ON Arti.Articulo = repoArt.Articulo
-       GROUP BY Arti.Articulo, Arti.Detalle, Arti.ProveedorSKU, Arti.Cantidad, repoArt.PrecioVenta, Arti.ImageName, Arti.Web
-       ORDER BY Arti.Articulo`
+         art.ImageName AS imageName,
+         art.Web AS web
+       FROM articulos AS art
+       INNER JOIN reportearticulo AS repoArt ON art.Articulo = repoArt.Articulo
+       LEFT JOIN (
+         SELECT
+           pt.Articulo,
+           SUM(pt.Cantidad) AS enPedido
+         FROM pedidotemp pt
+         INNER JOIN controlpedidos cp ON pt.NroPedido = cp.nropedido
+         WHERE cp.estado = 1
+         GROUP BY pt.Articulo
+       ) ped ON ped.Articulo = art.Articulo
+       ORDER BY art.Articulo`
     );
     res.json({ total: rows.length, data: rows || [] });
   } catch (error) {

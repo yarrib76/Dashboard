@@ -118,6 +118,13 @@ const menuToggle = document.getElementById('menu-toggle');
 const menuBackdrop = document.getElementById('menu-backdrop');
 const themeToggle = document.getElementById('theme-toggle');
 const themeLabel = document.getElementById('theme-label');
+const userRoleEl = document.getElementById('user-role');
+const rolesList = document.getElementById('roles-list');
+const rolesPermsGroups = document.getElementById('roles-perms-groups');
+const rolesTitle = document.getElementById('roles-title');
+const rolesStatus = document.getElementById('roles-status');
+const rolesAdd = document.getElementById('roles-add');
+const rolesSave = document.getElementById('roles-save');
 const mesEmpleados = document.getElementById('mes-empleados');
 const tablaEmpleadosBody = document.querySelector('#tabla-empleados tbody');
 const filtroRoles = document.getElementById('filtro-roles');
@@ -193,6 +200,7 @@ const viewSalon = document.getElementById('view-salon');
 const viewPedidos = document.getElementById('view-pedidos');
 const viewMercaderia = document.getElementById('view-mercaderia');
 const viewAbm = document.getElementById('view-abm');
+const viewConfiguracion = document.getElementById('view-configuracion');
 const viewFacturas = document.getElementById('view-facturas');
 const viewComisiones = document.getElementById('view-comisiones');
 const mercDesde = document.getElementById('merc-desde');
@@ -443,6 +451,7 @@ let comisionesPorcentaje = 1.5;
 let comisionesEmpleados = 1;
 let comisionesLoaded = false;
 let comisionesTardesRows = [];
+let currentPermissions = {};
 
 function textMatchesAllTokens(text, filter) {
   if (!filter) return true;
@@ -3009,6 +3018,39 @@ async function loadPaqueteriaLista(tipo) {
   }
 }
 
+function applyMenuPermissions(perms = {}) {
+  const navItems = document.querySelectorAll('.menu-item[data-target]');
+  navItems.forEach((btn) => {
+    const target = btn.dataset.target;
+    if (!target) return;
+    const allowed = perms[target] !== false;
+    btn.style.display = allowed ? '' : 'none';
+  });
+  const groups = document.querySelectorAll('.menu-group');
+  groups.forEach((group) => {
+    const visibleItems = group.querySelectorAll('.menu-item[data-target]');
+    const anyVisible = Array.from(visibleItems).some((btn) => btn.style.display !== 'none');
+    group.style.display = anyVisible ? '' : 'none';
+  });
+}
+
+function getFirstAllowedView(perms = {}) {
+  const order = [
+    'dashboard',
+    'empleados',
+    'clientes',
+    'ia',
+    'salon',
+    'pedidos',
+    'mercaderia',
+    'abm',
+    'facturas',
+    'comisiones',
+    'configuracion',
+  ];
+  return order.find((key) => perms[key] !== false) || 'dashboard';
+}
+
 async function loadCurrentUser() {
   try {
     const res = await fetch('/api/me');
@@ -3024,6 +3066,13 @@ async function loadCurrentUser() {
         .toUpperCase();
       avatarEl.textContent = initials || '👤';
     }
+    if (userRoleEl) {
+      userRoleEl.textContent = data?.user?.role || 'Equipo';
+    }
+    currentPermissions = data?.permissions || {};
+    applyMenuPermissions(currentPermissions);
+    const firstAllowed = getFirstAllowedView(currentPermissions);
+    switchView(firstAllowed);
     if (Number.isFinite(Number(data.sessionIdleMinutes))) {
       sessionIdleMinutes = Number(data.sessionIdleMinutes) || sessionIdleMinutes;
     }
@@ -3418,6 +3467,182 @@ function initThemeToggle() {
     const mode = themeToggle.checked ? 'light' : 'dark';
     applyTheme(mode);
     localStorage.setItem('themeMode', mode);
+  });
+}
+
+const permissionGroups = [
+  {
+    title: 'General',
+    items: [
+      { key: 'dashboard', label: 'Dashboard' },
+      { key: 'empleados', label: 'Empleados' },
+      { key: 'clientes', label: 'Clientes' },
+      { key: 'ia', label: 'IA' },
+      { key: 'salon', label: 'Salon' },
+      { key: 'pedidos', label: 'Pedidos' },
+    ],
+  },
+  {
+    title: 'Contabilidad',
+    items: [
+      { key: 'facturas', label: 'Facturas' },
+      { key: 'comisiones', label: 'Comisiones' },
+    ],
+  },
+  {
+    title: 'Mercaderia',
+    items: [
+      { key: 'mercaderia', label: 'Articulos Mas Vendido' },
+      { key: 'abm', label: 'ABM Articulos' },
+    ],
+  },
+  {
+    title: 'Configuracion',
+    items: [{ key: 'configuracion', label: 'Roles' }],
+  },
+];
+
+let rolesData = [];
+let currentRoleId = '';
+
+function buildEmptyPermissions() {
+  return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
+}
+
+async function loadRoles() {
+  if (rolesStatus) rolesStatus.textContent = 'Cargando roles...';
+  const res = await fetchJSON('/api/roles');
+  rolesData = (res.data || []).map((r) => ({
+    id: String(r.id),
+    name: r.name,
+    permissions: buildEmptyPermissions(),
+  }));
+  currentRoleId = rolesData[0]?.id || '';
+  if (!rolesData.length && rolesStatus) rolesStatus.textContent = 'No hay roles.';
+}
+
+async function loadRolePermissions(roleId) {
+  if (!roleId) return;
+  if (rolesStatus) rolesStatus.textContent = 'Cargando permisos...';
+  const res = await fetchJSON(`/api/roles/${encodeURIComponent(roleId)}/permissions`);
+  const perms = buildEmptyPermissions();
+  (res.data || []).forEach((row) => {
+    if (row.permiso in perms) {
+      perms[row.permiso] = !!row.habilitado;
+    }
+  });
+  const role = rolesData.find((r) => r.id === roleId);
+  if (role) role.permissions = perms;
+  if (rolesStatus) rolesStatus.textContent = '';
+}
+
+function renderRolesList() {
+  if (!rolesList) return;
+  rolesList.innerHTML = '';
+  rolesData.forEach((role) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `role-item${role.id === currentRoleId ? ' active' : ''}`;
+    btn.textContent = role.name;
+    btn.addEventListener('click', () => {
+      currentRoleId = role.id;
+      renderRolesList();
+      loadRolePermissions(currentRoleId).then(renderPermissions);
+    });
+    rolesList.appendChild(btn);
+  });
+}
+
+function renderPermissions() {
+  if (!rolesPermsGroups) return;
+  const role = rolesData.find((r) => r.id === currentRoleId) || rolesData[0];
+  if (!role) return;
+  if (rolesTitle) rolesTitle.textContent = `Permisos - ${role.name}`;
+  rolesPermsGroups.innerHTML = '';
+
+  permissionGroups.forEach((group) => {
+    const section = document.createElement('div');
+    section.className = 'perm-section';
+    const title = document.createElement('h5');
+    title.textContent = group.title;
+    section.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'perm-grid';
+    group.items.forEach((item) => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'perm-item';
+
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = !!role.permissions[item.key];
+      checkbox.addEventListener('change', () => {
+        role.permissions[item.key] = checkbox.checked;
+      });
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      label.appendChild(checkbox);
+      label.appendChild(span);
+      wrapper.appendChild(label);
+      grid.appendChild(wrapper);
+    });
+    section.appendChild(grid);
+    rolesPermsGroups.appendChild(section);
+  });
+}
+
+async function initRolesModule() {
+  if (!rolesList || !rolesPermsGroups) return;
+  try {
+    await loadRoles();
+    renderRolesList();
+    if (currentRoleId) {
+      await loadRolePermissions(currentRoleId);
+    }
+    renderPermissions();
+  } catch (error) {
+    if (rolesStatus) rolesStatus.textContent = error.message || 'No se pudieron cargar roles.';
+  }
+  if (rolesAdd)
+    rolesAdd.addEventListener('click', () => {
+      if (rolesStatus) rolesStatus.textContent = 'Alta de roles pendiente de implementar.';
+    });
+  if (rolesSave)
+    rolesSave.addEventListener('click', async () => {
+      const role = rolesData.find((r) => r.id === currentRoleId);
+      if (!role) return;
+      try {
+        if (rolesStatus) rolesStatus.textContent = 'Guardando...';
+        const res = await fetch(`/api/roles/${encodeURIComponent(role.id)}/permissions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permissions: role.permissions }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || `Error ${res.status}`);
+        }
+        if (rolesStatus) rolesStatus.textContent = 'Permisos guardados.';
+      } catch (error) {
+        if (rolesStatus) rolesStatus.textContent = error.message || 'No se pudo guardar.';
+      }
+    });
+}
+
+function initConfigTabs() {
+  const tabs = document.querySelectorAll('#config-tabs .tab');
+  const panels = document.querySelectorAll('.tab-panel');
+  if (!tabs.length) return;
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      tabs.forEach((t) => t.classList.remove('active'));
+      panels.forEach((p) => p.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      const panel = document.getElementById(`tab-${target}`);
+      if (panel) panel.classList.add('active');
+    });
   });
 }
 
@@ -4188,6 +4413,13 @@ function initComisiones() {
 }
 
 function switchView(target) {
+  if (currentPermissions && currentPermissions[target] === false) {
+    const fallback = getFirstAllowedView(currentPermissions);
+    if (fallback && fallback !== target) {
+      switchView(fallback);
+    }
+    return;
+  }
   const views = [
     viewDashboard,
     viewEmpleados,
@@ -4197,6 +4429,7 @@ function switchView(target) {
     viewPedidos,
     viewMercaderia,
     viewAbm,
+    viewConfiguracion,
     viewFacturas,
     viewComisiones,
   ];
@@ -4223,6 +4456,8 @@ function switchView(target) {
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     loadAbmDataTable();
+  } else if (target === 'configuracion') {
+    viewConfiguracion.classList.remove('hidden');
   } else if (target === 'facturas') {
     viewFacturas.classList.remove('hidden');
     if (!facturasLoaded) loadFacturas();
@@ -4256,6 +4491,8 @@ initMercaderia();
 initAbm();
 initFacturas();
 initComisiones();
+initRolesModule();
+initConfigTabs();
 loadTransportes();
 loadEncuestas(defaultYearEncuestas);
 initDateRange();
