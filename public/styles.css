@@ -1538,6 +1538,28 @@ input[type='month'] {
   font-size: 13px;
 }
 
+.user-status-select {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: #fff;
+  font-size: 12px;
+}
+
+.user-status-select option {
+  color: #000;
+  background: #fff;
+}
+
+.user-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 #users-pagination {
   margin-top: 10px;
   justify-content: space-between;

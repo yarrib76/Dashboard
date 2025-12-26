@@ -133,6 +133,7 @@ const usersSearch = document.getElementById('users-search');
 const usersPrev = document.getElementById('users-prev');
 const usersNext = document.getElementById('users-next');
 const usersPageInfo = document.getElementById('users-page-info');
+const usersStatusFilter = document.getElementById('users-status-filter');
 const userNameInput = document.getElementById('user-name-input');
 const userEmailInput = document.getElementById('user-email-input');
 const userRoleSelect = document.getElementById('user-role-select');
@@ -3533,6 +3534,7 @@ let vendedorasOptions = [];
 let usersSearchTerm = '';
 let usersPage = 1;
 const usersPageSize = 10;
+const discontinuedRoleId = 4;
 
 function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
@@ -3695,6 +3697,13 @@ function renderUsersList() {
   usersList.innerHTML = '';
   const term = (usersSearchTerm || '').toLowerCase();
   const filtered = usersData.filter((u) => {
+    const roleId = Number(u.id_roles) || 0;
+    const status = usersStatusFilter?.value || 'activos';
+    if (status === 'descontinuados') {
+      if (roleId !== discontinuedRoleId) return false;
+    } else if (status === 'activos') {
+      if (roleId === discontinuedRoleId) return false;
+    }
     if (!term) return true;
     return (
       String(u.name || '').toLowerCase().includes(term) ||
@@ -3796,6 +3805,11 @@ async function initUsersModule() {
   if (usersSearch)
     usersSearch.addEventListener('input', () => {
       usersSearchTerm = usersSearch.value || '';
+      usersPage = 1;
+      renderUsersList();
+    });
+  if (usersStatusFilter)
+    usersStatusFilter.addEventListener('change', () => {
       usersPage = 1;
       renderUsersList();
     });
