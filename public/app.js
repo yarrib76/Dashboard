@@ -2670,13 +2670,24 @@ async function ensureCarritosVendedoras() {
 
 function buildVendedoraOptions(selected) {
   if (!carritosVendedoras.length) return '';
-  return carritosVendedoras
-    .map((name) => {
-      const value = String(name || '');
-      const isSelected = value === String(selected || '');
-      return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(value)}</option>`;
-    })
-    .join('');
+  const selectedValue = String(selected || '').trim();
+  const selectedKey = selectedValue.toLowerCase();
+  let hasMatch = false;
+
+  const options = carritosVendedoras.map((name) => {
+    const value = String(name || '').trim();
+    const isSelected = value.toLowerCase() === selectedKey;
+    if (isSelected) hasMatch = true;
+    return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(value)}</option>`;
+  });
+
+  if (selectedValue && !hasMatch) {
+    options.unshift(
+      `<option value="${escapeAttr(selectedValue)}" selected>${escapeAttr(selectedValue)}</option>`
+    );
+  }
+
+  return options.join('');
 }
 
 function renderCarritosTable(rows) {
