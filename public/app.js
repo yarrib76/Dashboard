@@ -264,6 +264,9 @@ const statCarritosPendientes = document.getElementById('stat-carritos-pendientes
 const statCarritosSinNotas = document.getElementById('stat-carritos-sin-notas');
 const statusCarritosControl = document.getElementById('status-carritos-control');
 const refreshCarritosControl = document.getElementById('refresh-carritos-control');
+const pedidosControlTableBody = document.querySelector('#pedidos-control-table tbody');
+const pedidosControlStatus = document.getElementById('pedidos-control-status');
+const refreshPedidosControl = document.getElementById('refresh-pedidos-control');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3429,6 +3432,42 @@ async function loadCarritosAbandonados() {
   }
 }
 
+function renderPedidosControl(rows) {
+  if (!pedidosControlTableBody) return;
+  pedidosControlTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const notasVencidosProceso = Number(row.notasVencidosEnProceso) || 0;
+    const notasVencidosFactura = Number(row.notasVencidosParaFacturar) || 0;
+    const procesoAlert = notasVencidosProceso > 0;
+    const facturaAlert = notasVencidosFactura > 0;
+
+    tr.innerHTML = `
+      <td>${escapeAttr(row.vendedora || '')}</td>
+      <td class="${procesoAlert ? 'cell-alert' : ''}">${row.enProceso ?? 0}</td>
+      <td class="${facturaAlert ? 'cell-alert' : ''}">${row.paraFacturar ?? 0}</td>
+    `;
+    pedidosControlTableBody.appendChild(tr);
+  });
+}
+
+async function loadPedidosControl() {
+  try {
+    if (pedidosControlStatus) pedidosControlStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/panel-control/pedidos');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    renderPedidosControl(rows);
+    if (pedidosControlStatus) {
+      pedidosControlStatus.textContent = rows.length ? `Vendedoras: ${rows.length}` : 'Sin resultados.';
+    }
+  } catch (error) {
+    if (pedidosControlStatus) {
+      pedidosControlStatus.textContent = error.message || 'Error al cargar pedidos.';
+    }
+    console.error(error);
+  }
+}
+
 async function loadPaqueteriaLista(tipo) {
   try {
     modalStatus.textContent = 'Cargando...';
@@ -3545,6 +3584,11 @@ if (refreshPaqueteriaControl) {
 if (refreshCarritosControl) {
   refreshCarritosControl.addEventListener('click', () => {
     loadCarritosAbandonados();
+  });
+}
+if (refreshPedidosControl) {
+  refreshPedidosControl.addEventListener('click', () => {
+    loadPedidosControl();
   });
 }
 document.getElementById('refresh-empleados').addEventListener('click', () => {
@@ -5248,6 +5292,7 @@ loadMensual(defaultYearMensual);
 loadVentas(defaultYearVentas);
 loadPaqueteria();
 loadCarritosAbandonados();
+loadPedidosControl();
 loadPedidosClientes();
 
 

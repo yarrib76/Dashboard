@@ -959,12 +959,29 @@ body.theme-light .carritos-vendedora-select {
   background: rgba(12, 16, 28, 0.95);
 }
 
+#view-panel-control .table-wrap {
+  max-height: 260px;
+  overflow: auto;
+}
+
 .table tbody tr:nth-child(odd) {
   background: rgba(255, 255, 255, 0.02);
 }
 
 .table tbody tr:hover {
   background: rgba(123, 215, 255, 0.08);
+}
+
+.cell-alert {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fee2e2;
+  font-weight: 700;
+  text-align: center;
+}
+
+body.theme-light .cell-alert {
+  background: rgba(239, 68, 68, 0.2);
+  color: #7f1d1d;
 }
 
 #abm-table {

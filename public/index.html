@@ -661,9 +661,22 @@
     </article>
     <article class="card">
       <div class="actions">
-        <h2>Panel 3</h2>
+        <h2>Pedidos</h2>
+        <button id="refresh-pedidos-control" type="button">Actualizar</button>
       </div>
-      <p class="status">Proximamente.</p>
+      <div class="table-wrap">
+        <table class="table" id="pedidos-control-table">
+          <thead>
+            <tr>
+              <th>Vendedoras</th>
+              <th>Proceso</th>
+              <th>Factura</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="status" id="pedidos-control-status"></p>
     </article>
   </section>
 
