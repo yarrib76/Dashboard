@@ -675,6 +675,49 @@ app.get('/api/carritos-abandonados/vendedoras', requireAuth, async (_req, res) =
   }
 });
 
+app.get('/api/panel-control/pedidos', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         v.nombre AS vendedora,
+         SUM(CASE WHEN ctrl.total < 1 THEN 1 ELSE 0 END) AS enProceso,
+         SUM(CASE WHEN ctrl.total > 1 THEN 1 ELSE 0 END) AS paraFacturar,
+         SUM(CASE WHEN ctrl.total < 1 AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY) THEN 1 ELSE 0 END) AS vencidosEnProceso,
+         SUM(CASE WHEN ctrl.total > 1 AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY) THEN 1 ELSE 0 END) AS vencidosParaFacturar,
+         SUM(
+           CASE
+             WHEN ctrl.total < 1
+              AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY)
+              AND COALESCE(ctrl.fecha_ultima_nota, '1900-01-01') < DATE_SUB(NOW(), INTERVAL 3 DAY)
+             THEN 1
+             ELSE 0
+           END
+         ) AS notasVencidosEnProceso,
+         SUM(
+           CASE
+             WHEN ctrl.total > 1
+              AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY)
+              AND COALESCE(ctrl.fecha_ultima_nota, '1900-01-01') < DATE_SUB(NOW(), INTERVAL 3 DAY)
+             THEN 1
+             ELSE 0
+           END
+         ) AS notasVencidosParaFacturar
+       FROM vendedores v
+       LEFT JOIN controlpedidos ctrl
+         ON ctrl.vendedora = v.nombre
+        AND ctrl.fecha > '2020-05-01'
+        AND ctrl.estado = 1
+       WHERE v.tipo <> 0
+         AND v.nombre NOT IN ('Veronica', ' ')
+       GROUP BY v.nombre
+       ORDER BY v.nombre`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos', error: error.message });
+  }
+});
+
 app.get('/api/paqueteria/lista', async (req, res) => {
   try {
     const tipo = req.query.tipo;
