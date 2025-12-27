@@ -187,6 +187,18 @@ const modalStatus = document.getElementById('modal-status');
 const modalClose = document.getElementById('modal-close');
 const modalTableBody = document.querySelector('#tabla-modal tbody');
 const modalSearch = document.getElementById('modal-search');
+const carritosOverlay = document.getElementById('carritos-overlay');
+const carritosTitle = document.getElementById('carritos-title');
+const carritosClose = document.getElementById('carritos-close');
+const carritosTableEl = document.getElementById('carritos-table');
+const carritosStatus = document.getElementById('carritos-status');
+const carritosNotasOverlay = document.getElementById('carritos-notas-overlay');
+const carritosNotasTitle = document.getElementById('carritos-notas-title');
+const carritosNotasClose = document.getElementById('carritos-notas-close');
+const carritosNotasList = document.getElementById('carritos-notas-list');
+const carritosNotasInput = document.getElementById('carritos-notas-input');
+const carritosNotasSave = document.getElementById('carritos-notas-save');
+const carritosNotasStatus = document.getElementById('carritos-notas-status');
 const calendarOverlay = document.getElementById('calendar-overlay');
 const calendarTitle = document.getElementById('calendar-title');
 const calendarClose = document.getElementById('calendar-close');
@@ -208,9 +220,18 @@ const nePageInfo = document.getElementById('ne-page-info');
 const nePageSizeSelect = document.getElementById('ne-page-size');
 
 let paqueteriaRows = [];
+let carritosRows = [];
 let transportesList = [];
 let empleadosRows = [];
+let carritosTable = null;
+let carritosCurrentTipo = 'pendientes';
+let carritosNotasCurrentId = null;
+let carritosNotasEditingId = null;
+let carritosVendedoras = [];
+let carritosVendedorasLoaded = false;
+let carritosVendedorasLoading = null;
 const viewDashboard = document.getElementById('view-dashboard');
+const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
@@ -232,6 +253,17 @@ const mercExportBtn = document.getElementById('merc-export');
 const mercGraficarBtn = document.getElementById('merc-graficar');
 const mercTableBody = document.querySelector('#merc-table tbody');
 const mercStatus = document.getElementById('merc-status');
+const statPendientesControl = document.getElementById('stat-pendientes-control');
+const statSinTransporteControl = document.getElementById('stat-sin-transporte-control');
+const statVencidosControl = document.getElementById('stat-vencidos-control');
+const statusPaqueteriaControl = document.getElementById('status-paqueteria-control');
+const refreshPaqueteriaControl = document.getElementById('refresh-paqueteria-control');
+const statCarritosSinAsignar = document.getElementById('stat-carritos-sin-asignar');
+const statCarritosSinAsignarCard = document.getElementById('stat-carritos-sin-asignar-card');
+const statCarritosPendientes = document.getElementById('stat-carritos-pendientes');
+const statCarritosSinNotas = document.getElementById('stat-carritos-sin-notas');
+const statusCarritosControl = document.getElementById('status-carritos-control');
+const refreshCarritosControl = document.getElementById('refresh-carritos-control');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -2331,7 +2363,7 @@ function setStatus(el, text, isError = false) {
 }
 
 async function fetchJSON(url) {
-  const response = await fetch(url);
+  const response = await fetch(url, { credentials: 'include' });
   if (!response.ok) throw new Error(`Error ${response.status}`);
   return response.json();
 }
@@ -2576,9 +2608,345 @@ function renderVentas(rows) {
 }
 
 function renderPaqueteria(data) {
-  statPendientes.textContent = data.pendientes ?? 0;
-  statSinTransporte.textContent = data.sinTransporte ?? 0;
-  statVencidos.textContent = data.vencidos ?? 0;
+  const pendientes = data.pendientes ?? 0;
+  const sinTransporte = data.sinTransporte ?? 0;
+  const vencidos = data.vencidos ?? 0;
+
+  statPendientes.textContent = pendientes;
+  statSinTransporte.textContent = sinTransporte;
+  statVencidos.textContent = vencidos;
+
+  if (statPendientesControl) statPendientesControl.textContent = pendientes;
+  if (statSinTransporteControl) statSinTransporteControl.textContent = sinTransporte;
+  if (statVencidosControl) statVencidosControl.textContent = vencidos;
+}
+
+function renderCarritosAbandonados(data) {
+  const sinAsignar = data.sinAsignar ?? 0;
+  const pendientes = data.pendientes ?? 0;
+  const sinNotas = data.sinNotas ?? 0;
+  const sinAsignarVencidos = data.sinAsignarVencidos ?? 0;
+
+  if (statCarritosSinAsignar) statCarritosSinAsignar.textContent = sinAsignar;
+  if (statCarritosPendientes) statCarritosPendientes.textContent = pendientes;
+  if (statCarritosSinNotas) statCarritosSinNotas.textContent = sinNotas;
+  if (statCarritosSinAsignarCard) {
+    statCarritosSinAsignarCard.classList.toggle('alert', sinAsignarVencidos > 0);
+  }
+}
+
+function formatCarritosFecha(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().slice(0, 10);
+}
+
+function buildWhatsappLink(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return `https://wa.me/${digits}`;
+}
+
+async function ensureCarritosVendedoras() {
+  if (carritosVendedorasLoaded) return;
+  if (carritosVendedorasLoading) return carritosVendedorasLoading;
+  carritosVendedorasLoading = (async () => {
+    try {
+      const res = await fetchJSON('/api/carritos-abandonados/vendedoras');
+      const rows = Array.isArray(res.data) ? res.data : [];
+      carritosVendedoras = rows.map((row) => row.nombre).filter(Boolean);
+    } catch (error) {
+      carritosVendedoras = [];
+      console.error(error);
+    } finally {
+      if (!carritosVendedoras.includes('PAGINA')) carritosVendedoras.unshift('PAGINA');
+      carritosVendedorasLoaded = true;
+      carritosVendedorasLoading = null;
+    }
+  })();
+  return carritosVendedorasLoading;
+}
+
+function buildVendedoraOptions(selected) {
+  if (!carritosVendedoras.length) return '';
+  return carritosVendedoras
+    .map((name) => {
+      const value = String(name || '');
+      const isSelected = value === String(selected || '');
+      return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(value)}</option>`;
+    })
+    .join('');
+}
+
+function renderCarritosTable(rows) {
+  if (!carritosTableEl) return;
+  const data = rows.map((row) => ({
+    id: row.id,
+    contacto: row.nombre_contacto || '',
+    vendedora: row.vendedora || '',
+    celular: row.cel_contacto || '',
+    total: row.total ?? '',
+    email: row.email_contacto || '',
+    fecha: row.fecha || '',
+    notas: Number(row.notas_count) || 0,
+  }));
+
+  if (carritosTable) {
+    carritosTable.clear();
+    carritosTable.rows.add(data);
+    carritosTable.draw();
+    return;
+  }
+
+  carritosTable = new DataTable('#carritos-table', {
+    data,
+    pageLength: 10,
+    columns: [
+      { data: 'contacto' },
+      {
+        data: 'vendedora',
+        render: (_val, _type, row) => {
+          const options = buildVendedoraOptions(row.vendedora);
+          if (!options) return escapeAttr(row.vendedora || '');
+          return `<select class="carritos-vendedora-select" data-id="${row.id}">${options}</select>`;
+        },
+      },
+      {
+        data: 'celular',
+        render: (val) => {
+          const link = buildWhatsappLink(val);
+          if (!link) return '';
+          return `<a href="${escapeAttr(link)}" target="_blank" rel="noopener">${escapeAttr(val)}</a>`;
+        },
+      },
+      { data: 'total' },
+      { data: 'email' },
+      {
+        data: 'fecha',
+        render: (val) => escapeAttr(formatCarritosFecha(val)),
+      },
+      {
+        data: 'notas',
+        orderable: false,
+        render: (_val, _type, row) =>
+          `<button type="button" class="abm-link-btn carritos-notas-btn" data-id="${row.id}">📖 ${row.notas}</button>`,
+      },
+      {
+        data: 'id',
+        orderable: false,
+        render: (val) =>
+          `<button type="button" class="abm-link-btn carritos-cerrar-btn" data-id="${val}">✔</button>`,
+      },
+    ],
+    language: {
+      search: 'Buscar:',
+      lengthMenu: 'Mostrar _MENU_',
+      info: 'Mostrando _START_ a _END_ de _TOTAL_',
+      infoEmpty: 'Sin resultados',
+      emptyTable: 'Sin carritos.',
+      paginate: {
+        first: 'Primero',
+        last: 'Ultimo',
+        next: 'Siguiente',
+        previous: 'Anterior',
+      },
+    },
+  });
+}
+
+async function loadCarritosLista(tipo) {
+  try {
+    if (carritosStatus) carritosStatus.textContent = 'Cargando...';
+    const res = await fetchJSON(`/api/carritos-abandonados/lista?tipo=${encodeURIComponent(tipo)}`);
+    carritosRows = res.data || [];
+    renderCarritosTable(carritosRows);
+    if (carritosStatus) {
+      carritosStatus.textContent = carritosRows.length
+        ? `Carritos: ${carritosRows.length}`
+        : 'Sin resultados.';
+    }
+  } catch (error) {
+    if (carritosStatus) {
+      carritosStatus.textContent = error.message || 'Error al cargar carritos.';
+    }
+    console.error(error);
+  }
+}
+
+async function openCarritosModal(tipo) {
+  if (!carritosOverlay) return;
+  carritosCurrentTipo = tipo;
+  const titleMap = {
+    sinAsignar: 'Sin asignar',
+    pendientes: 'Pendientes',
+    sinNotas: 'Sin notas',
+  };
+  if (carritosTitle) {
+    carritosTitle.textContent = `Carritos Abandonados - ${titleMap[tipo] || ''}`;
+  }
+  carritosOverlay.classList.add('open');
+  await ensureCarritosVendedoras();
+  loadCarritosLista(tipo);
+}
+
+function resolveNotaFecha(row) {
+  return row.fecha || row.Fecha || row.created_at || row.updated_at || '';
+}
+
+function resolveNotaTexto(row) {
+  return row.notas || row.nota || row.comentario || row.texto || '';
+}
+
+function resolveNotaVendedora(row) {
+  return row.vendedora || row.usuario || row.user || '';
+}
+
+function renderCarritosNotas(rows) {
+  if (!carritosNotasList) return;
+  carritosNotasList.innerHTML = '';
+  if (!rows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'status';
+    empty.textContent = 'Sin notas.';
+    carritosNotasList.appendChild(empty);
+    return;
+  }
+  rows.forEach((row) => {
+    const note = document.createElement('div');
+    note.className = 'carritos-nota';
+    if (carritosNotasEditingId && Number(row.id) === carritosNotasEditingId) {
+      note.classList.add('active');
+    }
+    note.dataset.id = row.id;
+    note.dataset.text = resolveNotaTexto(row);
+    const fecha = resolveNotaFecha(row);
+    note.innerHTML = `
+      <div class="meta">
+        ${escapeAttr(resolveNotaVendedora(row))} · ${escapeAttr(formatDateTime(fecha))}
+      </div>
+      <div class="text"><strong>Comentario:</strong> ${escapeAttr(resolveNotaTexto(row))}</div>
+    `;
+    carritosNotasList.appendChild(note);
+  });
+}
+
+async function loadCarritosNotas(id) {
+  try {
+    if (carritosNotasStatus) carritosNotasStatus.textContent = 'Cargando...';
+    const res = await fetchJSON(`/api/carritos-abandonados/${encodeURIComponent(id)}/notas`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const sorted = rows.sort((a, b) => {
+      const fa = new Date(resolveNotaFecha(a)).getTime() || 0;
+      const fb = new Date(resolveNotaFecha(b)).getTime() || 0;
+      if (fb !== fa) return fb - fa;
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+    renderCarritosNotas(sorted);
+    if (carritosNotasStatus) {
+      carritosNotasStatus.textContent = sorted.length ? `Notas: ${sorted.length}` : '';
+    }
+  } catch (error) {
+    if (carritosNotasStatus) carritosNotasStatus.textContent = error.message || 'Error al cargar notas.';
+    console.error(error);
+  }
+}
+
+function openCarritosNotas(id, contacto) {
+  if (!carritosNotasOverlay) return;
+  carritosNotasCurrentId = Number(id) || null;
+  carritosNotasEditingId = null;
+  if (carritosNotasInput) carritosNotasInput.value = '';
+  if (carritosNotasTitle) {
+    carritosNotasTitle.textContent = contacto
+      ? `Notas - ${contacto}`
+      : 'Notas';
+  }
+  carritosNotasOverlay.classList.add('open');
+  loadCarritosNotas(carritosNotasCurrentId);
+}
+
+async function saveCarritosNota() {
+  if (!carritosNotasCurrentId) return;
+  const nota = carritosNotasInput?.value?.trim() || '';
+  if (!nota) {
+    if (carritosNotasStatus) carritosNotasStatus.textContent = 'Escribe una nota.';
+    return;
+  }
+  try {
+    if (carritosNotasSave) carritosNotasSave.disabled = true;
+    if (carritosNotasStatus) carritosNotasStatus.textContent = 'Guardando...';
+    if (carritosNotasEditingId) {
+      await fetch(`/api/carritos-abandonados/notas/${encodeURIComponent(carritosNotasEditingId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ nota }),
+      });
+    } else {
+      await fetch(`/api/carritos-abandonados/${encodeURIComponent(carritosNotasCurrentId)}/notas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ nota }),
+      });
+    }
+    carritosNotasEditingId = null;
+    if (carritosNotasInput) carritosNotasInput.value = '';
+    await loadCarritosNotas(carritosNotasCurrentId);
+    await loadCarritosLista(carritosCurrentTipo);
+    if (carritosNotasStatus) carritosNotasStatus.textContent = 'Guardado.';
+  } catch (error) {
+    if (carritosNotasStatus) carritosNotasStatus.textContent = error.message || 'Error al guardar nota.';
+    console.error(error);
+  } finally {
+    if (carritosNotasSave) carritosNotasSave.disabled = false;
+  }
+}
+
+async function cerrarCarrito(id) {
+  if (!id) return;
+  const confirmed = confirm('¿Cerrar este carrito?');
+  if (!confirmed) return;
+  try {
+    if (carritosStatus) carritosStatus.textContent = 'Cerrando...';
+    const res = await fetch(`/api/carritos-abandonados/${encodeURIComponent(id)}/cerrar`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'No se pudo cerrar el carrito.');
+    }
+    await loadCarritosLista(carritosCurrentTipo);
+    if (carritosStatus) carritosStatus.textContent = 'Carrito cerrado.';
+  } catch (error) {
+    if (carritosStatus) carritosStatus.textContent = error.message || 'Error al cerrar carrito.';
+    console.error(error);
+  }
+}
+
+async function updateCarritoVendedora(id, vendedora) {
+  if (!id || !vendedora) return;
+  try {
+    if (carritosStatus) carritosStatus.textContent = 'Actualizando vendedora...';
+    const res = await fetch(`/api/carritos-abandonados/${encodeURIComponent(id)}/vendedora`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ vendedora }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'No se pudo actualizar la vendedora.');
+    }
+    await loadCarritosAbandonados();
+    await loadCarritosLista(carritosCurrentTipo);
+    if (carritosStatus) carritosStatus.textContent = 'Vendedora actualizada.';
+  } catch (error) {
+    if (carritosStatus) carritosStatus.textContent = error.message || 'Error al actualizar vendedora.';
+    console.error(error);
+  }
 }
 
 function renderPaqueteriaLista(rows) {
@@ -2606,6 +2974,14 @@ function formatDate(dateStr) {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
   return d.toISOString().slice(0, 10);
+}
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const iso = d.toISOString();
+  return iso.slice(0, 16).replace('T', ' ');
 }
 
 function mapInstancia(value) {
@@ -3000,20 +3376,44 @@ async function loadVentas(year) {
 async function loadPaqueteria() {
   try {
     setStatus(statusPaqueteria, 'Cargando...');
+    setStatus(statusPaqueteriaControl, 'Cargando...');
     const res = await fetchJSON('/api/paqueteria');
     renderPaqueteria(res);
     setStatus(statusPaqueteria, 'Actualizado');
+    setStatus(statusPaqueteriaControl, 'Actualizado');
   } catch (error) {
     if (USE_SAMPLE_FALLBACK) {
       renderPaqueteria(samplePaqueteria);
       setStatus(statusPaqueteria, 'Usando datos de ejemplo (sin conexión a la base).', true);
+      setStatus(statusPaqueteriaControl, 'Usando datos de ejemplo (sin conexión a la base).', true);
     } else {
       setStatus(
         statusPaqueteria,
         'Error cargando empaquetados. Revisa conexión al servidor/base.',
         true
       );
+      setStatus(
+        statusPaqueteriaControl,
+        'Error cargando empaquetados. Revisa conexión al servidor/base.',
+        true
+      );
     }
+    console.error(error);
+  }
+}
+
+async function loadCarritosAbandonados() {
+  try {
+    setStatus(statusCarritosControl, 'Cargando...');
+    const res = await fetchJSON('/api/carritos-abandonados');
+    renderCarritosAbandonados(res);
+    setStatus(statusCarritosControl, 'Actualizado');
+  } catch (error) {
+    setStatus(
+      statusCarritosControl,
+      'Error cargando carritos abandonados. Revisa conexión al servidor/base.',
+      true
+    );
     console.error(error);
   }
 }
@@ -3056,6 +3456,7 @@ function applyMenuPermissions(perms = {}) {
 function getFirstAllowedView(perms = {}) {
   const order = [
     'dashboard',
+    'panel-control',
     'empleados',
     'clientes',
     'ia',
@@ -3125,6 +3526,16 @@ document.getElementById('refresh-ventas').addEventListener('click', () => {
 document.getElementById('refresh-paqueteria').addEventListener('click', () => {
   loadPaqueteria();
 });
+if (refreshPaqueteriaControl) {
+  refreshPaqueteriaControl.addEventListener('click', () => {
+    loadPaqueteria();
+  });
+}
+if (refreshCarritosControl) {
+  refreshCarritosControl.addEventListener('click', () => {
+    loadCarritosAbandonados();
+  });
+}
 document.getElementById('refresh-empleados').addEventListener('click', () => {
   const [year, month] = mesEmpleados.value.split('-');
   loadEmpleados(`${year}-${month}-01`);
@@ -3498,6 +3909,7 @@ const permissionGroups = [
     title: 'General',
     items: [
       { key: 'dashboard', label: 'Dashboard' },
+      { key: 'panel-control', label: 'Panel de Control' },
       { key: 'empleados', label: 'Empleados' },
       { key: 'clientes', label: 'Clientes' },
       { key: 'ia', label: 'IA' },
@@ -3987,6 +4399,72 @@ function initPaqueteriaModal() {
       openNoEncuestadosModal(userId, name);
     }
   });
+}
+
+function initCarritosModal() {
+  const statButtons = document.querySelectorAll('.carritos-stat-click');
+  statButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tipo = btn.dataset.tipo;
+      openCarritosModal(tipo);
+    });
+  });
+
+  if (carritosClose) carritosClose.addEventListener('click', () => carritosOverlay?.classList.remove('open'));
+  if (carritosOverlay) {
+    carritosOverlay.addEventListener('click', (e) => {
+      if (e.target === carritosOverlay) carritosOverlay.classList.remove('open');
+    });
+  }
+
+  if (carritosTableEl) {
+    carritosTableEl.addEventListener('click', (e) => {
+      const notasBtn = e.target.closest('.carritos-notas-btn');
+      if (notasBtn) {
+        const id = Number(notasBtn.dataset.id);
+        const row = carritosRows.find((item) => Number(item.id) === id);
+        openCarritosNotas(id, row?.nombre_contacto || '');
+        return;
+      }
+      const cerrarBtn = e.target.closest('.carritos-cerrar-btn');
+      if (cerrarBtn) {
+        const id = Number(cerrarBtn.dataset.id);
+        cerrarCarrito(id);
+      }
+    });
+    carritosTableEl.addEventListener('change', (e) => {
+      const select = e.target.closest('.carritos-vendedora-select');
+      if (!select) return;
+      const id = Number(select.dataset.id);
+      const value = select.value || '';
+      updateCarritoVendedora(id, value);
+    });
+  }
+
+  if (carritosNotasClose) {
+    carritosNotasClose.addEventListener('click', () => carritosNotasOverlay?.classList.remove('open'));
+  }
+  if (carritosNotasOverlay) {
+    carritosNotasOverlay.addEventListener('click', (e) => {
+      if (e.target === carritosNotasOverlay) carritosNotasOverlay.classList.remove('open');
+    });
+  }
+  if (carritosNotasSave) carritosNotasSave.addEventListener('click', saveCarritosNota);
+  if (carritosNotasList) {
+    carritosNotasList.addEventListener('click', (e) => {
+      const note = e.target.closest('.carritos-nota');
+      if (!note) return;
+      carritosNotasEditingId = Number(note.dataset.id) || null;
+      if (carritosNotasInput) {
+        carritosNotasInput.value = note.dataset.text || '';
+        carritosNotasInput.focus();
+      }
+      Array.from(carritosNotasList.querySelectorAll('.carritos-nota')).forEach((node) => {
+        node.classList.toggle('active', node === note);
+      });
+      if (carritosNotasStatus) carritosNotasStatus.textContent = 'Editando nota.';
+    });
+  }
 }
 
 function initNoEncuestadosModal() {
@@ -4672,6 +5150,7 @@ function switchView(target) {
   }
   const views = [
     viewDashboard,
+    viewPanelControl,
     viewEmpleados,
     viewClientes,
     viewIa,
@@ -4706,6 +5185,8 @@ function switchView(target) {
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     loadAbmDataTable();
+  } else if (target === 'panel-control') {
+    viewPanelControl.classList.remove('hidden');
   } else if (target === 'configuracion') {
     viewConfiguracion.classList.remove('hidden');
   } else if (target === 'facturas') {
@@ -4732,6 +5213,7 @@ const defaultYearVentas = initYearSelect('year-ventas', (y) => loadVentas(y));
 initMenu();
 initCollapsibles();
 initPaqueteriaModal();
+initCarritosModal();
 initNoEncuestadosModal();
 initFechaEmpleados();
 initClientes();
@@ -4754,6 +5236,7 @@ loadProductividad(document.getElementById('fecha-desde').value, document.getElem
 loadMensual(defaultYearMensual);
 loadVentas(defaultYearVentas);
 loadPaqueteria();
+loadCarritosAbandonados();
 loadPedidosClientes();
 
 

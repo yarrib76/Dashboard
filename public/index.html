@@ -33,6 +33,10 @@
             <span class="icon">📊</span>
             <span class="label">Dashboard</span>
           </button>
+          <button class="menu-item" data-target="panel-control">
+            <span class="icon">🧭</span>
+            <span class="label">Panel de Control</span>
+          </button>
           <button class="menu-item" data-target="empleados">
             <span class="icon">👥</span>
             <span class="label">Empleados</span>
@@ -609,6 +613,57 @@
         </label>
       </div>
       <p class="status" id="merc-status"></p>
+    </article>
+  </section>
+
+  <section class="grid view hidden" id="view-panel-control">
+    <article class="card">
+      <div class="actions">
+        <h2>Empaquetados</h2>
+        <button id="refresh-paqueteria-control" type="button">Actualizar</button>
+      </div>
+      <div class="stat-grid">
+        <button class="stat stat-click" data-tipo="pendientes">
+          <p class="label">Pendientes</p>
+          <p class="value" id="stat-pendientes-control">0</p>
+        </button>
+        <button class="stat stat-click" data-tipo="sinTransporte">
+          <p class="label">Sin transporte</p>
+          <p class="value" id="stat-sin-transporte-control">0</p>
+        </button>
+        <button class="stat alert stat-click" data-tipo="vencidos">
+          <p class="label">Vencidos (&gt;3 d｛s)</p>
+          <p class="value" id="stat-vencidos-control">0</p>
+        </button>
+      </div>
+      <p class="status" id="status-paqueteria-control"></p>
+    </article>
+    <article class="card">
+      <div class="actions">
+        <h2>Carritos Abandonados</h2>
+        <button id="refresh-carritos-control" type="button">Actualizar</button>
+      </div>
+      <div class="stat-grid">
+        <button class="stat carritos-stat-click" data-tipo="sinAsignar" id="stat-carritos-sin-asignar-card">
+          <p class="label">Sin asignar</p>
+          <p class="value" id="stat-carritos-sin-asignar">0</p>
+        </button>
+        <button class="stat carritos-stat-click" data-tipo="pendientes">
+          <p class="label">Pendientes</p>
+          <p class="value" id="stat-carritos-pendientes">0</p>
+        </button>
+        <button class="stat carritos-stat-click" data-tipo="sinNotas">
+          <p class="label">Sin notas</p>
+          <p class="value" id="stat-carritos-sin-notas">0</p>
+        </button>
+      </div>
+      <p class="status" id="status-carritos-control"></p>
+    </article>
+    <article class="card">
+      <div class="actions">
+        <h2>Panel 3</h2>
+      </div>
+      <p class="status">Proximamente.</p>
     </article>
   </section>
 
@@ -1326,6 +1381,52 @@
         </div>
         <p class="status" id="abm-pedidos-status"></p>
         <p class="status" id="abm-pedidos-detalle"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="carritos-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="carritos-title">Carritos Abandonados</h3>
+        <button id="carritos-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="carritos-table">
+            <thead>
+              <tr>
+                <th>Contacto</th>
+                <th>Vendedora</th>
+                <th>Celular</th>
+                <th>Total</th>
+                <th>Email</th>
+                <th>Fecha</th>
+                <th>Notas</th>
+                <th>Cerrar</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="carritos-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="carritos-notas-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="carritos-notas-title">Notas</h3>
+        <button id="carritos-notas-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="carritos-notas-actions">
+          <textarea id="carritos-notas-input" rows="3" placeholder="Escribe una nota..."></textarea>
+          <button id="carritos-notas-save" type="button" title="Guardar">✔</button>
+        </div>
+        <div class="carritos-notas-list" id="carritos-notas-list"></div>
+        <p class="status" id="carritos-notas-status"></p>
       </div>
     </div>
   </div>

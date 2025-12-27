@@ -198,6 +198,7 @@ async function getUserRoleNameById(userId) {
 
 const ROLE_PERMISSIONS = [
   'dashboard',
+  'panel-control',
   'empleados',
   'clientes',
   'ia',
@@ -493,6 +494,184 @@ app.get('/api/paqueteria', async (_req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar empaquetados', error: error.message });
+  }
+});
+
+app.get('/api/carritos-abandonados', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         SUM(CASE WHEN ca.estado = 0 AND ca.vendedora = 'PAGINA' THEN 1 ELSE 0 END) AS sinAsignar,
+         SUM(CASE WHEN ca.estado = 0 THEN 1 ELSE 0 END) AS pendientes,
+         SUM(CASE WHEN notas.id_carritos_abandonados IS NULL THEN 1 ELSE 0 END) AS sinNotas,
+         SUM(CASE WHEN ca.estado = 0 AND ca.vendedora = 'PAGINA' AND ca.fecha < DATE_SUB(NOW(), INTERVAL 2 DAY) THEN 1 ELSE 0 END) AS sinAsignarVencidos
+       FROM carritos_abandonados ca
+       LEFT JOIN (
+         SELECT id_carritos_abandonados
+         FROM notas_carritos_abandonados
+         GROUP BY id_carritos_abandonados
+       ) AS notas ON notas.id_carritos_abandonados = ca.id_carritos_abandonados`
+    );
+
+    const data = rows[0] || {};
+    res.json({
+      sinAsignar: Number(data.sinAsignar) || 0,
+      pendientes: Number(data.pendientes) || 0,
+      sinNotas: Number(data.sinNotas) || 0,
+      sinAsignarVencidos: Number(data.sinAsignarVencidos) || 0,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar carritos abandonados', error: error.message });
+  }
+});
+
+app.get('/api/carritos-abandonados/lista', requireAuth, async (req, res) => {
+  try {
+    const tipo = req.query.tipo;
+    const baseWhere = 'ca.estado = 0';
+    let extra = '';
+    if (tipo === 'sinAsignar') {
+      extra = "AND ca.vendedora = 'PAGINA'";
+    } else if (tipo === 'sinNotas') {
+      extra = 'AND COALESCE(notas.notas_count, 0) = 0';
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         ca.id_carritos_abandonados AS id,
+         ca.nombre_contacto,
+         ca.vendedora,
+         ca.cel_contacto,
+         ca.total,
+         ca.email_contacto,
+         ca.fecha,
+         COALESCE(notas.notas_count, 0) AS notas_count
+      FROM carritos_abandonados ca
+       LEFT JOIN (
+         SELECT id_carritos_abandonados, COUNT(*) AS notas_count
+         FROM notas_carritos_abandonados
+         GROUP BY id_carritos_abandonados
+       ) AS notas ON notas.id_carritos_abandonados = ca.id_carritos_abandonados
+       WHERE ${baseWhere} ${extra}
+       ORDER BY ca.fecha DESC`
+    );
+
+    res.json({ tipo, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al listar carritos abandonados', error: error.message });
+  }
+});
+
+app.get('/api/carritos-abandonados/:id/notas', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Id de carrito requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         id_notas_carritos_abandonados AS id,
+         id_carritos_abandonados,
+         fecha,
+         notas,
+         users_id,
+         u.name AS vendedora
+       FROM notas_carritos_abandonados
+       LEFT JOIN users u ON u.id = notas_carritos_abandonados.users_id
+       WHERE id_carritos_abandonados = ?
+       ORDER BY id_notas_carritos_abandonados DESC`,
+      [id]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar notas', error: error.message });
+  }
+});
+
+app.post('/api/carritos-abandonados/:id/notas', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const nota = (req.body?.nota || '').trim();
+    const userId = req.user?.id;
+    if (!id) return res.status(400).json({ message: 'Id de carrito requerido' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+    if (!userId) return res.status(401).json({ message: 'Usuario no autenticado' });
+    const fecha = formatDateTimeLocal(new Date());
+    const [result] = await pool.query(
+      `INSERT INTO notas_carritos_abandonados (id_carritos_abandonados, notas, users_id, fecha)
+       VALUES (?, ?, ?, ?)`,
+      [id, nota, userId, fecha]
+    );
+    res.json({ ok: true, id: result.insertId });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar nota', error: error.message });
+  }
+});
+
+app.put('/api/carritos-abandonados/notas/:notaId', requireAuth, async (req, res) => {
+  try {
+    const notaId = Number(req.params.notaId);
+    const nota = (req.body?.nota || '').trim();
+    if (!notaId) return res.status(400).json({ message: 'Id de nota requerido' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+    await pool.query(
+      'UPDATE notas_carritos_abandonados SET notas = ? WHERE id_notas_carritos_abandonados = ? LIMIT 1',
+      [nota, notaId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar nota', error: error.message });
+  }
+});
+
+app.post('/api/carritos-abandonados/:id/cerrar', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Id de carrito requerido' });
+    const [rows] = await pool.query(
+      'SELECT COUNT(*) AS total FROM notas_carritos_abandonados WHERE id_carritos_abandonados = ?',
+      [id]
+    );
+    const total = Number(rows?.[0]?.total) || 0;
+    if (!total) {
+      return res
+        .status(400)
+        .json({ message: 'Antes de cerrar un carrito debes agregar al menos una nota.' });
+    }
+    await pool.query('UPDATE carritos_abandonados SET estado = 1 WHERE id_carritos_abandonados = ? LIMIT 1', [
+      id,
+    ]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cerrar carrito', error: error.message });
+  }
+});
+
+app.put('/api/carritos-abandonados/:id/vendedora', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const vendedora = (req.body?.vendedora || '').trim();
+    if (!id) return res.status(400).json({ message: 'Id de carrito requerido' });
+    if (!vendedora) return res.status(400).json({ message: 'Vendedora requerida' });
+    await pool.query(
+      'UPDATE carritos_abandonados SET vendedora = ? WHERE id_carritos_abandonados = ? LIMIT 1',
+      [vendedora, id]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar vendedora', error: error.message });
+  }
+});
+
+app.get('/api/carritos-abandonados/vendedoras', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT name AS nombre
+       FROM users
+       WHERE id_roles <> 4
+       ORDER BY name`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar vendedoras', error: error.message });
   }
 });
 
