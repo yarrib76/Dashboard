@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const dns = require('dns');
+const { setGlobalDispatcher, Agent } = require('undici');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { log } = require('console');
@@ -22,6 +23,14 @@ const fsp = fs.promises;
 if (typeof dns.setDefaultResultOrder === 'function') {
   dns.setDefaultResultOrder('ipv4first');
 }
+setGlobalDispatcher(
+  new Agent({
+    connect: {
+      family: 4,
+      timeout: Number(process.env.OPENAI_CONNECT_TIMEOUT_MS || 10000),
+    },
+  })
+);
 
 const app = express();
 // Habilita cookies en peticiones cross-site si el front vive en otro dominio/puerto
