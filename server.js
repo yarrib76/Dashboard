@@ -57,6 +57,8 @@ const DB_SECONDARY_LIMIT = Number(process.env.DB_SECONDARY_CONNECTION_LIMIT || D
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 30000);
+const OPENAI_MAX_RETRIES = Number(process.env.OPENAI_MAX_RETRIES || 2);
 const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
@@ -64,7 +66,11 @@ const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/pr
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
-    ? new OpenAI({ apiKey: OPENAI_API_KEY.trim() })
+    ? new OpenAI({
+        apiKey: OPENAI_API_KEY.trim(),
+        timeout: OPENAI_TIMEOUT_MS,
+        maxRetries: OPENAI_MAX_RETRIES,
+      })
     : null;
 
 const secondaryPool =
