@@ -1052,11 +1052,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
     if (!controlId) return res.status(400).json({ message: 'controlId requerido' });
     if (!message || typeof message !== 'string') return res.status(400).json({ message: 'Mensaje requerido' });
     if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
-    if (!secondaryPool) {
-      return res.status(400).json({
-        message: 'DB secundaria no configurada. Configura DB_SECONDARY_* para usar IA.',
-      });
-    }
+    const aiPool = secondaryPool || pool;
 
     const userId = req.user?.id;
     const ahora = formatDateTimeLocal(
@@ -1120,7 +1116,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
     let sql = await generateSql();
     let rows;
     try {
-      [rows] = await secondaryPool.query(sql);
+      [rows] = await aiPool.query(sql);
     } catch (err) {
       const msg = String(err?.message || '');
       if (err?.code === 'ER_WRONG_FIELD_WITH_GROUP' || msg.includes('ONLY_FULL_GROUP_BY')) {
@@ -1128,7 +1124,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
           `La consulta anterior falló por ONLY_FULL_GROUP_BY. Asegura que todas las columnas seleccionadas ` +
             `estén agregadas o en el GROUP BY.`
         );
-        [rows] = await secondaryPool.query(sql);
+        [rows] = await aiPool.query(sql);
       } else {
         throw err;
       }
