@@ -4062,7 +4062,7 @@ function applyMenuPermissions(perms = {}) {
   navItems.forEach((btn) => {
     const target = btn.dataset.target;
     if (!target) return;
-    const allowed = perms[target] !== false;
+    const allowed = perms[target] === true;
     btn.style.display = allowed ? '' : 'none';
   });
   const groups = document.querySelectorAll('.menu-group');
@@ -4088,7 +4088,7 @@ function getFirstAllowedView(perms = {}) {
     'comisiones',
     'configuracion',
   ];
-  return order.find((key) => perms[key] !== false) || '';
+  return order.find((key) => perms[key] === true) || '';
 }
 
 async function loadCurrentUser() {
@@ -4109,7 +4109,7 @@ async function loadCurrentUser() {
     if (userRoleEl) {
       userRoleEl.textContent = data?.user?.role || 'Equipo';
     }
-    currentPermissions = data?.permissions || {};
+    currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
     applyMenuPermissions(currentPermissions);
     const firstAllowed = getFirstAllowedView(currentPermissions);
     if (!firstAllowed && viewNoPermission) {
@@ -6098,7 +6098,7 @@ function switchView(target) {
     viewNoPermission.classList.remove('hidden');
     return;
   }
-  if (currentPermissions && currentPermissions[target] === false) {
+  if (currentPermissions && currentPermissions[target] !== true) {
     const fallback = getFirstAllowedView(currentPermissions);
     if (fallback && fallback !== target) {
       switchView(fallback);

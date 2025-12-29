@@ -43,11 +43,11 @@ const DB_USER = requiredEnv('DB_USER');
 const DB_PASSWORD = requiredEnv('DB_PASSWORD');
 const DB_NAME = requiredEnv('DB_NAME');
 const DB_CONNECTION_LIMIT = Number(requiredEnv('DB_CONNECTION_LIMIT', 10));
-const DB_SECONDARY_HOST = process.env.DB_SECONDARY_HOST || DB_HOST;
-const DB_SECONDARY_PORT = Number(process.env.DB_SECONDARY_PORT || DB_PORT);
-const DB_SECONDARY_USER = process.env.DB_SECONDARY_USERNAME || DB_USER;
-const DB_SECONDARY_PASSWORD = process.env.DB_SECONDARY_PASSWORD || DB_PASSWORD;
-const DB_SECONDARY_NAME = process.env.DB_SECONDARY_DATABASE || DB_NAME;
+const DB_SECONDARY_HOST = process.env.DB_SECONDARY_HOST;
+const DB_SECONDARY_PORT = Number(process.env.DB_SECONDARY_PORT || 3306);
+const DB_SECONDARY_USER = process.env.DB_SECONDARY_USERNAME;
+const DB_SECONDARY_PASSWORD = process.env.DB_SECONDARY_PASSWORD;
+const DB_SECONDARY_NAME = process.env.DB_SECONDARY_DATABASE;
 const DB_SECONDARY_LIMIT = Number(process.env.DB_SECONDARY_CONNECTION_LIMIT || DB_CONNECTION_LIMIT);
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
@@ -62,16 +62,19 @@ const openai =
     ? new OpenAI({ apiKey: OPENAI_API_KEY.trim() })
     : null;
 
-const secondaryPool = mysql.createPool({
-  host: DB_SECONDARY_HOST,
-  port: DB_SECONDARY_PORT,
-  user: DB_SECONDARY_USER,
-  password: DB_SECONDARY_PASSWORD,
-  database: DB_SECONDARY_NAME,
-  connectionLimit: DB_SECONDARY_LIMIT,
-  supportBigNumbers: true,
-  bigNumberStrings: true,
-});
+const secondaryPool =
+  DB_SECONDARY_HOST && DB_SECONDARY_USER && DB_SECONDARY_PASSWORD && DB_SECONDARY_NAME
+    ? mysql.createPool({
+        host: DB_SECONDARY_HOST,
+        port: DB_SECONDARY_PORT,
+        user: DB_SECONDARY_USER,
+        password: DB_SECONDARY_PASSWORD,
+        database: DB_SECONDARY_NAME,
+        connectionLimit: DB_SECONDARY_LIMIT,
+        supportBigNumbers: true,
+        bigNumberStrings: true,
+      })
+    : null;
 
 function parseISODate(value) {
   const date = new Date(`${value}T00:00:00`);
@@ -1015,6 +1018,11 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
     if (!controlId) return res.status(400).json({ message: 'controlId requerido' });
     if (!message || typeof message !== 'string') return res.status(400).json({ message: 'Mensaje requerido' });
     if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+    if (!secondaryPool) {
+      return res.status(400).json({
+        message: 'DB secundaria no configurada. Configura DB_SECONDARY_* para usar IA.',
+      });
+    }
 
     const userId = req.user?.id;
     const ahora = formatDateTimeLocal(
