@@ -220,6 +220,42 @@ body.menu-open .menu-backdrop {
   grid-column: 1 / -1;
 }
 
+.card.span-2 {
+  grid-column: span 2;
+}
+
+.card-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.card-split h4 {
+  margin: 6px 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.stat-button {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 18px;
+  text-align: center;
+}
+
+@media (max-width: 960px) {
+  .card.span-2 {
+    grid-column: 1 / -1;
+  }
+  .card-split {
+    grid-template-columns: 1fr;
+  }
+}
 .card h2 {
   margin: 0 0 10px;
   font-size: 18px;
@@ -1141,6 +1177,94 @@ body.theme-light .row-alert td {
 .checkout-section h4 {
   margin: 0 0 8px 0;
   font-size: 14px;
+  color: var(--muted);
+}
+
+.gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.gauge {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.gauge-svg {
+  width: 100%;
+  max-width: 150px;
+}
+
+.gauge-track {
+  stroke: rgba(148, 163, 184, 0.25);
+  stroke-width: 12;
+  fill: none;
+}
+
+.gauge-seg {
+  stroke-width: 12;
+  fill: none;
+  opacity: 0.5;
+}
+
+.gauge-seg.seg-red {
+  stroke: #ef4444;
+}
+
+.gauge-seg.seg-yellow {
+  stroke: #f59e0b;
+}
+
+.gauge-seg.seg-green {
+  stroke: #22c55e;
+}
+
+.gauge-value {
+  opacity: 0;
+}
+
+.gauge-tick {
+  stroke: rgba(148, 163, 184, 0.5);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.gauge-needle {
+  stroke: #38bdf8;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.gauge-center {
+  fill: #e2e8f0;
+}
+
+.gauge-needle,
+.gauge-center {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+.gauge-meta {
+  text-align: center;
+}
+
+.gauge-number {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.gauge-label {
+  margin: 0;
+  font-size: 11px;
   color: var(--muted);
 }
 

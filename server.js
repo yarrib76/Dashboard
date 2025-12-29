@@ -780,6 +780,68 @@ app.get('/api/panel-control/pedidos', requireAuth, async (_req, res) => {
   }
 });
 
+app.get('/api/panel-control/contadores', requireAuth, async (req, res) => {
+  try {
+    const now = new Date();
+    const baseDate = req.query.fecha ? parseISODate(req.query.fecha) : now;
+    const fromDate = new Date(baseDate);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(baseDate);
+    toDate.setHours(23, 59, 59, 999);
+
+    const desde = formatDateTimeLocal(fromDate);
+    const hasta = formatDateTimeLocal(toDate);
+
+    const [[ventasSalon]] = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM facturah f
+       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+       WHERE f.fecha >= ? AND f.fecha <= ?
+         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)`,
+      [desde, hasta]
+    );
+
+    const [[pedidosFacturados]] = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM facturah f
+       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+       WHERE f.fecha >= ? AND f.fecha <= ?
+         AND cp.ordenWeb IS NOT NULL
+         AND cp.ordenWeb <> 0`,
+      [desde, hasta]
+    );
+
+    const [[pedidosPasados]] = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM controlpedidos
+       WHERE ultactualizacion >= ? AND ultactualizacion <= ?
+         AND total > 1
+         AND estado <> 2
+         AND ordenWeb > 0`,
+      [desde, hasta]
+    );
+
+    const [[pedidosPendientes]] = await pool.query(
+      `SELECT COUNT(*) AS cantidad
+       FROM controlpedidos
+       WHERE total < 1
+         AND estado = 1
+         AND fecha > '2020-05-01'`
+    );
+
+    res.json({
+      desde,
+      hasta,
+      ventasSalon: Number(ventasSalon?.cantidad) || 0,
+      pedidosFacturados: Number(pedidosFacturados?.cantidad) || 0,
+      pedidosPasados: Number(pedidosPasados?.cantidad) || 0,
+      pedidosPendientes: Number(pedidosPendientes?.cantidad) || 0,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar contadores operativos', error: error.message });
+  }
+});
+
 app.get('/api/panel-control/pedidos/:vendedora', requireAuth, async (req, res) => {
   try {
     const vendedora = req.params.vendedora;

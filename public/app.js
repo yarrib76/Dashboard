@@ -282,6 +282,10 @@ const pedidosControlTableBody = document.querySelector('#pedidos-control-table t
 const pedidosControlTableHead = document.querySelector('#pedidos-control-table thead');
 const pedidosControlStatus = document.getElementById('pedidos-control-status');
 const refreshPedidosControl = document.getElementById('refresh-pedidos-control');
+const operativosStatus = document.getElementById('operativos-status');
+const refreshOperativosControl = document.getElementById('refresh-operativos-control');
+const pedidosPendientesCount = document.getElementById('pedidos-pendientes-count');
+const pedidosPasadosCount = document.getElementById('pedidos-pasados-count');
 const pedidosVendedoraOverlay = document.getElementById('pedidos-vendedora-overlay');
 const pedidosVendedoraTitle = document.getElementById('pedidos-vendedora-title');
 const pedidosVendedoraClose = document.getElementById('pedidos-vendedora-close');
@@ -3548,6 +3552,115 @@ async function loadPedidosControl() {
   }
 }
 
+function initGaugeSegments(gaugeEl) {
+  const redLimit = Number(gaugeEl.dataset.red) || 15;
+  const yellowLimit = Number(gaugeEl.dataset.yellow) || 25;
+  const redSeg = gaugeEl.querySelector('.seg-red');
+  const yellowSeg = gaugeEl.querySelector('.seg-yellow');
+  const greenSeg = gaugeEl.querySelector('.seg-green');
+  if (redSeg) {
+    redSeg.style.strokeDasharray = `${redLimit} ${100 - redLimit}`;
+    redSeg.style.strokeDashoffset = '0';
+  }
+  if (yellowSeg) {
+    const span = Math.max(0, yellowLimit - redLimit);
+    yellowSeg.style.strokeDasharray = `${span} ${100 - span}`;
+    yellowSeg.style.strokeDashoffset = `-${redLimit}`;
+  }
+  if (greenSeg) {
+    const span = Math.max(0, 100 - yellowLimit);
+    greenSeg.style.strokeDasharray = `${span} ${100 - span}`;
+    greenSeg.style.strokeDashoffset = `-${yellowLimit}`;
+  }
+}
+
+function initGaugeTicks(gaugeEl) {
+  const svg = gaugeEl.querySelector('.gauge-svg');
+  if (!svg || svg.dataset.ticksReady === 'true') return;
+  const cx = 90;
+  const cy = 90;
+  const rOuter = 80;
+  const rInner = 70;
+  for (let i = 0; i <= 10; i += 1) {
+    const angle = Math.PI - (i / 10) * Math.PI;
+    const x1 = cx + rOuter * Math.cos(angle);
+    const y1 = cy - rOuter * Math.sin(angle);
+    const x2 = cx + rInner * Math.cos(angle);
+    const y2 = cy - rInner * Math.sin(angle);
+    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    tick.setAttribute('x1', x1.toFixed(2));
+    tick.setAttribute('y1', y1.toFixed(2));
+    tick.setAttribute('x2', x2.toFixed(2));
+    tick.setAttribute('y2', y2.toFixed(2));
+    tick.setAttribute('class', 'gauge-tick');
+    svg.appendChild(tick);
+  }
+  svg.dataset.ticksReady = 'true';
+}
+
+function setGaugeValue(gaugeEl, value) {
+  const max = Number(gaugeEl.dataset.max) || 100;
+  const redLimit = Number(gaugeEl.dataset.red) || 15;
+  const yellowLimit = Number(gaugeEl.dataset.yellow) || 25;
+  const displayVal = Number(value) || 0;
+  const percent = max > 0 ? Math.min(100, (displayVal / max) * 100) : 0;
+  const needle = gaugeEl.querySelector('.gauge-needle');
+  if (needle) {
+    const angle = Math.PI - (percent / 100) * Math.PI;
+    const cx = 90;
+    const cy = 90;
+    const r = 64;
+    const x2 = cx + r * Math.cos(angle);
+    const y2 = cy - r * Math.sin(angle);
+    needle.setAttribute('x1', cx);
+    needle.setAttribute('y1', cy);
+    needle.setAttribute('x2', x2.toFixed(2));
+    needle.setAttribute('y2', y2.toFixed(2));
+    if (displayVal <= redLimit) {
+      needle.style.stroke = '#ef4444';
+    } else if (displayVal <= yellowLimit) {
+      needle.style.stroke = '#f59e0b';
+    } else {
+      needle.style.stroke = '#22c55e';
+    }
+  }
+  const numberEl = gaugeEl.querySelector('.gauge-number');
+  if (numberEl) numberEl.textContent = displayVal;
+}
+
+function renderOperativos(data) {
+  const gauges = document.querySelectorAll('#operativos-gauges .gauge');
+  if (gauges.length) {
+    gauges.forEach((gauge) => {
+      initGaugeSegments(gauge);
+      initGaugeTicks(gauge);
+    });
+  }
+  const ventasGauge = document.querySelector('#gauge-ventas-salon')?.closest('.gauge');
+  const facturadosGauge = document.querySelector('#gauge-pedidos-facturados')?.closest('.gauge');
+  const pasadosGauge = document.querySelector('#gauge-pedidos-pasados')?.closest('.gauge');
+  if (ventasGauge) setGaugeValue(ventasGauge, data.ventasSalon);
+  if (facturadosGauge) setGaugeValue(facturadosGauge, data.pedidosFacturados);
+  if (pasadosGauge) setGaugeValue(pasadosGauge, data.pedidosPasados);
+  if (pedidosPendientesCount) pedidosPendientesCount.textContent = data.pedidosPendientes ?? 0;
+  if (pedidosPasadosCount) pedidosPasadosCount.textContent = data.pedidosPasados ?? 0;
+}
+
+async function loadOperativos() {
+  try {
+    if (operativosStatus) operativosStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/panel-control/contadores');
+    renderOperativos(res);
+    if (operativosStatus) {
+      operativosStatus.textContent = `Fecha: ${res.desde.split(' ')[0]}`;
+    }
+  } catch (error) {
+    if (operativosStatus) {
+      operativosStatus.textContent = error.message || 'Error al cargar contadores.';
+    }
+  }
+}
+
 function renderPedidosVendedora(data) {
   if (!pedidosVendedoraTableBody) return;
   const row = data || {};
@@ -4159,6 +4272,11 @@ if (refreshCarritosControl) {
 if (refreshPedidosControl) {
   refreshPedidosControl.addEventListener('click', () => {
     loadPedidosControl();
+  });
+}
+if (refreshOperativosControl) {
+  refreshOperativosControl.addEventListener('click', () => {
+    loadOperativos();
   });
 }
   if (pedidosControlTableHead) {
@@ -6195,6 +6313,7 @@ loadVentas(defaultYearVentas);
 loadPaqueteria();
 loadCarritosAbandonados();
 loadPedidosControl();
+loadOperativos();
 loadPedidosClientes();
 
 
