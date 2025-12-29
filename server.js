@@ -8,6 +8,7 @@ const mysql = require('mysql2/promise');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const dns = require('dns');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { log } = require('console');
@@ -17,6 +18,10 @@ const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
 const fsp = fs.promises;
+
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const app = express();
 // Habilita cookies en peticiones cross-site si el front vive en otro dominio/puerto
@@ -357,6 +362,29 @@ function isSafeSelect(sql) {
   if (forbidden.some((kw) => upper.includes(kw))) return false;
   if (cleaned.split(';').filter((p) => p.trim()).length > 1) return false;
   return true;
+}
+
+async function withRetry(fn, { retries = 2, baseDelayMs = 500 } = {}) {
+  let lastErr;
+  for (let i = 0; i <= retries; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const code = err?.code;
+      const msg = String(err?.message || '');
+      const retriable =
+        code === 'ETIMEDOUT' ||
+        code === 'ECONNRESET' ||
+        code === 'EAI_AGAIN' ||
+        msg.includes('timed out') ||
+        msg.includes('429') ||
+        msg.includes('5');
+      if (!retriable || i === retries) throw err;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 function clampLimit(sql, maxRows = 50) {
@@ -1050,7 +1078,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
       'Usa COALESCE para nulos en agregaciones. Responde en JSON con claves: sql (string) y explanation (string).';
 
     async function generateSql(extraContext = '') {
-      const completionSql = await openai.chat.completions.create({
+      const completionSql = await withRetry(() => openai.chat.completions.create({
         model: OPENAI_MODEL || 'gpt-4o-mini',
         temperature: 0,
         response_format: { type: 'json_object' },
@@ -1061,7 +1089,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
             content: `Pregunta: "${question}"\nEsquema:\n${schemaMeta.text}\n${extraContext}`,
           },
         ],
-      });
+      }));
       const raw = completionSql.choices?.[0]?.message?.content || '';
       let payload;
       try {
@@ -1102,7 +1130,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
 
     const rowsJson = JSON.stringify(rows || []);
 
-    const completionAnswer = await openai.chat.completions.create({
+    const completionAnswer = await withRetry(() => openai.chat.completions.create({
       model: OPENAI_MODEL || 'gpt-4o-mini',
       temperature: 0.2,
       messages: [
@@ -1119,7 +1147,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
           content: `Pregunta original: "${message}"\nInformacion en JSON:\n${rowsJson}`,
         },
       ],
-    });
+    }));
 
     const reply = completionAnswer.choices?.[0]?.message?.content || 'Sin respuesta';
     const miaId = (await getMiaUserId()) || null;
@@ -3337,13 +3365,15 @@ app.post('/api/ia/chat', express.json({ limit: '2mb' }), async (req, res) => {
       'Usa ese resumen directamente para responder; no pidas al usuario que ejecute comandos ni que pegue texto adicional. ' +
       'Devuelve respuestas cortas y accionables.';
 
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `${message}\n\n${promptFiles}` },
-      ],
-    });
+    const completion = await withRetry(() =>
+      openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `${message}\n\n${promptFiles}` },
+        ],
+      })
+    );
     const reply = completion.choices?.[0]?.message?.content || 'Sin respuesta';
     return res.json({ reply });
   } catch (error) {
@@ -3384,15 +3414,17 @@ Esquema disponible:
 ${schemaMeta.text}`;
 
     async function requestCompletion(extraRules = '') {
-      const completion = await openai.chat.completions.create({
-        model: OPENAI_MODEL || 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: baseSystemPrompt(extraRules) },
-          { role: 'user', content: userPrompt(question) },
-        ],
-      });
+      const completion = await withRetry(() =>
+        openai.chat.completions.create({
+          model: OPENAI_MODEL || 'gpt-4o-mini',
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: baseSystemPrompt(extraRules) },
+            { role: 'user', content: userPrompt(question) },
+          ],
+        })
+      );
       return completion.choices?.[0]?.message?.content || '{}';
     }
 
