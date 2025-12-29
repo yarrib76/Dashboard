@@ -851,6 +851,7 @@ input[type='month'] {
   max-height: 60vh;
   border: 1px solid var(--border);
   border-radius: 12px;
+  overflow: auto;
 }
 
 #carritos-overlay .table-wrap {
@@ -1072,11 +1073,23 @@ body.theme-light .carritos-vendedora-select {
   position: sticky;
   top: 0;
   background: rgba(12, 16, 28, 0.95);
+  z-index: 2;
 }
 
 #view-panel-control .table-wrap {
   max-height: 260px;
   overflow: auto;
+}
+
+#pedidos-vendedora-lista-overlay .table-wrap {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+#pedidos-vendedora-lista-overlay .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .table tbody tr:nth-child(odd) {
