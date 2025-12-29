@@ -3597,6 +3597,7 @@ function renderPedidosVendedoraLista(rows) {
     vencido: row.vencido ?? 0,
     id_cliente: row.id_cliente,
     pagado: row.pagado ?? 0,
+    notasCount: Number(row.notas_count) || 0,
   }));
 
   if (pedidosVendedoraListaTable) {
@@ -3667,7 +3668,7 @@ function renderPedidosVendedoraLista(rows) {
           )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
             <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
-          )}" data-cliente="${escapeAttr(row.cliente)}">📖</button>
+          )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
             <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
           )}" data-cliente="${escapeAttr(row.cliente)}">✔</button>
@@ -3927,6 +3928,7 @@ function renderPedidoNotas(rows) {
     note.innerHTML = `
       <div class="meta">${escapeAttr(usuario)} · ${escapeAttr(formatDateTime(fecha))}</div>
       <div class="text"><strong>Comentario:</strong> ${escapeAttr(resolvePedidoNotaTexto(row))}</div>
+      <button type="button" class="nota-delete-btn" title="Eliminar nota">🗑️</button>
     `;
     pedidoNotasList.appendChild(note);
   });
@@ -4451,6 +4453,33 @@ if (refreshPedidosControl) {
   if (pedidoNotasSave) pedidoNotasSave.addEventListener('click', savePedidoNota);
   if (pedidoNotasList) {
     pedidoNotasList.addEventListener('click', (e) => {
+      const delBtn = e.target.closest('.nota-delete-btn');
+      if (delBtn) {
+        const note = delBtn.closest('.carritos-nota');
+        if (!note) return;
+        const noteId = Number(note.dataset.id);
+        if (!noteId) return;
+        if (!confirm('¿Eliminar esta nota?')) return;
+        (async () => {
+          try {
+            if (pedidoNotasStatus) pedidoNotasStatus.textContent = 'Eliminando...';
+            const res = await fetch(`/api/pedidos/comentarios/${encodeURIComponent(noteId)}`, {
+              method: 'DELETE',
+              credentials: 'include',
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              throw new Error(data.message || 'No se pudo eliminar.');
+            }
+            await loadPedidoNotas(pedidoNotasCurrentId);
+            await loadPedidosVendedoraLista(currentPedidosTipo);
+            if (pedidoNotasStatus) pedidoNotasStatus.textContent = 'Nota eliminada.';
+          } catch (error) {
+            if (pedidoNotasStatus) pedidoNotasStatus.textContent = error.message || 'Error al eliminar nota.';
+          }
+        })();
+        return;
+      }
       const note = e.target.closest('.carritos-nota');
       if (!note) return;
       pedidoNotasEditingId = Number(note.dataset.id) || null;

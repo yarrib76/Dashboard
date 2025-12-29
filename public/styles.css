@@ -894,6 +894,47 @@ input[type='month'] {
   white-space: pre-wrap;
 }
 
+.nota-delete-btn {
+  align-self: flex-end;
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.nota-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.nota-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+body.theme-light .nota-count {
+  background: rgba(59, 130, 246, 0.2);
+  color: #1e3a8a;
+}
+
+.pedido-notas-btn {
+  position: relative;
+  padding-right: 14px;
+}
+
 .carritos-notas-actions {
   display: flex;
   gap: 10px;

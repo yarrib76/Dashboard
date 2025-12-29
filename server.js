@@ -800,6 +800,7 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
          ctrl.empaquetado,
          ctrl.pagado,
          ctrl.id_cliente,
+         COALESCE(comentarios.total, 0) AS notas_count,
          CASE
            WHEN ctrl.estado = 1
             AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY)
@@ -812,6 +813,11 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
        FROM controlpedidos ctrl
        INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
        INNER JOIN vendedores v ON v.nombre = ctrl.vendedora
+       LEFT JOIN (
+         SELECT controlpedidos_id, COUNT(*) AS total
+         FROM ComentariosPedidos
+         GROUP BY controlpedidos_id
+       ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
        WHERE ctrl.fecha > '2020-05-01'
          AND ctrl.vendedora NOT IN ('Veronica', ' ')
          AND v.tipo <> 0
@@ -837,6 +843,7 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
       vencido: row.vencido,
       pagado: row.pagado,
       id_cliente: row.id_cliente,
+      notas_count: row.notas_count,
       cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
     }));
 
@@ -1182,6 +1189,17 @@ app.put('/api/pedidos/comentarios/:id', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar comentario', error: error.message });
+  }
+});
+
+app.delete('/api/pedidos/comentarios/:id', requireAuth, async (req, res) => {
+  try {
+    const comentarioId = Number(req.params.id);
+    if (!comentarioId) return res.status(400).json({ message: 'Id de comentario requerido' });
+    await pool.query('DELETE FROM ComentariosPedidos WHERE id = ? LIMIT 1', [comentarioId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar comentario', error: error.message });
   }
 });
 
