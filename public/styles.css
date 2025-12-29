@@ -939,6 +939,80 @@ body.theme-light .carritos-vendedora-select option {
   background: #fff;
 }
 
+.pedido-transporte-select {
+  width: 100%;
+  padding: 6px 28px 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  appearance: none;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, #9aa4b2 50%),
+    linear-gradient(135deg, #9aa4b2 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.pedido-transporte-select:focus {
+  outline: none;
+  border-color: rgba(123, 215, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(123, 215, 255, 0.18);
+}
+
+.pedido-transporte-select option {
+  color: #111;
+  background: #fff;
+}
+
+body.theme-light .pedido-transporte-select {
+  color: #111;
+  background-color: #fff;
+  border-color: rgba(15, 23, 42, 0.2);
+  background-image: linear-gradient(45deg, transparent 50%, #475569 50%),
+    linear-gradient(135deg, #475569 50%, transparent 50%);
+}
+
+.pedido-instancia-select {
+  width: 100%;
+  padding: 6px 28px 6px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  appearance: none;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, #9aa4b2 50%),
+    linear-gradient(135deg, #9aa4b2 50%, transparent 50%);
+  background-position: calc(100% - 18px) calc(50% - 2px), calc(100% - 12px) calc(50% - 2px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.pedido-instancia-select:focus {
+  outline: none;
+  border-color: rgba(123, 215, 255, 0.7);
+  box-shadow: 0 0 0 3px rgba(123, 215, 255, 0.18);
+}
+
+.pedido-instancia-select option {
+  color: #111;
+  background: #fff;
+}
+
+body.theme-light .pedido-instancia-select {
+  color: #111;
+  background-color: #fff;
+  border-color: rgba(15, 23, 42, 0.2);
+  background-image: linear-gradient(45deg, transparent 50%, #475569 50%),
+    linear-gradient(135deg, #475569 50%, transparent 50%);
+}
+
 .carritos-vendedora-select:focus {
   outline: none;
   border-color: rgba(123, 215, 255, 0.7);
@@ -984,6 +1058,64 @@ body.theme-light .cell-alert {
   color: #7f1d1d;
 }
 
+.row-alert td {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+body.theme-light .row-alert td {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.pedidos-vendedora-cell {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.pedidos-vendedora-count {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.checkout-section {
+  margin-bottom: 18px;
+}
+
+.checkout-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.pedido-pago-btn {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.pedido-pago-btn.pago-pendiente {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.pedido-pago-btn.pago-ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.pedido-cancel-btn {
+  background: rgba(251, 191, 36, 0.15);
+  color: #f59e0b;
+}
+
+#pedido-ia-window .chat-message {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 #abm-table {
   table-layout: fixed;
 }
@@ -1004,6 +1136,29 @@ body.theme-light .cell-alert {
 #abm-table td:nth-child(3) {
   width: 12ch;
   white-space: nowrap;
+}
+
+#pedido-items-table th:nth-child(1),
+#pedido-items-table td:nth-child(1) {
+  width: 14ch;
+  white-space: nowrap;
+}
+
+#pedido-items-table {
+  table-layout: fixed;
+}
+
+#pedido-items-table th:nth-child(2),
+#pedido-items-table td:nth-child(2) {
+  width: 24ch;
+  white-space: normal;
+}
+
+#pedido-items-table th:nth-child(3),
+#pedido-items-table td:nth-child(3) {
+  width: 8ch;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .abm-actions {

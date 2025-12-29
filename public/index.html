@@ -668,9 +668,9 @@
         <table class="table" id="pedidos-control-table">
           <thead>
             <tr>
-              <th>Vendedoras</th>
-              <th>Proceso</th>
-              <th>Factura</th>
+              <th data-sort="vendedora">Vendedoras</th>
+              <th data-sort="enProceso">Proceso</th>
+              <th data-sort="paraFacturar">Factura</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -1440,6 +1440,190 @@
         </div>
         <div class="carritos-notas-list" id="carritos-notas-list"></div>
         <p class="status" id="carritos-notas-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedidos-vendedora-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="pedidos-vendedora-title">Pedidos</h3>
+        <button id="pedidos-vendedora-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="pedidos-vendedora-table">
+            <thead>
+              <tr>
+                <th>Asignados</th>
+                <th>Empaquetados</th>
+                <th>En Proceso</th>
+                <th>Para Facturar</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="pedidos-vendedora-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedidos-vendedora-lista-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="pedidos-vendedora-lista-title">Pedidos</h3>
+        <button id="pedidos-vendedora-lista-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="pedidos-vendedora-lista-table">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Fecha</th>
+                <th>Vendedora</th>
+                <th>Factura</th>
+                <th>Total</th>
+                <th>OrdenWeb</th>
+                <th>TotalWeb</th>
+                <th>Transporte</th>
+                <th>Instancia</th>
+                <th>Estado</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="pedidos-vendedora-lista-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedido-items-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="pedido-items-title">Mercaderia del pedido</h3>
+        <button id="pedido-items-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="pedido-items-table">
+            <thead>
+              <tr>
+                <th>Articulo</th>
+                <th>Detalle</th>
+                <th>Cantidad</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="pedido-items-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedido-notas-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="pedido-notas-title">Comentarios</h3>
+        <button id="pedido-notas-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="carritos-notas-actions">
+          <textarea id="pedido-notas-input" rows="3" placeholder="Escribe una nota..."></textarea>
+          <button id="pedido-notas-save" type="button" title="Guardar">✔</button>
+        </div>
+        <div class="carritos-notas-list" id="pedido-notas-list"></div>
+        <p class="status" id="pedido-notas-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedido-checkout-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="pedido-checkout-title">Check Out</h3>
+        <button id="pedido-checkout-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="checkout-section">
+          <h4>Articulos en la Tienda y no en el Sistema</h4>
+          <div class="table-wrap">
+            <table class="table" id="pedido-checkout-tn">
+              <thead>
+                <tr>
+                  <th>NroPedido</th>
+                  <th>OrdenWeb</th>
+                  <th>Articulo</th>
+                  <th>Detalle</th>
+                  <th>Cantidad</th>
+                  <th>Precio</th>
+                  <th>Stock</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="checkout-section">
+          <h4>Articulos en el Sistema y no en la Tienda</h4>
+          <div class="table-wrap">
+            <table class="table" id="pedido-checkout-local">
+              <thead>
+                <tr>
+                  <th>NroPedido</th>
+                  <th>OrdenWeb</th>
+                  <th>Articulo</th>
+                  <th>Detalle</th>
+                  <th>Cantidad</th>
+                  <th>PrecioVenta</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="checkout-section">
+          <h4>Articulos con Diferencia de Precio o Cantidad</h4>
+          <div class="table-wrap">
+            <table class="table" id="pedido-checkout-diff">
+              <thead>
+                <tr>
+                  <th>NroPedido</th>
+                  <th>Articulo</th>
+                  <th>Detalle</th>
+                  <th>TNCantidad</th>
+                  <th>TNPrecio</th>
+                  <th>CantidadLocal</th>
+                  <th>PrecioLocal</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <p class="status" id="pedido-checkout-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedido-ia-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="pedido-ia-title">IA</h3>
+        <button id="pedido-ia-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="chat-window" id="pedido-ia-window"></div>
+        <div class="chat-inputs">
+          <input type="text" id="pedido-ia-input" placeholder="Escribe un mensaje..." />
+          <button id="pedido-ia-send" type="button">Enviar</button>
+        </div>
+        <p class="status" id="pedido-ia-status"></p>
       </div>
     </div>
   </div>

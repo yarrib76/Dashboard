@@ -43,6 +43,12 @@ const DB_USER = requiredEnv('DB_USER');
 const DB_PASSWORD = requiredEnv('DB_PASSWORD');
 const DB_NAME = requiredEnv('DB_NAME');
 const DB_CONNECTION_LIMIT = Number(requiredEnv('DB_CONNECTION_LIMIT', 10));
+const DB_SECONDARY_HOST = process.env.DB_SECONDARY_HOST || DB_HOST;
+const DB_SECONDARY_PORT = Number(process.env.DB_SECONDARY_PORT || DB_PORT);
+const DB_SECONDARY_USER = process.env.DB_SECONDARY_USERNAME || DB_USER;
+const DB_SECONDARY_PASSWORD = process.env.DB_SECONDARY_PASSWORD || DB_PASSWORD;
+const DB_SECONDARY_NAME = process.env.DB_SECONDARY_DATABASE || DB_NAME;
+const DB_SECONDARY_LIMIT = Number(process.env.DB_SECONDARY_CONNECTION_LIMIT || DB_CONNECTION_LIMIT);
 const SESSION_SECRET = requiredEnv('SESSION_SECRET', 'changeme');
 const OPENAI_API_KEY = requiredEnv('OPENAI_API_KEY', '');
 const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
@@ -55,6 +61,17 @@ const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
     ? new OpenAI({ apiKey: OPENAI_API_KEY.trim() })
     : null;
+
+const secondaryPool = mysql.createPool({
+  host: DB_SECONDARY_HOST,
+  port: DB_SECONDARY_PORT,
+  user: DB_SECONDARY_USER,
+  password: DB_SECONDARY_PASSWORD,
+  database: DB_SECONDARY_NAME,
+  connectionLimit: DB_SECONDARY_LIMIT,
+  supportBigNumbers: true,
+  bigNumberStrings: true,
+});
 
 function parseISODate(value) {
   const date = new Date(`${value}T00:00:00`);
@@ -466,6 +483,14 @@ function validateAgainstSchema(sql, schemaMeta) {
   return { ok: invalidTables.length === 0 && invalidColumns.length === 0, invalidTables, invalidColumns };
 }
 
+let cachedMiaUserId = null;
+async function getMiaUserId() {
+  if (cachedMiaUserId) return cachedMiaUserId;
+  const [rows] = await pool.query(`SELECT id FROM users WHERE name = 'Mia' LIMIT 1`);
+  if (rows?.[0]?.id) cachedMiaUserId = rows[0].id;
+  return cachedMiaUserId;
+}
+
 app.get('/api/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -715,6 +740,486 @@ app.get('/api/panel-control/pedidos', requireAuth, async (_req, res) => {
     res.json({ data: rows || [] });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar pedidos', error: error.message });
+  }
+});
+
+app.get('/api/panel-control/pedidos/:vendedora', requireAuth, async (req, res) => {
+  try {
+    const vendedora = req.params.vendedora;
+    if (!vendedora) return res.status(400).json({ message: 'Vendedora requerida' });
+    const [rows] = await pool.query(
+      `SELECT
+         SUM(CASE WHEN ctrl.estado = 1 THEN 1 ELSE 0 END) AS asignados,
+         SUM(CASE WHEN ctrl.estado = 0 AND ctrl.empaquetado = 1 THEN 1 ELSE 0 END) AS empaquetados,
+         SUM(CASE WHEN ctrl.estado = 1 AND ctrl.total < 1 THEN 1 ELSE 0 END) AS enProceso,
+         SUM(CASE WHEN ctrl.estado = 1 AND ctrl.total > 1 THEN 1 ELSE 0 END) AS paraFacturar
+       FROM controlpedidos ctrl
+       INNER JOIN vendedores v ON v.nombre = ctrl.vendedora
+       WHERE ctrl.fecha > '2020-05-01'
+         AND ctrl.vendedora NOT IN ('Veronica', ' ')
+         AND v.tipo <> 0
+         AND ctrl.vendedora = ?`,
+      [vendedora]
+    );
+    res.json({ data: rows?.[0] || {} });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos de vendedora', error: error.message });
+  }
+});
+
+app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, res) => {
+  try {
+    const vendedora = req.params.vendedora;
+    const tipo = req.query.tipo;
+    if (!vendedora) return res.status(400).json({ message: 'Vendedora requerida' });
+    let extra = '';
+    if (tipo === 'empaquetados') {
+      extra = 'AND ctrl.estado = 0 AND ctrl.empaquetado = 1';
+    } else if (tipo === 'enProceso') {
+      extra = 'AND ctrl.estado = 1 AND ctrl.total < 1';
+    } else if (tipo === 'paraFacturar') {
+      extra = 'AND ctrl.estado = 1 AND ctrl.total > 1';
+    } else {
+      extra = 'AND ctrl.estado = 1';
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.id,
+         ctrl.nropedido,
+         ctrl.fecha,
+         ctrl.fecha_ultima_nota,
+         ctrl.vendedora,
+         ctrl.nrofactura,
+         ctrl.total,
+         ctrl.ordenweb,
+         ctrl.totalweb,
+         ctrl.transporte,
+         ctrl.instancia,
+         ctrl.estado,
+         ctrl.empaquetado,
+         ctrl.pagado,
+         ctrl.id_cliente,
+         CASE
+           WHEN ctrl.estado = 1
+            AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY)
+            AND COALESCE(ctrl.fecha_ultima_nota, '1900-01-01') < DATE_SUB(NOW(), INTERVAL 3 DAY)
+           THEN 1
+           ELSE 0
+         END AS vencido,
+         c.nombre,
+         c.apellido
+       FROM controlpedidos ctrl
+       INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+       INNER JOIN vendedores v ON v.nombre = ctrl.vendedora
+       WHERE ctrl.fecha > '2020-05-01'
+         AND ctrl.vendedora NOT IN ('Veronica', ' ')
+         AND v.tipo <> 0
+         AND ctrl.vendedora = ?
+         ${extra}
+       ORDER BY ctrl.fecha DESC`,
+      [vendedora]
+    );
+
+    const data = rows.map((row) => ({
+      id: row.id,
+      nropedido: row.nropedido,
+      fecha: row.fecha,
+      vendedora: row.vendedora,
+      nrofactura: row.nrofactura,
+      total: row.total,
+      ordenweb: row.ordenweb,
+      totalweb: row.totalweb,
+      transporte: row.transporte,
+      instancia: row.instancia,
+      estado: row.estado,
+      empaquetado: row.empaquetado,
+      vencido: row.vencido,
+      pagado: row.pagado,
+      id_cliente: row.id_cliente,
+      cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+    }));
+
+    res.json({ tipo, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos de vendedora', error: error.message });
+  }
+});
+
+app.patch('/api/pedidos/instancia', requireAuth, async (req, res) => {
+  try {
+    const { id, instancia } = req.body || {};
+    const pedidoId = Number(id);
+    const nuevaInstancia = Number(instancia);
+    if (!pedidoId) return res.status(400).json({ message: 'Id de pedido requerido' });
+    if (![0, 1, 2].includes(nuevaInstancia)) {
+      return res.status(400).json({ message: 'Instancia invalida' });
+    }
+    const now = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    await pool.query(
+      `UPDATE controlpedidos
+       SET instancia = ?,
+           fecha_inicio_instancia = CASE
+             WHEN ? = 0 THEN NULL
+             WHEN ? = 1 THEN ?
+             ELSE fecha_inicio_instancia
+           END,
+           fecha_fin_instancia = CASE
+             WHEN ? = 0 THEN NULL
+             WHEN ? = 2 THEN ?
+             ELSE fecha_fin_instancia
+           END
+       WHERE id = ?
+       LIMIT 1`,
+      [nuevaInstancia, nuevaInstancia, nuevaInstancia, now, nuevaInstancia, nuevaInstancia, now, pedidoId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('[pedidos/instancia] error', error);
+    res.status(500).json({ message: 'Error al actualizar instancia', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/items', requireAuth, async (req, res) => {
+  try {
+    const nropedido = req.query.nropedido;
+    if (!nropedido) return res.status(400).json({ message: 'NroPedido requerido' });
+    const [rows] = await pool.query(
+      `SELECT Articulo AS articulo, Detalle AS detalle, Cantidad AS cantidad
+       FROM pedidotemp
+       WHERE NroPedido = ?
+       ORDER BY Articulo`,
+      [nropedido]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar mercaderia del pedido', error: error.message });
+  }
+});
+
+app.get('/api/ordencheckoutInTN', requireAuth, async (req, res) => {
+  try {
+    const nropedido = req.query.nroPedido || req.query.nropedido;
+    if (!nropedido) return res.status(400).json({ message: 'nroPedido requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.nropedido,
+         ctrl.ordenweb AS OrdenWeb,
+         oa.articulo,
+         oa.detalle,
+         oa.cantidad,
+         oa.precio,
+         art.cantidad AS stock
+       FROM controlpedidos ctrl
+       INNER JOIN ordenesarticulos oa ON oa.id_controlPedidos = ctrl.id
+       INNER JOIN articulos art ON oa.articulo = art.Articulo
+       LEFT JOIN pedidotemp ptemp
+         ON oa.articulo = ptemp.articulo
+        AND ptemp.NroPedido = ctrl.nropedido
+       WHERE ctrl.nropedido = ?
+         AND ptemp.Articulo IS NULL`,
+      [nropedido]
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar checkout tienda', error: error.message });
+  }
+});
+
+app.get('/api/ordencheckoutInLocalSystem', requireAuth, async (req, res) => {
+  try {
+    const nropedido = req.query.nroPedido || req.query.nropedido;
+    if (!nropedido) return res.status(400).json({ message: 'nroPedido requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         ptemp.nropedido,
+         ctrl.ordenweb AS OrdenWeb,
+         ptemp.Articulo,
+         ptemp.detalle,
+         ptemp.cantidad,
+         ptemp.PrecioVenta
+       FROM controlpedidos ctrl
+       INNER JOIN pedidotemp ptemp ON ptemp.NroPedido = ctrl.nropedido
+       LEFT JOIN ordenesarticulos oa
+         ON oa.articulo = ptemp.Articulo
+        AND oa.id_controlPedidos = ctrl.id
+       WHERE ctrl.nropedido = ?
+         AND oa.Articulo IS NULL`,
+      [nropedido]
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar checkout sistema', error: error.message });
+  }
+});
+
+app.get('/api/ordencheckoutInDiff', requireAuth, async (req, res) => {
+  try {
+    const nropedido = req.query.nroPedido || req.query.nropedido;
+    if (!nropedido) return res.status(400).json({ message: 'nroPedido requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.nropedido,
+         oa.articulo,
+         oa.detalle,
+         SUM(oa.cantidad) AS TNCantidad,
+         oa.precio AS TNPrecio,
+         ptemp.cantidad AS CantidadLocal,
+         ptemp.PrecioUnitario AS PrecioLocal
+       FROM controlpedidos ctrl
+       INNER JOIN pedidotemp ptemp ON ptemp.nropedido = ctrl.nropedido
+       INNER JOIN ordenesarticulos oa
+         ON oa.articulo = ptemp.articulo
+        AND oa.id_controlPedidos = ctrl.id
+       WHERE ctrl.nropedido = ?
+       GROUP BY ctrl.nropedido, oa.articulo, oa.detalle, oa.precio, ptemp.cantidad, ptemp.PrecioUnitario
+       HAVING TNCantidad <> CantidadLocal OR TNPrecio <> PrecioLocal`,
+      [nropedido]
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar checkout diferencias', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/ia/historial', requireAuth, async (req, res) => {
+  try {
+    const controlId = Number(req.query.controlId);
+    if (!controlId) return res.status(400).json({ message: 'controlId requerido' });
+    const [rows] = await pool.query(
+      `SELECT u.name AS nombre, c.chat, c.fecha, c.id_users
+       FROM chatpedidosia c
+       LEFT JOIN users u ON u.id = c.id_users
+       WHERE c.id_controlpedidos = ?
+       ORDER BY c.fecha ASC`,
+      [controlId]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar historial IA', error: error.message });
+  }
+});
+
+app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const { controlId, clienteId, message } = req.body || {};
+    if (!controlId) return res.status(400).json({ message: 'controlId requerido' });
+    if (!message || typeof message !== 'string') return res.status(400).json({ message: 'Mensaje requerido' });
+    if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+
+    const userId = req.user?.id;
+    const ahora = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    await pool.query(
+      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha)
+       VALUES (?, ?, ?, ?)`,
+      [controlId, userId, message, ahora]
+    );
+
+    const schemaMeta = getCustomSchemaSummary();
+    if (!schemaMeta.text) {
+      return res.status(400).json({ message: 'No hay información para su consulta' });
+    }
+
+    const question =
+      (clienteId ? `${message} para la clienta con id ${clienteId}.` : message) +
+      ' La salida debe ser solo la consulta sql.';
+
+    const sqlSystemPrompt =
+      'Genera SOLO una consulta SELECT de lectura usando exclusivamente las tablas/columnas del esquema. ' +
+      'Evita GROUP BY si no es imprescindible. Si usas GROUP BY, TODAS las columnas seleccionadas deben ' +
+      'estar en el GROUP BY o ser agregadas (compatible con ONLY_FULL_GROUP_BY). ' +
+      'Usa COALESCE para nulos en agregaciones. Responde en JSON con claves: sql (string) y explanation (string).';
+
+    async function generateSql(extraContext = '') {
+      const completionSql = await openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: sqlSystemPrompt },
+          {
+            role: 'user',
+            content: `Pregunta: "${question}"\nEsquema:\n${schemaMeta.text}\n${extraContext}`,
+          },
+        ],
+      });
+      const raw = completionSql.choices?.[0]?.message?.content || '';
+      let payload;
+      try {
+        payload = JSON.parse(raw);
+      } catch (_err) {
+        throw new Error('IA devolvió una respuesta inválida');
+      }
+      const sql = String(payload.sql || '').trim();
+      if (!isSafeSelect(sql)) {
+        throw new Error('Consulta no permitida por seguridad');
+      }
+      const schemaCheck = validateAgainstSchema(sql, schemaMeta);
+      if (!schemaCheck.ok) {
+        const err = new Error('Consulta inválida (tablas/columnas no permitidas)');
+        err.tables = schemaCheck.invalidTables;
+        err.columns = schemaCheck.invalidColumns;
+        throw err;
+      }
+      return sql;
+    }
+
+    let sql = await generateSql();
+    let rows;
+    try {
+      [rows] = await secondaryPool.query(sql);
+    } catch (err) {
+      const msg = String(err?.message || '');
+      if (err?.code === 'ER_WRONG_FIELD_WITH_GROUP' || msg.includes('ONLY_FULL_GROUP_BY')) {
+        sql = await generateSql(
+          `La consulta anterior falló por ONLY_FULL_GROUP_BY. Asegura que todas las columnas seleccionadas ` +
+            `estén agregadas o en el GROUP BY.`
+        );
+        [rows] = await secondaryPool.query(sql);
+      } else {
+        throw err;
+      }
+    }
+
+    const rowsJson = JSON.stringify(rows || []);
+
+    const completionAnswer = await openai.chat.completions.create({
+      model: OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.2,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Tu nombre es Mia y eres asistente de ventas. Este es un sistema interno autorizado. ' +
+            'Puedes brindar datos de contacto del cliente (telefono, mail, direccion) si existen en la base. ' +
+            'Responde en español, claro y breve. No menciones id_clientes ni ganancias. ' +
+            'Finaliza con "¿Te puedo ayudar en alguna otra cosa?".',
+        },
+        {
+          role: 'user',
+          content: `Pregunta original: "${message}"\nInformacion en JSON:\n${rowsJson}`,
+        },
+      ],
+    });
+
+    const reply = completionAnswer.choices?.[0]?.message?.content || 'Sin respuesta';
+    const miaId = (await getMiaUserId()) || null;
+    await pool.query(
+      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha)
+       VALUES (?, ?, ?, ?)`,
+      [controlId, miaId, reply, ahora]
+    );
+
+    res.json({ reply });
+  } catch (error) {
+    res.status(500).json({ message: 'Error en IA', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/:id/comentarios', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Id de pedido requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         cp.id AS id,
+         cp.controlpedidos_id,
+         cp.comentario,
+         cp.fecha,
+         u.name AS usuario
+       FROM ComentariosPedidos cp
+       LEFT JOIN users u ON u.id = cp.users_id
+       WHERE cp.controlpedidos_id = ?
+       ORDER BY cp.id DESC`,
+      [id]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar comentarios', error: error.message });
+  }
+});
+
+app.post('/api/pedidos/:id/comentarios', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const comentario = (req.body?.comentario || '').trim();
+    const userId = req.user?.id;
+    if (!id) return res.status(400).json({ message: 'Id de pedido requerido' });
+    if (!comentario) return res.status(400).json({ message: 'Comentario requerido' });
+    if (!userId) return res.status(401).json({ message: 'Usuario no autenticado' });
+    const fecha = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    const [result] = await pool.query(
+      `INSERT INTO ComentariosPedidos (users_id, controlpedidos_id, comentario, fecha)
+       VALUES (?, ?, ?, ?)`,
+      [userId, id, comentario, fecha]
+    );
+    await pool.query('UPDATE controlpedidos SET fecha_ultima_nota = ? WHERE id = ? LIMIT 1', [
+      fecha,
+      id,
+    ]);
+    res.json({ ok: true, id: result.insertId });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar comentario', error: error.message });
+  }
+});
+
+app.put('/api/pedidos/comentarios/:id', requireAuth, async (req, res) => {
+  try {
+    const comentarioId = Number(req.params.id);
+    const comentario = (req.body?.comentario || '').trim();
+    if (!comentarioId) return res.status(400).json({ message: 'Id de comentario requerido' });
+    if (!comentario) return res.status(400).json({ message: 'Comentario requerido' });
+    await pool.query(
+      'UPDATE ComentariosPedidos SET comentario = ? WHERE id = ? LIMIT 1',
+      [comentario, comentarioId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar comentario', error: error.message });
+  }
+});
+
+app.patch('/api/pedidos/pago', requireAuth, async (req, res) => {
+  try {
+    const { id, pagado } = req.body || {};
+    const pedidoId = Number(id);
+    const nuevoPagado = Number(pagado) === 1 ? 1 : 0;
+    if (!pedidoId) return res.status(400).json({ message: 'Id de pedido requerido' });
+    const fechaPago =
+      nuevoPagado === 1
+        ? formatDateTimeLocal(
+            new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+          )
+        : null;
+    await pool.query(
+      `UPDATE controlpedidos
+       SET pagado = ?,
+           fecha_pago = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [nuevoPagado, fechaPago, pedidoId]
+    );
+    res.json({ ok: true, pagado: nuevoPagado, fecha_pago: fechaPago });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar pago', error: error.message });
+  }
+});
+
+app.patch('/api/pedidos/cancelar', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const pedidoId = Number(id);
+    if (!pedidoId) return res.status(400).json({ message: 'Id de pedido requerido' });
+    await pool.query('UPDATE controlpedidos SET estado = 2 WHERE id = ? LIMIT 1', [pedidoId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cancelar pedido', error: error.message });
   }
 });
 
