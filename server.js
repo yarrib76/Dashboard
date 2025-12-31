@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const express = require('express');
 const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
@@ -26,7 +26,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
 const app = express();
 // Habilita cookies en peticiones cross-site si el front vive en otro dominio/puerto
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '35mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
   res.header('Cache-Control', 'no-store');
@@ -60,6 +60,7 @@ const OPENAI_MODEL = requiredEnv('OPENAI_MODEL', 'gpt-4o-mini');
 const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 30000);
 const OPENAI_MAX_RETRIES = Number(process.env.OPENAI_MAX_RETRIES || 2);
 const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION', 30)) || 30);
+const DB_CONNECT_TIMEOUT_MS = Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000);
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
@@ -82,6 +83,9 @@ const secondaryPool =
         password: DB_SECONDARY_PASSWORD,
         database: DB_SECONDARY_NAME,
         connectionLimit: DB_SECONDARY_LIMIT,
+        connectTimeout: DB_CONNECT_TIMEOUT_MS,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0,
         supportBigNumbers: true,
         bigNumberStrings: true,
       })
@@ -184,6 +188,9 @@ const pool = mysql.createPool({
   database: DB_NAME,
   waitForConnections: true,
   connectionLimit: DB_CONNECTION_LIMIT,
+  connectTimeout: DB_CONNECT_TIMEOUT_MS,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
   timezone: 'Z',
 });
 
@@ -230,6 +237,7 @@ async function getUserRoleNameById(userId) {
 const ROLE_PERMISSIONS = [
   'dashboard',
   'panel-control',
+  'cargar-ticket',
   'empleados',
   'clientes',
   'ia',
@@ -246,7 +254,7 @@ async function safeQuery(sql, params = []) {
   try {
     return await pool.query(sql, params);
   } catch (err) {
-    const transientCodes = ['ECONNRESET', 'PROTOCOL_CONNECTION_LOST', 'ER_SERVER_SHUTDOWN', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'];
+    const transientCodes = ['ECONNRESET', 'ETIMEDOUT', 'PROTOCOL_CONNECTION_LOST', 'ER_SERVER_SHUTDOWN', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR'];
     if (err && transientCodes.includes(err.code)) {
       console.warn('[db] reconnect on', err.code);
       // Intento rápido de reintentar una vez
@@ -1154,7 +1162,10 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
           { role: 'system', content: sqlSystemPrompt },
           {
             role: 'user',
-            content: `Pregunta: "${question}"\nEsquema:\n${schemaMeta.text}\n${extraContext}`,
+            content: `Pregunta: "${question}"
+Esquema:
+${schemaMeta.text}
+${extraContext}`,
           },
         ],
       }));
@@ -1163,7 +1174,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
       try {
         payload = JSON.parse(raw);
       } catch (_err) {
-        throw new Error('IA devolvió una respuesta inválida');
+        throw new Error('IA devolvio una respuesta invalida');
       }
       const sql = String(payload.sql || '').trim();
       if (!isSafeSelect(sql)) {
@@ -1171,7 +1182,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
       }
       const schemaCheck = validateAgainstSchema(sql, schemaMeta);
       if (!schemaCheck.ok) {
-        const err = new Error('Consulta inválida (tablas/columnas no permitidas)');
+        const err = new Error('Consulta invalida (tablas/columnas no permitidas)');
         err.tables = schemaCheck.invalidTables;
         err.columns = schemaCheck.invalidColumns;
         throw err;
@@ -1207,17 +1218,20 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
           content:
             'Tu nombre es Mia y eres asistente de ventas. Este es un sistema interno autorizado. ' +
             'Puedes brindar datos de contacto del cliente (telefono, mail, direccion) si existen en la base. ' +
-            'Responde en español, claro y breve. No menciones id_clientes ni ganancias. ' +
-            'Finaliza con "¿Te puedo ayudar en alguna otra cosa?".',
+            'Responde en espanol, claro y breve. No menciones id_clientes ni ganancias. ' +
+            'Finaliza con "Te puedo ayudar en alguna otra cosa?".',
         },
         {
           role: 'user',
-          content: `Pregunta original: "${message}"\nInformacion en JSON:\n${rowsJson}`,
+          content: `Pregunta original: "${message}"
+Informacion en JSON:
+${rowsJson}`,
         },
       ],
     }));
 
     const reply = completionAnswer.choices?.[0]?.message?.content || 'Sin respuesta';
+
     const miaId = (await getMiaUserId()) || null;
     await pool.query(
       `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha)
@@ -3557,6 +3571,177 @@ ${schemaMeta.text}`;
   }
 });
 
+app.post('/api/ocr/deepseek', requireAuth, express.json({ limit: '15mb' }), async (req, res) => {
+  try {
+    const { imageData } = req.body || {};
+    if (!imageData) {
+      return res.status(400).json({ message: 'Falta imageData.' });
+    }
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ message: 'DeepSeek no configurado.' });
+    }
+    const baseUrl = process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com';
+    const model = process.env.DEEPSEEK_VISION_MODEL || 'deepseek-vl2';
+    const prompt =
+      process.env.DEEPSEEK_VISION_PROMPT ||
+      'Extrae el importe total del comprobante. Responde solo JSON con las claves amountText y fullText.';
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+
+    const imageBase64 = String(imageData || '').replace(/^data:[^,]+,/, '');
+    const payloads = [
+      {
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: imageData } },
+            ],
+          },
+        ],
+      },
+      {
+        model,
+        temperature: 0,
+        messages: [{ role: 'user', content: prompt }],
+        images: [imageData],
+      },
+      {
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image', image_url: imageData },
+            ],
+          },
+        ],
+      },
+      {
+        model,
+        temperature: 0,
+        messages: [{ role: 'user', content: prompt }],
+        images: [imageBase64],
+      },
+    ];
+
+    const callDeepSeek = async (payload) => {
+      const r = await fetch(`${baseUrl.replace(/\/+$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = json?.error?.message || `DeepSeek error ${r.status}`;
+        throw new Error(msg);
+      }
+      return json;
+    };
+
+    let response;
+    let lastError;
+    for (let i = 0; i < payloads.length; i += 1) {
+      try {
+        response = await withRetry(() => callDeepSeek(payloads[i]), { retries: 1, baseDelayMs: 400 });
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        const msg = String(err?.message || '');
+        const retryable =
+          msg.includes('unknown variant') ||
+          msg.includes('expected `text`') ||
+          msg.includes('expected text') ||
+          msg.includes('image');
+        if (!retryable) break;
+      }
+    }
+    clearTimeout(timeout);
+    if (!response) {
+      throw lastError || new Error('DeepSeek sin respuesta');
+    }
+
+    const content = response?.choices?.[0]?.message?.content || '';
+    const cleaned = String(content || '')
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (_err) {
+      parsed = null;
+    }
+    return res.json({
+      content: cleaned,
+      amountText: parsed?.amountText || '',
+      fullText: parsed?.fullText || parsed?.text || '',
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en DeepSeek', error: error.message });
+  }
+});
+
+app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async (req, res) => {
+  try {
+    const { imageData } = req.body || {};
+    if (!imageData) {
+      return res.status(400).json({ message: 'Falta imageData.' });
+    }
+    if (!openai) {
+      return res.status(500).json({ message: 'OPENAI_API_KEY no configurada en el servidor' });
+    }
+    const model = process.env.OPENAI_VISION_MODEL || OPENAI_MODEL || 'gpt-4o-mini';
+    const prompt =
+      process.env.OPENAI_VISION_PROMPT ||
+      'Extrae el importe total del comprobante. Responde solo JSON con las claves amountText y fullText.';
+
+    const completion = await withRetry(() =>
+      openai.chat.completions.create({
+        model,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: imageData } },
+            ],
+          },
+        ],
+      })
+    );
+
+    const content = completion.choices?.[0]?.message?.content || '';
+    let parsed = null;
+    try {
+      parsed = JSON.parse(content);
+    } catch (_err) {
+      parsed = null;
+    }
+    return res.json({
+      content,
+      amountText: parsed?.amountText || '',
+      fullText: parsed?.fullText || parsed?.text || '',
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en OpenAI', error: error.message });
+  }
+});
+
 app.get('/login', (req, res) => {
   const token = parseCookies(req).auth_token;
   const payload = token && verifyToken(token);
@@ -3588,3 +3773,12 @@ app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
 });
 // cerrar último bloque
+
+
+
+
+
+
+
+
+

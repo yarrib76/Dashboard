@@ -37,7 +37,11 @@
             <span class="icon">🧭</span>
             <span class="label">Panel de Control</span>
           </button>
-          <button class="menu-item" data-target="empleados">
+                    <button class="menu-item" data-target="cargar-ticket">
+            <span class="icon">%</span>
+            <span class="label">CargarTicket</span>
+          </button>
+<button class="menu-item" data-target="empleados">
             <span class="icon">👥</span>
             <span class="label">Empleados</span>
           </button>
@@ -792,7 +796,43 @@
     </article>
   </section>
 
-  <section class="view hidden" id="view-configuracion">
+  <section class="view hidden" id="view-cargar-ticket">
+      <article class="card wide">
+        <div class="actions between">
+          <div>
+            <h2>CargarTicket</h2>
+            <p class="status">Extrae el monto del comprobante.</p>
+          </div>
+          <div class="actions">
+            <button id="ticket-process" type="button">Procesar</button>
+            <button id="ticket-clear" type="button">Limpiar</button>
+          </div>
+        </div>
+        <div class="ticket-layout">
+          <div class="ticket-uploader">
+            <label class="file-drop" id="ticket-drop">
+              <input type="file" id="ticket-file" accept="image/*,.pdf" />
+              <span>Arrastra o selecciona un ticket (PDF/JPG/PNG)</span>
+            </label>
+            <div class="ticket-preview" id="ticket-preview"></div>
+            <p class="status" id="ticket-status"></p>
+          </div>
+          <div class="ticket-result">
+            <div class="ticket-result-box">
+              <p class="label">Monto detectado</p>
+              <p class="value" id="ticket-amount">$ 0</p>
+              <button id="ticket-copy" type="button">Copiar</button>
+            </div>
+            <div class="ticket-text">
+              <h4>Texto OCR</h4>
+              <textarea id="ticket-ocr-text" readonly></textarea>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="view hidden" id="view-configuracion">
     <article class="card wide">
       <div class="actions between">
         <div>
@@ -1794,6 +1834,8 @@
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
     <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
     <script src="/app.js"></script>
   </body>

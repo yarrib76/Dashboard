@@ -249,14 +249,16 @@ const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
-const viewSalon = document.getElementById('view-salon');
-const viewPedidos = document.getElementById('view-pedidos');
-const viewMercaderia = document.getElementById('view-mercaderia');
-const viewAbm = document.getElementById('view-abm');
-const viewConfiguracion = document.getElementById('view-configuracion');
-const viewFacturas = document.getElementById('view-facturas');
-const viewComisiones = document.getElementById('view-comisiones');
-const viewNoPermission = document.getElementById('view-no-permission');
+  const viewSalon = document.getElementById('view-salon');
+  const viewPedidos = document.getElementById('view-pedidos');
+  const viewMercaderia = document.getElementById('view-mercaderia');
+  const viewAbm = document.getElementById('view-abm');
+const viewCargarTicket = document.getElementById('view-cargar-ticket');
+const DEBUG_OCR = true;
+  const viewConfiguracion = document.getElementById('view-configuracion');
+  const viewFacturas = document.getElementById('view-facturas');
+  const viewComisiones = document.getElementById('view-comisiones');
+  const viewNoPermission = document.getElementById('view-no-permission');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -421,8 +423,17 @@ const abmBatchTableEl = document.getElementById('abm-batch-table');
 const abmPickOverlay = document.getElementById('abm-pick-overlay');
 const abmPickClose = document.getElementById('abm-pick-close');
 const abmPickTableEl = document.getElementById('abm-pick-table');
-const abmPickStatus = document.getElementById('abm-pick-status');
-const abmPickLoading = document.getElementById('abm-pick-loading');
+  const abmPickStatus = document.getElementById('abm-pick-status');
+  const abmPickLoading = document.getElementById('abm-pick-loading');
+  const ticketFileInput = document.getElementById('ticket-file');
+  const ticketDrop = document.getElementById('ticket-drop');
+  const ticketPreview = document.getElementById('ticket-preview');
+  const ticketStatus = document.getElementById('ticket-status');
+  const ticketProcessBtn = document.getElementById('ticket-process');
+  const ticketClearBtn = document.getElementById('ticket-clear');
+  const ticketAmount = document.getElementById('ticket-amount');
+  const ticketCopyBtn = document.getElementById('ticket-copy');
+  const ticketOcrText = document.getElementById('ticket-ocr-text');
 const abmPedidosOverlay = document.getElementById('abm-pedidos-overlay');
 const abmPedidosClose = document.getElementById('abm-pedidos-close');
 const abmPedidosTableBody = document.querySelector('#abm-pedidos-table tbody');
@@ -1109,6 +1120,727 @@ async function loadMercaderiaImages(rows) {
   } catch (_err) {
     /* silencioso */
   }
+}
+
+function initCargarTicket() {
+  if (!viewCargarTicket) return;
+  let pdfJsLoadPromise = null;
+  let cvLoadPromise = null;
+
+  const showDebugCanvas = (canvas, label) => {
+    if (!DEBUG_OCR || !canvas) return;
+    const host = ensureDebugWrap();
+    if (!host) return;
+    const wrap = document.createElement('div');
+    wrap.style.margin = '8px 0';
+    const title = document.createElement('div');
+    title.textContent = label || '';
+    title.style.font = '12px Arial';
+    title.style.color = '#333';
+    canvas.style.border = '2px solid red';
+    canvas.style.maxWidth = '360px';
+    wrap.appendChild(title);
+    wrap.appendChild(canvas);
+    host.appendChild(wrap);
+  };
+
+  const ensurePdfJs = () => {
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      return Promise.resolve(window.pdfjsLib);
+    }
+    if (pdfJsLoadPromise) return pdfJsLoadPromise;
+    pdfJsLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+      script.onload = () => {
+        if (window.pdfjsLib) {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        } else {
+          reject(new Error('PDF.js no esta disponible.'));
+        }
+      };
+      script.onerror = () => reject(new Error('No se pudo cargar PDF.js.'));
+      document.head.appendChild(script);
+    });
+    return pdfJsLoadPromise;
+  };
+
+  const ensureOpenCv = () => {
+    if (window.cv && window.cv.imread) {
+      return Promise.resolve(window.cv);
+    }
+    if (cvLoadPromise) return cvLoadPromise;
+    cvLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js';
+      script.onload = () => {
+        if (window.cv && window.cv.imread) {
+          resolve(window.cv);
+        } else {
+          reject(new Error('OpenCV no disponible.'));
+        }
+      };
+      script.onerror = () => reject(new Error('No se pudo cargar OpenCV.'));
+      document.head.appendChild(script);
+    });
+    return cvLoadPromise;
+  };
+
+  let ticketFile = null;
+  let ticketPreviewUrl = '';
+  let ticketPreviewCanvas = null;
+  let ticketOcrCanvas = null;
+  let ticketDebugWrap = null;
+
+  const ticketSetStatus = (msg) => {
+    if (ticketStatus) ticketStatus.textContent = msg || '';
+  };
+
+  const ensureDebugWrap = () => {
+    if (!DEBUG_OCR) return null;
+    if (ticketDebugWrap) return ticketDebugWrap;
+    ticketDebugWrap = document.createElement('div');
+    ticketDebugWrap.id = 'ticket-debug';
+    ticketDebugWrap.style.marginTop = '12px';
+    ticketDebugWrap.style.display = 'grid';
+    ticketDebugWrap.style.gap = '10px';
+    if (ticketPreview && ticketPreview.parentNode) {
+      ticketPreview.parentNode.insertBefore(ticketDebugWrap, ticketPreview.nextSibling);
+    } else if (viewCargarTicket) {
+      viewCargarTicket.appendChild(ticketDebugWrap);
+    }
+    return ticketDebugWrap;
+  };
+
+  const clearDebugWrap = () => {
+    if (ticketDebugWrap) ticketDebugWrap.innerHTML = '';
+  };
+
+  const setAmount = (value) => {
+    if (!ticketAmount) return;
+    if (Number.isFinite(value) && value > 0) {
+      ticketAmount.textContent = formatMoney(value);
+    } else {
+      ticketAmount.textContent = '$ 0';
+    }
+  };
+
+  const clearPreview = () => {
+    if (ticketPreview) ticketPreview.innerHTML = '';
+    if (ticketPreviewUrl) URL.revokeObjectURL(ticketPreviewUrl);
+    ticketPreviewUrl = '';
+    ticketPreviewCanvas = null;
+    ticketOcrCanvas = null;
+    clearDebugWrap();
+  };
+
+  const resetAll = () => {
+    ticketFile = null;
+    clearPreview();
+    if (ticketOcrText) ticketOcrText.value = '';
+    setAmount(0);
+    ticketSetStatus('');
+    if (ticketFileInput) ticketFileInput.value = '';
+    if (ticketProcessBtn) ticketProcessBtn.disabled = true;
+  };
+
+  const parseAmount = (raw) => {
+    if (!raw) return null;
+    let cleaned = raw.replace(/[^\d.,]/g, '');
+    if (!cleaned) return null;
+    if (cleaned.includes('.') && cleaned.includes(',')) {
+      if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+        cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+      } else {
+        cleaned = cleaned.replace(/,/g, '');
+      }
+    } else if (cleaned.includes(',')) {
+      cleaned = cleaned.replace(',', '.');
+    }
+    const value = Number(cleaned);
+    if (!Number.isFinite(value)) return null;
+    return value;
+  };
+
+  const hasLikelyAmount = (text) => {
+    const re = /(\$?\s*\d{1,3}([.,]\d{3})+|\$?\s*\d+)([.,]\d{2})?/;
+    return re.test(text || '');
+  };
+
+  const extractAmount = (text) => {
+    if (!text) return null;
+    const match =
+      text.match(/(\$?\s*\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?)/) ||
+      text.match(/(\$?\s*\d+(?:[.,]\d{2})?)/);
+    if (!match) return null;
+    let raw = match[1].replace(/\s/g, '').replace('$', '');
+    const lastDot = raw.lastIndexOf('.');
+    const lastComma = raw.lastIndexOf(',');
+    const idx = Math.max(lastDot, lastComma);
+    if (idx >= 0) {
+      const decSep = raw[idx];
+      const parts = raw.split(decSep);
+      const intPart = parts[0].replace(/[.,]/g, '');
+      const decPart = (parts[1] || '').replace(/[.,]/g, '');
+      const hasOtherSep = raw.replace(decSep, '').includes(decSep === '.' ? ',' : '.');
+      if (!hasOtherSep && decPart.length === 3) {
+        // Caso miles: 19.330 -> 19330
+        raw = `${intPart}${decPart}`;
+      } else {
+        raw = decPart ? `${intPart}.${decPart}` : intPart;
+      }
+    } else {
+      raw = raw.replace(/[.,]/g, '');
+    }
+    const val = Number(raw);
+    return Number.isFinite(val) ? val : null;
+  };
+
+  const isMercadoPago = (text) => /mercado\s*pago/i.test(text || '');
+
+  const extractTicketAmount = (text) => {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const keyword = /(total|importe|monto|pagado|transferencia|saldo|acreditado)/i;
+    const amountRegex = /\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{2})|\d+[.,]\d{2}|\d{2,}/g;
+    const currencyRegex =
+      /(?:\$|\bARS\b|\bAR\$\b|\bPESOS?\b|(?:^|\b)[sS])\s*([0-9][0-9.\s,]*)/gi;
+    const candidates = [];
+
+    lines.forEach((line) => {
+      const matches = [...line.matchAll(currencyRegex)];
+      matches.forEach((m) => {
+        const val = parseAmount(m[1] || '');
+        if (val) candidates.push(val);
+      });
+    });
+
+    lines.forEach((line) => {
+      if (!keyword.test(line)) return;
+      const matches = line.match(amountRegex) || [];
+      matches.forEach((m) => {
+        const val = parseAmount(m);
+        if (val) candidates.push(val);
+      });
+    });
+
+    if (!candidates.length) {
+      const matches = text.match(amountRegex) || [];
+      matches.forEach((m) => {
+        const val = parseAmount(m);
+        if (val) candidates.push(val);
+      });
+    }
+
+    return candidates.length ? Math.max(...candidates) : 0;
+  };
+
+  const preprocessCanvas = (source) => {
+    if (!source) return null;
+    const scale = 1.5;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(source.width * scale);
+    canvas.height = Math.round(source.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      sum += gray;
+    }
+    const avg = sum / (data.length / 4);
+    const threshold = Math.min(210, Math.max(150, avg + 10));
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      gray = (gray - 128) * 1.2 + 128;
+      const value = gray >= threshold ? 255 : 0;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  };
+
+  const preprocessForAmount = (source) => {
+    if (!source) return null;
+    const scale = 3;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(source.width * scale);
+    canvas.height = Math.round(source.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.filter = 'grayscale(1) contrast(2.2) brightness(1.05)';
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none';
+    return canvas;
+  };
+
+  const preprocessAmountSoft = (source, invert = false) => {
+    if (!source) return null;
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(source.width * scale);
+    canvas.height = Math.round(source.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      gray = (gray - 128) * 2.2 + 128;
+      if (invert) gray = 255 - gray;
+      gray = Math.max(0, Math.min(255, gray));
+      data[i] = gray;
+      data[i + 1] = gray;
+      data[i + 2] = gray;
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  };
+
+  const preprocessAmountStrong = (source, { invert = false } = {}) => {
+    if (!source) return null;
+    const scale = 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(source.width * scale);
+    canvas.height = Math.round(source.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = img.data;
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      gray = (gray - 128) * 2.0 + 128;
+      if (invert) gray = 255 - gray;
+      gray = Math.max(0, Math.min(255, gray));
+      data[i] = gray;
+      data[i + 1] = gray;
+      data[i + 2] = gray;
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  };
+
+  const cropCanvas = (source, fromY, toY) => {
+    if (!source) return null;
+    const height = source.height;
+    const start = Math.max(0, Math.floor(fromY * height));
+    const end = Math.min(height, Math.floor(toY * height));
+    const cropHeight = Math.max(1, end - start);
+    const canvas = document.createElement('canvas');
+    canvas.width = source.width;
+    canvas.height = cropHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(source, 0, start, source.width, cropHeight, 0, 0, source.width, cropHeight);
+    return canvas;
+  };
+
+  const cropFixedMpAmount = (baseCanvas) => {
+    if (!baseCanvas) return null;
+    return cropCanvas(baseCanvas, 0.16, 0.34);
+  };
+
+  const runTesseract = async (source, extra = {}) => {
+    return window.Tesseract.recognize(source, 'spa+eng', {
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '1',
+      ...extra,
+    });
+  };
+
+  const ocrAmountZone = async (baseCanvas) => {
+    if (!baseCanvas) return '';
+    const amountCrop = cropCanvas(baseCanvas, 0.18, 0.34);
+    if (!amountCrop) return '';
+    const focus = preprocessForAmount(amountCrop) || amountCrop;
+    const result = await runTesseract(focus, {
+      tessedit_pageseg_mode: '7',
+      tessedit_char_whitelist: '0123456789.,$',
+      preserve_interword_spaces: '1',
+    });
+    return (result?.data?.text || '').trim();
+  };
+
+  const ocrCanvasForAmount = async (canvas) => {
+    if (!canvas) return '';
+    const prep = preprocessAmountStrong(canvas) || canvas;
+    const result = await runTesseract(prep, {
+      tessedit_pageseg_mode: '7',
+      classify_bln_numeric_mode: '1',
+      tessedit_char_whitelist: '0123456789.,$',
+      preserve_interword_spaces: '1',
+    });
+    return (result?.data?.text || '').trim();
+  };
+
+  const ocrMpAmountFixed = async (baseCanvas) => {
+    const zone = cropFixedMpAmount(baseCanvas);
+    if (!zone) return '';
+    showDebugCanvas(zone, 'DEBUG: MP crop fijo (sin preprocess)');
+    const candidates = [];
+    for (const invert of [false, true]) {
+      const prep = preprocessAmountSoft(zone, invert) || zone;
+      showDebugCanvas(prep, `DEBUG: MP crop preprocess invert=${invert}`);
+      const r = await runTesseract(prep, {
+        tessedit_pageseg_mode: '7',
+        classify_bln_numeric_mode: '1',
+        tessedit_char_whitelist: '0123456789.,$',
+        preserve_interword_spaces: '1',
+      });
+      const t = (r?.data?.text || '').trim();
+      if (t) candidates.push(t);
+    }
+    candidates.sort(
+      (a, b) => (b.match(/\d/g) || []).length - (a.match(/\d/g) || []).length
+    );
+    return candidates[0] || '';
+  };
+
+  const detectAmountRegionWithOpenCV = async (baseCanvas) => {
+    if (!baseCanvas) return null;
+    try {
+      const cv = await ensureOpenCv();
+      const roiTop = Math.floor(baseCanvas.height * 0.1);
+      const roiBottom = Math.floor(baseCanvas.height * 0.45);
+      const roiHeight = Math.max(1, roiBottom - roiTop);
+      const roiCanvas = document.createElement('canvas');
+      roiCanvas.width = baseCanvas.width;
+      roiCanvas.height = roiHeight;
+      roiCanvas.getContext('2d').drawImage(baseCanvas, 0, roiTop, baseCanvas.width, roiHeight, 0, 0, baseCanvas.width, roiHeight);
+      showDebugCanvas(roiCanvas, 'DEBUG: OpenCV ROI 10%-45%');
+
+      const src = cv.imread(roiCanvas);
+      const gray = new cv.Mat();
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      const blur = new cv.Mat();
+      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+      const thresh = new cv.Mat();
+      cv.adaptiveThreshold(blur, thresh, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 31, 15);
+      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(25, 7));
+      const closed = new cv.Mat();
+      cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kernel);
+      const contours = new cv.MatVector();
+      const hierarchy = new cv.Mat();
+      cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      const roiArea = roiCanvas.width * roiCanvas.height;
+      let best = null;
+      let bestScore = -1;
+      for (let i = 0; i < contours.size(); i += 1) {
+        const cnt = contours.get(i);
+        const rect = cv.boundingRect(cnt);
+        const area = rect.width * rect.height;
+        const aspect = rect.width / Math.max(1, rect.height);
+        if (rect.width < roiCanvas.width * 0.12) continue;
+        if (area < roiArea * 0.006) continue;
+        if (aspect < 1.6) continue;
+        const verticalBias = 1 - rect.y / Math.max(1, roiCanvas.height);
+        const score = area * verticalBias;
+        if (score > bestScore) {
+          bestScore = score;
+          best = rect;
+        }
+      }
+
+      let cropCanvasEl = null;
+      if (best) {
+        const padX = Math.round(best.width * 0.05);
+        const padY = Math.round(best.height * 0.35);
+        const x = Math.max(0, best.x - padX);
+        const y = Math.max(0, best.y - padY);
+        const w = Math.min(roiCanvas.width - x, best.width + padX * 2);
+        const h = Math.min(roiCanvas.height - y, best.height + padY * 2);
+        cropCanvasEl = document.createElement('canvas');
+        cropCanvasEl.width = w;
+        cropCanvasEl.height = h;
+        cropCanvasEl.getContext('2d').drawImage(roiCanvas, x, y, w, h, 0, 0, w, h);
+        if (OCR_DEBUG && ticketPreview) {
+          const debug = document.createElement('canvas');
+          debug.width = roiCanvas.width;
+          debug.height = roiCanvas.height;
+          const dctx = debug.getContext('2d');
+          dctx.drawImage(roiCanvas, 0, 0);
+          dctx.strokeStyle = 'red';
+          dctx.lineWidth = 3;
+          dctx.strokeRect(x, y, w, h);
+          debug.style.maxWidth = '320px';
+          debug.style.marginTop = '8px';
+          ticketPreview.appendChild(debug);
+        }
+      }
+
+      src.delete();
+      gray.delete();
+      blur.delete();
+      thresh.delete();
+      closed.delete();
+      contours.delete();
+      hierarchy.delete();
+      kernel.delete();
+
+      return cropCanvasEl;
+    } catch (_err) {
+      return null;
+    }
+  };
+
+  const ocrAmountUsingMotivoAnchor = async (baseCanvas) => {
+    if (!baseCanvas) return '';
+    const layout = await runTesseract(baseCanvas, { tessedit_pageseg_mode: '3' });
+    const lines = layout?.data?.lines || [];
+    const motivoLine = lines.find((l) => /motivo/i.test(l.text));
+    const dateLine = lines.find((l) => /(lunes|martes|mi[eé]rcoles|jueves|viernes|s[áa]bado|domingo)/i.test(l.text));
+    if (!motivoLine || !dateLine) return '';
+    const yTop = Math.min(dateLine.bbox.y0, dateLine.bbox.y1);
+    const yBottom = Math.max(motivoLine.bbox.y0, motivoLine.bbox.y1);
+    const midTop = yTop + (yBottom - yTop) * 0.15;
+    const midBottom = yTop + (yBottom - yTop) * 0.75;
+    const amountZone = cropCanvas(baseCanvas, midTop / baseCanvas.height, midBottom / baseCanvas.height);
+    const psms = ['6', '7', '11', '13'];
+    const candidates = [];
+    for (const invert of [false, true]) {
+      const prep = preprocessAmountStrong(amountZone, { invert }) || amountZone;
+      for (const psm of psms) {
+        const r = await runTesseract(prep, {
+          tessedit_pageseg_mode: psm,
+          classify_bln_numeric_mode: '1',
+          tessedit_char_whitelist: '0123456789.,$',
+          preserve_interword_spaces: '1',
+        });
+        const t = (r?.data?.text || '').trim();
+        if (t) candidates.push(t);
+      }
+    }
+    let best = '';
+    let bestScore = -1;
+    candidates.forEach((c) => {
+      const digits = (c.match(/\d/g) || []).length;
+      const looks = /(\$?\d{1,3}([.,]\d{3})+|\$?\d+)([.,]\d{2})?/.test(c) ? 10 : 0;
+      const score = digits + looks;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    });
+    return best.trim();
+  };
+
+  const findAmountBetweenMarkers = async (baseCanvas) => {
+    if (!baseCanvas) return '';
+    const layout = await runTesseract(baseCanvas, { tessedit_pageseg_mode: '3' });
+    const lines = layout?.data?.lines || [];
+    const startLine = lines.find((l) => /martes|lunes|miercoles|jueves|viernes|sabado|domingo/i.test(l.text));
+    const endLine = lines.find((l) => /motivo/i.test(l.text));
+    if (!startLine || !endLine) return '';
+    const y1 = Math.min(startLine.bbox.y1, startLine.bbox.y0);
+    const y2 = Math.max(endLine.bbox.y1, endLine.bbox.y0);
+    if (!Number.isFinite(y1) || !Number.isFinite(y2) || y2 <= y1) return '';
+    const top = y1 / baseCanvas.height;
+    const bottom = y2 / baseCanvas.height;
+    const cropped = cropCanvas(baseCanvas, top, bottom);
+    if (!cropped) return '';
+    const focus = preprocessCanvas(cropped) || cropped;
+    const focusResult = await runTesseract(focus, {
+      tessedit_pageseg_mode: '6',
+      tessedit_char_whitelist: '0123456789.,$sS',
+    });
+    return focusResult?.data?.text || '';
+  };
+
+  const buildOcrCanvasFromImage = async (file) => {
+    const img = document.createElement('img');
+    const url = URL.createObjectURL(file);
+    try {
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+        img.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return preprocessCanvas(canvas) || canvas;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const renderPdfPreview = async (file) => {
+    const pdfjs = await ensurePdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    const doc = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+    const page = await doc.getPage(1);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    ticketPreviewCanvas = canvas;
+    ticketOcrCanvas = preprocessCanvas(canvas) || canvas;
+    if (ticketPreview) {
+      ticketPreview.innerHTML = '';
+      ticketPreview.appendChild(canvas);
+    }
+  };
+
+  const renderImagePreview = (file) => {
+    const img = document.createElement('img');
+    ticketPreviewUrl = URL.createObjectURL(file);
+    img.src = ticketPreviewUrl;
+    img.alt = 'Vista previa ticket';
+    if (ticketPreview) {
+      ticketPreview.innerHTML = '';
+      ticketPreview.appendChild(img);
+    }
+  };
+
+  const setTicketFile = async (file) => {
+    if (!file) return;
+    ticketFile = file;
+    clearPreview();
+    ticketSetStatus('Preparando vista previa...');
+    const ext = (file.name || '').toLowerCase();
+    if (file.type === 'application/pdf' || ext.endsWith('.pdf')) {
+      await renderPdfPreview(file);
+    } else {
+      renderImagePreview(file);
+      ticketOcrCanvas = await buildOcrCanvasFromImage(file);
+    }
+    ticketSetStatus('Listo para procesar.');
+    if (ticketProcessBtn) ticketProcessBtn.disabled = false;
+  };
+
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+      reader.readAsDataURL(file);
+    });
+
+  const getTicketImageData = async () => {
+    if (!ticketFile) return '';
+    const ext = (ticketFile.name || '').toLowerCase();
+    if (ticketFile.type === 'application/pdf' || ext.endsWith('.pdf')) {
+      if (!ticketPreviewCanvas) {
+        await renderPdfPreview(ticketFile);
+      }
+      return ticketPreviewCanvas ? ticketPreviewCanvas.toDataURL('image/jpeg', 0.85) : '';
+    }
+    return readFileAsDataUrl(ticketFile);
+  };
+
+  const runOcr = async () => {
+    if (!ticketFile) {
+      ticketSetStatus('Selecciona un archivo primero.');
+      return;
+    }
+    ticketSetStatus('Enviando a IA...');
+    const imageData = await getTicketImageData();
+    if (!imageData) {
+      ticketSetStatus('No se pudo generar la imagen.');
+      return;
+    }
+    const res = await fetch('/api/ocr/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      ticketSetStatus(err.message || 'Error en OpenAI.');
+      return;
+    }
+    const data = await res.json();
+    const fullText = data.fullText || '';
+    const amountText = data.amountText || '';
+    if (ticketOcrText) ticketOcrText.value = (fullText || amountText).trim();
+    const amount = extractAmount(amountText || fullText) ?? extractTicketAmount(fullText);
+    setAmount(amount);
+    ticketSetStatus(amount ? 'Monto detectado.' : 'No se detecto monto.');
+    if (ticketAmount) {
+      ticketAmount.dataset.amountText = amountText || '';
+      ticketAmount.dataset.amountNumber = Number.isFinite(amount) ? String(amount) : '';
+    }
+  };
+
+  if (ticketDrop) {
+    ticketDrop.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      ticketDrop.classList.add('dragging');
+    });
+    ticketDrop.addEventListener('dragleave', () => {
+      ticketDrop.classList.remove('dragging');
+    });
+    ticketDrop.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      ticketDrop.classList.remove('dragging');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) {
+        try {
+          await setTicketFile(file);
+        } catch (err) {
+          ticketSetStatus(err.message || 'No se pudo leer el archivo.');
+        }
+      }
+    });
+  }
+
+  if (ticketFileInput)
+    ticketFileInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        try {
+          await setTicketFile(file);
+        } catch (err) {
+          ticketSetStatus(err.message || 'No se pudo leer el archivo.');
+        }
+      }
+    });
+
+  if (ticketProcessBtn)
+    ticketProcessBtn.addEventListener('click', async () => {
+      try {
+        await runOcr();
+      } catch (err) {
+        ticketSetStatus(err.message || 'Error al procesar.');
+      }
+    });
+
+  if (ticketClearBtn)
+    ticketClearBtn.addEventListener('click', () => {
+      resetAll();
+    });
+
+  if (ticketCopyBtn)
+    ticketCopyBtn.addEventListener('click', async () => {
+      if (!ticketAmount) return;
+      const value = ticketAmount.textContent || '';
+      try {
+        await navigator.clipboard.writeText(value);
+        ticketSetStatus('Monto copiado.');
+      } catch {
+        ticketSetStatus('No se pudo copiar.');
+      }
+    });
+
+  if (ticketProcessBtn) ticketProcessBtn.disabled = true;
 }
 
 function exportMercaderia() {
@@ -4218,12 +4950,13 @@ function applyMenuPermissions(perms = {}) {
 }
 
 function getFirstAllowedView(perms = {}) {
-  const order = [
-    'dashboard',
-    'panel-control',
-    'empleados',
-    'clientes',
-    'ia',
+    const order = [
+      'dashboard',
+      'panel-control',
+      'cargar-ticket',
+      'empleados',
+      'clientes',
+      'ia',
     'salon',
     'pedidos',
     'mercaderia',
@@ -5011,15 +5744,16 @@ function initThemeToggle() {
 }
 
 const permissionGroups = [
-  {
-    title: 'General',
-    items: [
-      { key: 'dashboard', label: 'Dashboard' },
-      { key: 'panel-control', label: 'Panel de Control' },
-      { key: 'empleados', label: 'Empleados' },
-      { key: 'clientes', label: 'Clientes' },
-      { key: 'ia', label: 'IA' },
-      { key: 'salon', label: 'Salon' },
+    {
+      title: 'General',
+      items: [
+        { key: 'dashboard', label: 'Dashboard' },
+        { key: 'panel-control', label: 'Panel de Control' },
+        { key: 'cargar-ticket', label: 'CargarTicket' },
+        { key: 'empleados', label: 'Empleados' },
+        { key: 'clientes', label: 'Clientes' },
+        { key: 'ia', label: 'IA' },
+        { key: 'salon', label: 'Salon' },
       { key: 'pedidos', label: 'Pedidos' },
     ],
   },
@@ -6232,6 +6966,7 @@ function switchView(target) {
   if (target === 'no-permission' && viewNoPermission) {
     const views = [
       viewDashboard,
+      viewCargarTicket,
       viewEmpleados,
       viewClientes,
       viewIa,
@@ -6257,6 +6992,7 @@ function switchView(target) {
   const views = [
     viewDashboard,
     viewPanelControl,
+    viewCargarTicket,
     viewEmpleados,
     viewClientes,
     viewIa,
@@ -6291,10 +7027,12 @@ function switchView(target) {
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     loadAbmDataTable();
-  } else if (target === 'panel-control') {
-    viewPanelControl.classList.remove('hidden');
-  } else if (target === 'configuracion') {
-    viewConfiguracion.classList.remove('hidden');
+    } else if (target === 'panel-control') {
+      viewPanelControl.classList.remove('hidden');
+    } else if (target === 'cargar-ticket') {
+      viewCargarTicket.classList.remove('hidden');
+    } else if (target === 'configuracion') {
+      viewConfiguracion.classList.remove('hidden');
   } else if (target === 'facturas') {
     viewFacturas.classList.remove('hidden');
     if (!facturasLoaded) loadFacturas();
@@ -6320,6 +7058,7 @@ initMenu();
 initCollapsibles();
 initPaqueteriaModal();
 initCarritosModal();
+initCargarTicket();
 initNoEncuestadosModal();
 initFechaEmpleados();
 initClientes();
