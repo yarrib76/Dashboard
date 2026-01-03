@@ -4226,8 +4226,9 @@ async function loadPaqueteria() {
     setStatus(statusPaqueteriaControl, 'Cargando...');
     const res = await fetchJSON('/api/paqueteria');
     renderPaqueteria(res);
-    setStatus(statusPaqueteria, 'Actualizado');
-    setStatus(statusPaqueteriaControl, 'Actualizado');
+    const stamp = formatDateTimeLocalShort(new Date());
+    setStatus(statusPaqueteria, `Actualizado: ${stamp}`);
+    setStatus(statusPaqueteriaControl, `Actualizado: ${stamp}`);
   } catch (error) {
     if (USE_SAMPLE_FALLBACK) {
       renderPaqueteria(samplePaqueteria);
@@ -4254,7 +4255,8 @@ async function loadCarritosAbandonados() {
     setStatus(statusCarritosControl, 'Cargando...');
     const res = await fetchJSON('/api/carritos-abandonados');
     renderCarritosAbandonados(res);
-    setStatus(statusCarritosControl, 'Actualizado');
+    const stamp = formatDateTimeLocalShort(new Date());
+    setStatus(statusCarritosControl, `Actualizado: ${stamp}`);
   } catch (error) {
     setStatus(
       statusCarritosControl,
@@ -4303,9 +4305,10 @@ async function loadPedidosControl() {
     pedidosControlRows = Array.isArray(res.data) ? res.data : [];
     renderPedidosControl(pedidosControlRows);
     if (pedidosControlStatus) {
+      const stamp = formatDateTimeLocalShort(new Date());
       pedidosControlStatus.textContent = pedidosControlRows.length
-        ? `Vendedoras: ${pedidosControlRows.length}`
-        : 'Sin resultados.';
+        ? `Vendedoras: ${pedidosControlRows.length} · ${stamp}`
+        : `Sin resultados. · ${stamp}`;
     }
   } catch (error) {
     if (pedidosControlStatus) {
@@ -4415,13 +4418,38 @@ async function loadOperativos() {
     const res = await fetchJSON('/api/panel-control/contadores');
     renderOperativos(res);
     if (operativosStatus) {
-      operativosStatus.textContent = `Fecha: ${res.desde.split(' ')[0]}`;
+      const stamp = formatDateTimeLocalShort(new Date());
+      operativosStatus.textContent = `Fecha: ${res.desde.split(' ')[0]} · ${stamp}`;
     }
   } catch (error) {
     if (operativosStatus) {
       operativosStatus.textContent = error.message || 'Error al cargar contadores.';
     }
   }
+}
+
+let panelControlAutoRefresh = null;
+
+function formatDateTimeLocalShort(dateObj) {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  const hh = String(dateObj.getHours()).padStart(2, '0');
+  const mi = String(dateObj.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+}
+
+function startPanelControlAutoRefresh() {
+  if (panelControlAutoRefresh) return;
+  panelControlAutoRefresh = setInterval(() => {
+    if (!viewPanelControl || viewPanelControl.classList.contains('hidden')) return;
+    loadCarritosAbandonados();
+    loadPedidosControl();
+    loadOperativos();
+    if (pedidosVendedoraActual) {
+      loadPedidosVendedora(pedidosVendedoraActual);
+    }
+  }, 60000);
 }
 
 function renderPedidosVendedora(data) {
@@ -7084,6 +7112,7 @@ loadPaqueteria();
 loadCarritosAbandonados();
 loadPedidosControl();
 loadOperativos();
+startPanelControlAutoRefresh();
 loadPedidosClientes();
 
 
