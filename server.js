@@ -930,7 +930,7 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
          AND v.tipo <> 0
          AND ctrl.vendedora = ?
          ${extra}
-       ORDER BY ctrl.fecha DESC`,
+       ORDER BY ctrl.nropedido DESC`,
       [vendedora]
     );
 
@@ -1113,6 +1113,314 @@ app.get('/api/pedidos/ia/historial', requireAuth, async (req, res) => {
     res.json({ data: rows || [] });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar historial IA', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/todos/resumen', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         SUM(CASE WHEN estado = 0 AND (empaquetado = 0 OR empaquetado = 2) THEN 1 ELSE 0 END) AS facturados,
+         SUM(CASE WHEN estado = 1 THEN 1 ELSE 0 END) AS enProceso,
+         SUM(CASE WHEN estado = 1 AND pagado = 1 THEN 1 ELSE 0 END) AS pagados,
+         SUM(CASE WHEN estado = 0 AND empaquetado = 1 THEN 1 ELSE 0 END) AS empaquetados,
+         SUM(CASE WHEN estado = 2 THEN 1 ELSE 0 END) AS cancelados,
+         COUNT(*) AS todos
+       FROM controlpedidos`
+    );
+    res.json({ data: rows?.[0] || {} });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar resumen de pedidos', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
+  try {
+    const tipo = req.query.tipo || 'todos';
+    const draw = Number(req.query.draw || 0);
+    const start = Math.max(0, Number(req.query.start || 0));
+    const length = Math.min(100, Math.max(1, Number(req.query.length || 10)));
+    const searchValue =
+      (req.query['search[value]'] || req.query.search?.value || '').toString().trim();
+    const orderCol =
+      Number(req.query['order[0][column]'] ?? req.query.order?.[0]?.column ?? 0) || 0;
+    const orderDir =
+      (req.query['order[0][dir]'] || req.query.order?.[0]?.dir || 'desc') === 'asc'
+        ? 'ASC'
+        : 'DESC';
+    let extra = '';
+    if (tipo === 'facturados') {
+      extra = 'AND ctrl.estado = 0 AND ctrl.empaquetado IN (0, 2)';
+    } else if (tipo === 'enProceso') {
+      extra = 'AND ctrl.estado = 1';
+    } else if (tipo === 'pagados') {
+      extra = 'AND ctrl.estado = 1 AND ctrl.pagado = 1';
+    } else if (tipo === 'cancelados') {
+      extra = 'AND ctrl.estado = 2';
+    } else if (tipo === 'empaquetados') {
+      extra = 'AND ctrl.estado = 0 AND ctrl.empaquetado = 1';
+    }
+
+    const baseSelect = `
+      SELECT
+        ctrl.id,
+        ctrl.nropedido,
+        ctrl.fecha,
+        ctrl.fecha_ultima_nota,
+        ctrl.vendedora,
+        ctrl.nrofactura,
+        ctrl.total,
+        ctrl.ordenweb,
+        ctrl.totalweb,
+        ctrl.transporte,
+        ctrl.instancia,
+        ctrl.estado,
+        ctrl.empaquetado,
+        ctrl.pagado,
+        ctrl.id_cliente,
+        COALESCE(comentarios.total, 0) AS notas_count,
+        CASE
+          WHEN ctrl.estado = 1
+           AND ctrl.fecha < DATE_SUB(NOW(), INTERVAL 3 DAY)
+           AND COALESCE(ctrl.fecha_ultima_nota, '1900-01-01') < DATE_SUB(NOW(), INTERVAL 3 DAY)
+          THEN 1
+          ELSE 0
+        END AS vencido,
+        c.nombre,
+        c.apellido
+      FROM controlpedidos ctrl
+      INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+      LEFT JOIN (
+        SELECT controlpedidos_id, COUNT(*) AS total
+        FROM ComentariosPedidos
+        GROUP BY controlpedidos_id
+      ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
+    `;
+
+    const orderMap = {
+      0: 'ctrl.nropedido',
+      1: 'c.nombre',
+      2: 'ctrl.fecha',
+      3: 'ctrl.vendedora',
+      4: 'ctrl.nrofactura',
+      5: 'ctrl.total',
+      6: 'ctrl.ordenweb',
+      7: 'ctrl.totalweb',
+      8: 'ctrl.transporte',
+      9: 'ctrl.instancia',
+      10: 'ctrl.estado',
+    };
+    const orderBy = orderMap[orderCol] || 'ctrl.nropedido';
+
+    const searchSql = searchValue
+      ? `AND (
+          CAST(ctrl.nropedido AS CHAR) LIKE ?
+          OR ctrl.vendedora LIKE ?
+          OR CAST(ctrl.nrofactura AS CHAR) LIKE ?
+          OR CAST(ctrl.ordenweb AS CHAR) LIKE ?
+          OR c.nombre LIKE ?
+          OR c.apellido LIKE ?
+          OR CONCAT(c.nombre, ' ', c.apellido) LIKE ?
+        )`
+      : '';
+    const searchParams = searchValue
+      ? Array(7).fill(`%${searchValue}%`)
+      : [];
+
+    const countBase = `
+      FROM controlpedidos ctrl
+      INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+      WHERE 1=1
+      ${extra}
+    `;
+
+    const [[totalRow]] = await pool.query(
+      `SELECT COUNT(*) AS total ${countBase}`
+    );
+
+    const [[filteredRow]] = await pool.query(
+      `SELECT COUNT(*) AS total ${countBase} ${searchSql}`,
+      searchParams
+    );
+
+    const [rows] = await pool.query(
+      `${baseSelect}
+       WHERE 1=1
+         ${extra}
+         ${searchSql}
+       ORDER BY ${orderBy} ${orderDir}
+       LIMIT ? OFFSET ?`,
+      [...searchParams, length, start]
+    );
+
+    const data = rows.map((row) => ({
+      id: row.id,
+      pedido: row.nropedido,
+      nropedido: row.nropedido,
+      fecha: row.fecha,
+      vendedora: row.vendedora,
+      factura: row.nrofactura,
+      nrofactura: row.nrofactura,
+      total: row.total,
+      ordenWeb: row.ordenweb,
+      totalWeb: row.totalweb,
+      ordenweb: row.ordenweb,
+      totalweb: row.totalweb,
+      transporte: row.transporte,
+      instancia: row.instancia,
+      estado: row.estado,
+      empaquetado: row.empaquetado,
+      vencido: row.vencido,
+      pagado: row.pagado,
+      id_cliente: row.id_cliente,
+      notas_count: row.notas_count,
+      notasCount: row.notas_count,
+      cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+    }));
+
+    if (draw) {
+      res.json({
+        draw,
+        recordsTotal: Number(totalRow?.total) || 0,
+        recordsFiltered: Number(filteredRow?.total) || 0,
+        data,
+      });
+    } else {
+      res.json({ tipo, data });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/todos/empaquetados', requireAuth, async (req, res) => {
+  try {
+    const draw = Number(req.query.draw || 0);
+    const start = Math.max(0, Number(req.query.start || 0));
+    const length = Math.min(100, Math.max(1, Number(req.query.length || 10)));
+    const searchValue =
+      (req.query['search[value]'] || req.query.search?.value || '').toString().trim();
+    const orderCol =
+      Number(req.query['order[0][column]'] ?? req.query.order?.[0]?.column ?? 0) || 0;
+    const orderDir =
+      (req.query['order[0][dir]'] || req.query.order?.[0]?.dir || 'desc') === 'asc'
+        ? 'ASC'
+        : 'DESC';
+    const orderMap = {
+      0: 'ctrl.nropedido',
+      1: 'c.nombre',
+      2: 'ctrl.fecha',
+      3: 'ctrl.vendedora',
+      4: 'ctrl.total',
+      5: 'ctrl.ordenweb',
+      6: 'ctrl.totalweb',
+      7: 'ctrl.transporte',
+      8: 'ctrl.instancia',
+      9: 'ctrl.estado',
+    };
+    const orderBy = orderMap[orderCol] || 'ctrl.nropedido';
+
+    const searchSql = searchValue
+      ? `AND (
+          CAST(ctrl.nropedido AS CHAR) LIKE ?
+          OR ctrl.vendedora LIKE ?
+          OR CAST(ctrl.ordenweb AS CHAR) LIKE ?
+          OR c.nombre LIKE ?
+          OR c.apellido LIKE ?
+          OR CONCAT(c.nombre, ' ', c.apellido) LIKE ?
+        )`
+      : '';
+    const searchParams = searchValue
+      ? Array(6).fill(`%${searchValue}%`)
+      : [];
+
+    const baseWhere = `
+      WHERE ctrl.estado = 0
+        AND ctrl.empaquetado = 1
+        ${searchSql}
+    `;
+
+    const [[totalRow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM controlpedidos ctrl
+       INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+       INNER JOIN facturah f ON f.NroFactura = ctrl.nrofactura
+       WHERE ctrl.estado = 0
+         AND ctrl.empaquetado = 1`
+    );
+
+    const [[filteredRow]] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM controlpedidos ctrl
+       INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+       INNER JOIN facturah f ON f.NroFactura = ctrl.nrofactura
+       ${baseWhere}`,
+      searchParams
+    );
+
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.id,
+         ctrl.nropedido,
+         ctrl.fecha,
+         ctrl.vendedora,
+         ctrl.total,
+         ctrl.ordenweb,
+         ctrl.totalweb,
+         ctrl.transporte,
+         ctrl.instancia,
+         ctrl.estado,
+         ctrl.empaquetado,
+         ctrl.pagado,
+         ctrl.id_cliente,
+         COALESCE(comentarios.total, 0) AS notas_count,
+         CASE
+           WHEN f.fecha >= DATE_SUB(NOW(), INTERVAL 3 DAY) THEN 1
+           ELSE 2
+         END AS vencimiento,
+         c.nombre,
+         c.apellido
+       FROM controlpedidos ctrl
+       INNER JOIN clientes c ON c.id_clientes = ctrl.id_cliente
+       INNER JOIN facturah f ON f.NroFactura = ctrl.nrofactura
+       LEFT JOIN (
+         SELECT controlpedidos_id, COUNT(*) AS total
+         FROM ComentariosPedidos
+         GROUP BY controlpedidos_id
+       ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
+       ${baseWhere}
+       ORDER BY ${orderBy} ${orderDir}
+       LIMIT ? OFFSET ?`,
+      [...searchParams, length, start]
+    );
+
+    const data = rows.map((row) => ({
+      id: row.id,
+      pedido: row.nropedido,
+      fecha: row.fecha,
+      vendedora: row.vendedora,
+      total: row.total,
+      ordenWeb: row.ordenweb,
+      totalWeb: row.totalweb,
+      transporte: row.transporte,
+      instancia: row.instancia,
+      estado: row.estado,
+      empaquetado: row.empaquetado,
+      pagado: row.pagado,
+      id_cliente: row.id_cliente,
+      notasCount: row.notas_count,
+      vencimiento: row.vencimiento,
+      cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+    }));
+
+    res.json({
+      draw,
+      recordsTotal: Number(totalRow?.total) || 0,
+      recordsFiltered: Number(filteredRow?.total) || 0,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar empaquetados', error: error.message });
   }
 });
 
@@ -1356,6 +1664,34 @@ app.patch('/api/pedidos/cancelar', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al cancelar pedido', error: error.message });
+  }
+});
+
+app.patch('/api/pedidos/entregado', requireAuth, async (req, res) => {
+  let connection;
+  try {
+    const { nropedido } = req.body || {};
+    const pedidoNumero = String(nropedido || '').trim();
+    if (!pedidoNumero) return res.status(400).json({ message: 'NroPedido requerido' });
+
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    await connection.query('UPDATE controlpedidos SET empaquetado = 2 WHERE nropedido = ?', [pedidoNumero]);
+    await connection.query('DELETE FROM mi_correo WHERE nropedido = ?', [pedidoNumero]);
+    await connection.commit();
+
+    res.json({ ok: true });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al marcar entregado', error: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 

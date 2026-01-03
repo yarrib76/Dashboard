@@ -234,6 +234,9 @@ let pedidosControlRows = [];
 let pedidosControlSort = { key: 'enProceso', dir: 'desc' };
 let pedidosVendedoraListaTable = null;
 let pedidosVendedoraActual = '';
+let currentPedidosScope = 'vendedora';
+let pedidosListaServerSide = false;
+let pedidosListaVariant = '';
 let pedidoItemsTable = null;
 let pedidoNotasCurrentId = null;
 let pedidoNotasEditingId = null;
@@ -251,6 +254,7 @@ const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
   const viewSalon = document.getElementById('view-salon');
   const viewPedidos = document.getElementById('view-pedidos');
+  const viewPedidosTodos = document.getElementById('view-pedidos-todos');
   const viewMercaderia = document.getElementById('view-mercaderia');
   const viewAbm = document.getElementById('view-abm');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
@@ -284,6 +288,15 @@ const pedidosControlTableBody = document.querySelector('#pedidos-control-table t
 const pedidosControlTableHead = document.querySelector('#pedidos-control-table thead');
 const pedidosControlStatus = document.getElementById('pedidos-control-status');
 const refreshPedidosControl = document.getElementById('refresh-pedidos-control');
+const pedidosTodosFacturados = document.getElementById('pedidos-todos-facturados');
+const pedidosTodosProceso = document.getElementById('pedidos-todos-proceso');
+const pedidosTodosPagados = document.getElementById('pedidos-todos-pagados');
+const pedidosTodosEmpaquetados = document.getElementById('pedidos-todos-empaquetados');
+const pedidosTodosCancelados = document.getElementById('pedidos-todos-cancelados');
+const pedidosTodosTotal = document.getElementById('pedidos-todos-total');
+const pedidosTodosStatus = document.getElementById('pedidos-todos-status');
+const pedidosTodosRefresh = document.getElementById('pedidos-todos-refresh');
+const pedidosTodosGrid = document.getElementById('pedidos-todos-grid');
 const operativosStatus = document.getElementById('operativos-status');
 const refreshOperativosControl = document.getElementById('refresh-operativos-control');
 const pedidosPendientesCount = document.getElementById('pedidos-pendientes-count');
@@ -4428,6 +4441,31 @@ async function loadOperativos() {
   }
 }
 
+function renderPedidosTodosSummary(data) {
+  if (pedidosTodosFacturados) pedidosTodosFacturados.textContent = data.facturados ?? 0;
+  if (pedidosTodosProceso) pedidosTodosProceso.textContent = data.enProceso ?? 0;
+  if (pedidosTodosPagados) pedidosTodosPagados.textContent = data.pagados ?? 0;
+  if (pedidosTodosEmpaquetados) pedidosTodosEmpaquetados.textContent = data.empaquetados ?? 0;
+  if (pedidosTodosCancelados) pedidosTodosCancelados.textContent = data.cancelados ?? 0;
+  if (pedidosTodosTotal) pedidosTodosTotal.textContent = data.todos ?? 0;
+}
+
+async function loadPedidosTodosSummary() {
+  try {
+    if (pedidosTodosStatus) pedidosTodosStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/pedidos/todos/resumen');
+    renderPedidosTodosSummary(res.data || {});
+    if (pedidosTodosStatus) {
+      const stamp = formatDateTimeLocalShort(new Date());
+      pedidosTodosStatus.textContent = `Actualizado: ${stamp}`;
+    }
+  } catch (error) {
+    if (pedidosTodosStatus) {
+      pedidosTodosStatus.textContent = error.message || 'Error al cargar resumen.';
+    }
+  }
+}
+
 let panelControlAutoRefresh = null;
 
 function formatDateTimeLocalShort(dateObj) {
@@ -4483,6 +4521,12 @@ async function loadPedidosVendedora(vendedora) {
 
 function renderPedidosVendedoraLista(rows) {
   if (!pedidosVendedoraListaTableEl) return;
+  if (pedidosListaServerSide && pedidosVendedoraListaTable) {
+    pedidosVendedoraListaTable.destroy();
+    pedidosVendedoraListaTable = null;
+    pedidosListaServerSide = false;
+    pedidosVendedoraListaTableEl.innerHTML = '';
+  }
   if (!transportesList.length) loadTransportes();
   const data = rows.map((row) => ({
     id: row.id,
@@ -4507,13 +4551,14 @@ function renderPedidosVendedoraLista(rows) {
   if (pedidosVendedoraListaTable) {
     pedidosVendedoraListaTable.clear();
     pedidosVendedoraListaTable.rows.add(data);
-    pedidosVendedoraListaTable.draw();
+    pedidosVendedoraListaTable.order([[0, 'desc']]).draw();
     return;
   }
 
   pedidosVendedoraListaTable = new DataTable('#pedidos-vendedora-lista-table', {
     data,
     pageLength: 10,
+    order: [[0, 'desc']],
     columns: [
       { data: 'pedido' },
       { data: 'cliente' },
@@ -4895,7 +4940,7 @@ async function savePedidoNota() {
     pedidoNotasEditingId = null;
     if (pedidoNotasInput) pedidoNotasInput.value = '';
     await loadPedidoNotas(pedidoNotasCurrentId);
-    await loadPedidosVendedoraLista(currentPedidosTipo);
+    await reloadPedidosLista();
     if (pedidoNotasStatus) pedidoNotasStatus.textContent = 'Guardado.';
   } catch (error) {
     if (pedidoNotasStatus) pedidoNotasStatus.textContent = error.message || 'Error al guardar nota.';
@@ -4923,6 +4968,7 @@ async function loadPedidoItems(nropedido) {
 
 async function loadPedidosVendedoraLista(tipo) {
   if (!pedidosVendedoraActual || !tipo) return;
+  currentPedidosScope = 'vendedora';
   currentPedidosTipo = tipo;
   try {
     if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cargando...';
@@ -4940,6 +4986,308 @@ async function loadPedidosVendedoraLista(tipo) {
     }
     console.error(error);
   }
+}
+
+async function loadPedidosTodosLista(tipo) {
+  if (!tipo) return;
+  currentPedidosScope = 'todos';
+  currentPedidosTipo = tipo;
+  if (!pedidosVendedoraListaTableEl) return;
+  if (!transportesList.length) loadTransportes();
+  try {
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cargando...';
+    if (pedidosListaServerSide && pedidosVendedoraListaTable && pedidosListaVariant === 'todos') {
+      pedidosVendedoraListaTable.ajax.reload();
+      if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = '';
+      return;
+    }
+    if (pedidosVendedoraListaTable) {
+      pedidosVendedoraListaTable.destroy();
+      pedidosVendedoraListaTable = null;
+    }
+    pedidosVendedoraListaTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Cliente</th>
+          <th>Fecha</th>
+          <th>Vendedora</th>
+          <th>Factura</th>
+          <th>Total</th>
+          <th>OrdenWeb</th>
+          <th>TotalWeb</th>
+          <th>Transporte</th>
+          <th>Instancia</th>
+          <th>Estado</th>
+          <th>Accion</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    pedidosListaServerSide = true;
+    pedidosListaVariant = 'todos';
+    pedidosVendedoraListaTable = new DataTable('#pedidos-vendedora-lista-table', {
+      serverSide: true,
+      processing: true,
+      pageLength: 10,
+      order: [[0, 'desc']],
+      dataSrc: 'data',
+      ajax: {
+        url: '/api/pedidos/todos/lista',
+        dataSrc: 'data',
+        data: (d) => {
+          d.tipo = currentPedidosTipo;
+        },
+      },
+      columns: [
+        { data: 'pedido' },
+        { data: 'cliente' },
+        {
+          data: 'fecha',
+          render: (val) => escapeAttr(formatDateLong(val)),
+        },
+        { data: 'vendedora' },
+        { data: 'factura' },
+        { data: 'total' },
+        { data: 'ordenWeb' },
+        { data: 'totalWeb' },
+        {
+          data: 'transporte',
+          orderable: false,
+          render: (_val, _type, row) => {
+            const current = String(row.transporte || '').trim();
+            const options = [
+              `<option value=""${current ? '' : ' selected'}>SinTransporte</option>`,
+              ...transportesList.map((t) => {
+                const value = String(t.nombre || '');
+                const isSelected = value === current;
+                return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
+                  value
+                )}</option>`;
+              }),
+            ].join('');
+            return `<select class="pedido-transporte-select" data-id="${row.id}">${options}</select>`;
+          },
+        },
+        {
+          data: 'instancia',
+          orderable: false,
+          render: (val, _type, row) => {
+            const current = Number(val);
+            return `
+              <select class="pedido-instancia-select" data-id="${row.id}">
+                <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
+                <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
+                <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
+              </select>
+            `;
+          },
+        },
+        {
+          data: 'estado',
+          render: (_val, _type, row) => escapeAttr(mapEstado(row.estado, row.empaquetado)),
+        },
+        {
+          data: null,
+          orderable: false,
+          render: (_val, _type, row) =>
+            `<div class="abm-actions">
+              <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
+              <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
+              <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">✔️</button>
+              <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+                Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
+              }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
+                Number(row.pagado) === 1 ? '🙂' : '☹️'
+              }</button>
+              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">🚫</button>
+              <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">🤖</button>
+            </div>`,
+        },
+      ],
+      rowCallback: (row, rowData) => {
+        if (Number(rowData.vencido) > 0) {
+          row.classList.add('row-alert');
+        } else {
+          row.classList.remove('row-alert');
+        }
+      },
+      language: {
+        search: 'Buscar:',
+        lengthMenu: 'Mostrar _MENU_',
+        info: 'Mostrando _START_ a _END_ de _TOTAL_',
+        infoEmpty: 'Sin resultados',
+        emptyTable: 'Sin pedidos.',
+        paginate: {
+          first: 'Primero',
+          last: 'Ultimo',
+          next: 'Siguiente',
+          previous: 'Anterior',
+        },
+      },
+    });
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = '';
+  } catch (error) {
+    if (pedidosVendedoraListaStatus) {
+      pedidosVendedoraListaStatus.textContent = error.message || 'Error al cargar pedidos.';
+    }
+    console.error(error);
+  }
+}
+
+async function loadPedidosEmpaquetadosLista() {
+  currentPedidosScope = 'todos';
+  currentPedidosTipo = 'empaquetados';
+  if (!pedidosVendedoraListaTableEl) return;
+  if (!transportesList.length) loadTransportes();
+  try {
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cargando...';
+    if (pedidosListaServerSide && pedidosVendedoraListaTable && pedidosListaVariant === 'empaquetados') {
+      pedidosVendedoraListaTable.ajax.reload();
+      if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = '';
+      return;
+    }
+    if (pedidosVendedoraListaTable) {
+      pedidosVendedoraListaTable.destroy();
+      pedidosVendedoraListaTable = null;
+    }
+    pedidosVendedoraListaTableEl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Cliente</th>
+          <th>Fecha</th>
+          <th>Vendedora</th>
+          <th>Total</th>
+          <th>OrdenWeb</th>
+          <th>TotalWeb</th>
+          <th>Transporte</th>
+          <th>Instancia</th>
+          <th>Estado</th>
+          <th>Accion</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    pedidosListaServerSide = true;
+    pedidosListaVariant = 'empaquetados';
+    pedidosVendedoraListaTable = new DataTable('#pedidos-vendedora-lista-table', {
+      serverSide: true,
+      processing: true,
+      pageLength: 10,
+      order: [[0, 'desc']],
+      ajax: {
+        url: '/api/pedidos/todos/empaquetados',
+        dataSrc: 'data',
+      },
+      columns: [
+        { data: 'pedido' },
+        { data: 'cliente' },
+        {
+          data: 'fecha',
+          render: (val) => escapeAttr(formatDateLong(val)),
+        },
+        { data: 'vendedora' },
+        { data: 'total' },
+        { data: 'ordenWeb' },
+        { data: 'totalWeb' },
+        {
+          data: 'transporte',
+          orderable: false,
+          render: (_val, _type, row) => {
+            const current = String(row.transporte || '').trim();
+            const options = [
+              `<option value=""${current ? '' : ' selected'}>SinTransporte</option>`,
+              ...transportesList.map((t) => {
+                const value = String(t.nombre || '');
+                const isSelected = value === current;
+                return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
+                  value
+                )}</option>`;
+              }),
+            ].join('');
+            return `<select class="pedido-transporte-select" data-id="${row.id}">${options}</select>`;
+          },
+        },
+        {
+          data: 'instancia',
+          orderable: false,
+          render: (val, _type, row) => {
+            const current = Number(val);
+            return `
+              <select class="pedido-instancia-select" data-id="${row.id}">
+                <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
+                <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
+                <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
+              </select>
+            `;
+          },
+        },
+        {
+          data: 'estado',
+          render: (_val, _type, row) => escapeAttr(mapEstado(row.estado, row.empaquetado)),
+        },
+        {
+          data: null,
+          orderable: false,
+          render: (_val, _type, row) =>
+            `<div class="abm-actions">
+              <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
+              <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
+              <button type="button" class="abm-link-btn pedido-entregado-btn" title="Entregado" data-id="${row.id}" data-pedido="${row.pedido}">✅</button>
+            </div>`,
+        },
+      ],
+      rowCallback: (row, rowData) => {
+        if (Number(rowData.vencimiento) === 2) {
+          row.classList.add('row-alert');
+        } else {
+          row.classList.remove('row-alert');
+        }
+      },
+      language: {
+        search: 'Buscar:',
+        lengthMenu: 'Mostrar _MENU_',
+        info: 'Mostrando _START_ a _END_ de _TOTAL_',
+        infoEmpty: 'Sin resultados',
+        emptyTable: 'Sin pedidos.',
+        paginate: {
+          first: 'Primero',
+          last: 'Ultimo',
+          next: 'Siguiente',
+          previous: 'Anterior',
+        },
+      },
+    });
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = '';
+  } catch (error) {
+    if (pedidosVendedoraListaStatus) {
+      pedidosVendedoraListaStatus.textContent = error.message || 'Error al cargar pedidos.';
+    }
+    console.error(error);
+  }
+}
+
+function reloadPedidosLista() {
+  if (currentPedidosScope === 'todos') {
+    if (currentPedidosTipo === 'empaquetados') {
+      return loadPedidosEmpaquetadosLista();
+    }
+    return loadPedidosTodosLista(currentPedidosTipo);
+  }
+  return loadPedidosVendedoraLista(currentPedidosTipo);
 }
 
 async function loadPaqueteriaLista(tipo) {
@@ -4961,12 +5309,19 @@ async function loadPaqueteriaLista(tipo) {
   }
 }
 
+function resolvePermissionKey(target) {
+  const alias = {
+    'pedidos-todos': 'pedidos',
+  };
+  return alias[target] || target;
+}
+
 function applyMenuPermissions(perms = {}) {
   const navItems = document.querySelectorAll('.menu-item[data-target]');
   navItems.forEach((btn) => {
     const target = btn.dataset.target;
     if (!target) return;
-    const allowed = perms[target] === true;
+    const allowed = perms[resolvePermissionKey(target)] === true;
     btn.style.display = allowed ? '' : 'none';
   });
   const groups = document.querySelectorAll('.menu-group');
@@ -5069,6 +5424,36 @@ if (refreshPedidosControl) {
 if (refreshOperativosControl) {
   refreshOperativosControl.addEventListener('click', () => {
     loadOperativos();
+  });
+}
+if (pedidosTodosRefresh) {
+  pedidosTodosRefresh.addEventListener('click', () => {
+    loadPedidosTodosSummary();
+  });
+}
+if (pedidosTodosGrid) {
+  pedidosTodosGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tile-btn');
+    if (!btn) return;
+    const tipo = btn.dataset.tipo || '';
+    if (!tipo) return;
+    const labelMap = {
+      facturados: 'Facturados',
+      enProceso: 'En Proceso',
+      pagados: 'Ya Estan Pagos',
+      cancelados: 'Cancelados',
+      empaquetados: 'Empaquetados',
+      todos: 'Todos',
+    };
+    if (pedidosVendedoraListaTitle) {
+      pedidosVendedoraListaTitle.textContent = `Pedidos - ${labelMap[tipo] || ''}`;
+    }
+    pedidosVendedoraListaOverlay?.classList.add('open');
+    if (tipo === 'empaquetados') {
+      loadPedidosEmpaquetadosLista();
+    } else {
+      loadPedidosTodosLista(tipo);
+    }
   });
 }
   if (pedidosControlTableHead) {
@@ -5216,6 +5601,37 @@ if (refreshOperativosControl) {
       const cliente = rowData?.cliente || btn.dataset.cliente || '';
       openPedidoNotas(controlId, pedido, cliente ? `${vendedora} - ${cliente}` : vendedora);
     });
+    pedidosVendedoraListaTableEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.pedido-entregado-btn');
+      if (!btn) return;
+      const tr = btn.closest('tr');
+      const rowData = pedidosVendedoraListaTable?.row(tr).data();
+      const pedido = rowData?.pedido || btn.dataset.pedido;
+      const cliente = rowData?.cliente || btn.dataset.cliente || '';
+      if (!pedido) return;
+      const label = cliente ? `${cliente} - Pedido ${pedido}` : `Pedido ${pedido}`;
+      if (!confirm(`¿Marcar como entregado ${label}?`)) return;
+      try {
+        if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Marcando entregado...';
+        const res = await fetch('/api/pedidos/entregado', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ nropedido: pedido }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || 'No se pudo marcar como entregado.');
+        }
+        if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pedido entregado.';
+        await reloadPedidosLista();
+        loadPedidosTodosSummary();
+      } catch (error) {
+        if (pedidosVendedoraListaStatus) {
+          pedidosVendedoraListaStatus.textContent = error.message || 'Error al marcar entregado.';
+        }
+      }
+    });
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-checkout-btn');
       if (!btn) return;
@@ -5284,7 +5700,7 @@ if (refreshOperativosControl) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.message || 'No se pudo cancelar pedido.');
         }
-        await loadPedidosVendedoraLista(currentPedidosTipo);
+        await reloadPedidosLista();
         if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pedido cancelado.';
       } catch (error) {
         if (pedidosVendedoraListaStatus) {
@@ -5382,7 +5798,7 @@ if (refreshOperativosControl) {
               throw new Error(data.message || 'No se pudo eliminar.');
             }
             await loadPedidoNotas(pedidoNotasCurrentId);
-            await loadPedidosVendedoraLista(currentPedidosTipo);
+            await reloadPedidosLista();
             if (pedidoNotasStatus) pedidoNotasStatus.textContent = 'Nota eliminada.';
           } catch (error) {
             if (pedidoNotasStatus) pedidoNotasStatus.textContent = error.message || 'Error al eliminar nota.';
@@ -7000,6 +7416,7 @@ function switchView(target) {
       viewIa,
       viewSalon,
       viewPedidos,
+      viewPedidosTodos,
       viewMercaderia,
       viewAbm,
       viewConfiguracion,
@@ -7010,7 +7427,7 @@ function switchView(target) {
     viewNoPermission.classList.remove('hidden');
     return;
   }
-  if (currentPermissions && currentPermissions[target] !== true) {
+  if (currentPermissions && currentPermissions[resolvePermissionKey(target)] !== true) {
     const fallback = getFirstAllowedView(currentPermissions);
     if (fallback && fallback !== target) {
       switchView(fallback);
@@ -7026,6 +7443,7 @@ function switchView(target) {
     viewIa,
     viewSalon,
     viewPedidos,
+    viewPedidosTodos,
     viewMercaderia,
     viewAbm,
     viewConfiguracion,
@@ -7049,6 +7467,9 @@ function switchView(target) {
   } else if (target === 'pedidos') {
     viewPedidos.classList.remove('hidden');
     loadPedidosResumen();
+  } else if (target === 'pedidos-todos') {
+    viewPedidosTodos.classList.remove('hidden');
+    loadPedidosTodosSummary();
   } else if (target === 'mercaderia') {
     viewMercaderia.classList.remove('hidden');
     loadMercaderia();
