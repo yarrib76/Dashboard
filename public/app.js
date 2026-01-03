@@ -5310,10 +5310,7 @@ async function loadPaqueteriaLista(tipo) {
 }
 
 function resolvePermissionKey(target) {
-  const alias = {
-    'pedidos-todos': 'pedidos',
-  };
-  return alias[target] || target;
+  return target;
 }
 
 function applyMenuPermissions(perms = {}) {
@@ -5321,14 +5318,16 @@ function applyMenuPermissions(perms = {}) {
   navItems.forEach((btn) => {
     const target = btn.dataset.target;
     if (!target) return;
-    const allowed = perms[resolvePermissionKey(target)] === true;
+    let allowed = perms[resolvePermissionKey(target)] === true;
     btn.style.display = allowed ? '' : 'none';
   });
   const groups = document.querySelectorAll('.menu-group');
   groups.forEach((group) => {
+    const groupKey = group.dataset.group;
     const visibleItems = group.querySelectorAll('.menu-item[data-target]');
     const anyVisible = Array.from(visibleItems).some((btn) => btn.style.display !== 'none');
-    group.style.display = anyVisible ? '' : 'none';
+    const forcedVisible = groupKey === 'pedidos' && perms['pedidos-menu'] === true;
+    group.style.display = anyVisible || forcedVisible ? '' : 'none';
   });
 }
 
@@ -5342,12 +5341,16 @@ function getFirstAllowedView(perms = {}) {
       'ia',
     'salon',
     'pedidos',
+    'pedidos-todos',
     'mercaderia',
     'abm',
     'facturas',
     'comisiones',
     'configuracion',
   ];
+  if (perms['pedidos-menu'] === true && !perms.pedidos && !perms['pedidos-todos']) {
+    return 'pedidos';
+  }
   return order.find((key) => perms[key] === true) || '';
 }
 
@@ -6198,7 +6201,9 @@ const permissionGroups = [
         { key: 'clientes', label: 'Clientes' },
         { key: 'ia', label: 'IA' },
         { key: 'salon', label: 'Salon' },
-      { key: 'pedidos', label: 'Pedidos' },
+      { key: 'pedidos-menu', label: 'Menu Pedidos' },
+      { key: 'pedidos', label: 'Pedidos - Informe' },
+      { key: 'pedidos-todos', label: 'Pedidos - Todos' },
     ],
   },
   {
@@ -6286,6 +6291,16 @@ function renderPermissions() {
   if (!role) return;
   if (rolesTitle) rolesTitle.textContent = `Permisos - ${role.name}`;
   rolesPermsGroups.innerHTML = '';
+  const labelMap = {};
+  permissionGroups.forEach((group) => {
+    group.items.forEach((item) => {
+      labelMap[item.key] = item.label;
+    });
+  });
+  const submenuMap = {
+    'pedidos-menu': ['pedidos', 'pedidos-todos'],
+  };
+  const submenuKeys = new Set(Object.values(submenuMap).flat());
 
   permissionGroups.forEach((group) => {
     const section = document.createElement('div');
@@ -6297,21 +6312,65 @@ function renderPermissions() {
     const grid = document.createElement('div');
     grid.className = 'perm-grid';
     group.items.forEach((item) => {
+      if (submenuKeys.has(item.key)) return;
       const wrapper = document.createElement('div');
       wrapper.className = 'perm-item';
 
       const label = document.createElement('label');
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
+      if (submenuMap[item.key]) {
+        const subChecked = submenuMap[item.key].some((subKey) => role.permissions[subKey]);
+        if (subChecked && !role.permissions[item.key]) {
+          role.permissions[item.key] = true;
+        }
+      }
       checkbox.checked = !!role.permissions[item.key];
+      const subCheckboxes = [];
       checkbox.addEventListener('change', () => {
         role.permissions[item.key] = checkbox.checked;
+        if (submenuMap[item.key]) {
+          subCheckboxes.forEach((sub) => {
+            sub.checked = checkbox.checked;
+            role.permissions[sub.dataset.key] = sub.checked;
+          });
+        }
       });
       const span = document.createElement('span');
       span.textContent = item.label;
       label.appendChild(checkbox);
       label.appendChild(span);
       wrapper.appendChild(label);
+      if (submenuMap[item.key]) {
+        wrapper.classList.add('perm-parent');
+        const subWrap = document.createElement('div');
+        subWrap.className = 'perm-subitems';
+        submenuMap[item.key].forEach((subKey) => {
+          const subItem = document.createElement('div');
+          subItem.className = 'perm-subitem';
+          const subLabel = document.createElement('label');
+          const subCheckbox = document.createElement('input');
+          subCheckbox.type = 'checkbox';
+          subCheckbox.checked = !!role.permissions[subKey];
+          subCheckbox.dataset.key = subKey;
+          subCheckbox.addEventListener('change', () => {
+            role.permissions[subKey] = subCheckbox.checked;
+            const anyChecked = subCheckboxes.some((item) => item.checked);
+            if (anyChecked && !checkbox.checked) {
+              checkbox.checked = true;
+              role.permissions[item.key] = true;
+            }
+          });
+          const subSpan = document.createElement('span');
+          subSpan.textContent = labelMap[subKey] || subKey;
+          subLabel.appendChild(subCheckbox);
+          subLabel.appendChild(subSpan);
+          subItem.appendChild(subLabel);
+          subWrap.appendChild(subItem);
+          subCheckboxes.push(subCheckbox);
+        });
+        wrapper.appendChild(subWrap);
+      }
       grid.appendChild(wrapper);
     });
     section.appendChild(grid);

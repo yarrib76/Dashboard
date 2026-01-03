@@ -2146,6 +2146,46 @@ body.theme-light .row-alert td {
   font-size: 13px;
 }
 
+.perm-parent {
+  position: relative;
+  cursor: default;
+  padding-bottom: 8px;
+}
+
+.perm-subitems {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.2);
+  z-index: 5;
+}
+
+.perm-subitems:hover {
+  display: block;
+}
+
+.perm-parent:hover .perm-subitems,
+.perm-parent:focus-within .perm-subitems {
+  display: block;
+}
+
+.perm-subitem {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.perm-subitem + .perm-subitem {
+  margin-top: 6px;
+}
+
 .perm-item label {
   display: flex;
   align-items: center;

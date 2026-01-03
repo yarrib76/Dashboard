@@ -243,6 +243,8 @@ const ROLE_PERMISSIONS = [
   'ia',
   'salon',
   'pedidos',
+  'pedidos-menu',
+  'pedidos-todos',
   'facturas',
   'comisiones',
   'mercaderia',
