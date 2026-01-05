@@ -1643,8 +1643,8 @@ body.theme-light .pedido-card {
 }
 
 body.theme-light .pedido-card-menu {
-  background: #0f172a;
-  color: #ffffff;
+  background: #ffffff;
+  color: #0f172a;
 }
 
 .pedido-card-menu.open {
