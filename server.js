@@ -1,4 +1,4 @@
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+﻿require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const express = require('express');
 const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
@@ -4126,7 +4126,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
 });
 // cerrar último bloque
 
