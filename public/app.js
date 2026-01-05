@@ -4579,6 +4579,26 @@ function renderPedidosVendedoraLista(rows) {
     return;
   }
 
+  pedidosVendedoraListaTableEl.innerHTML = `
+    <thead>
+      <tr>
+        <th>Pedido</th>
+        <th>Cliente</th>
+        <th>Fecha</th>
+        <th>Vendedora</th>
+        <th>Factura</th>
+        <th>Total</th>
+        <th>OrdenWeb</th>
+        <th>TotalWeb</th>
+        <th>Transporte</th>
+        <th>Instancia</th>
+        <th>Estado</th>
+        <th>Accion</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
   pedidosVendedoraListaTable = new DataTable('#pedidos-vendedora-lista-table', {
     data,
     pageLength: 10,
@@ -4610,7 +4630,7 @@ function renderPedidosVendedoraLista(rows) {
               )}</option>`;
             }),
           ].join('');
-          return `<select class="pedido-transporte-select" data-id="${row.id}">${options}</select>`;
+          return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
         },
       },
       {
@@ -4619,7 +4639,7 @@ function renderPedidosVendedoraLista(rows) {
         render: (val, _type, row) => {
           const current = Number(val);
           return `
-            <select class="pedido-instancia-select" data-id="${row.id}">
+            <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">
               <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
               <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
               <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
@@ -5100,7 +5120,7 @@ async function loadPedidosTodosLista(tipo) {
                 )}</option>`;
               }),
             ].join('');
-            return `<select class="pedido-transporte-select" data-id="${row.id}">${options}</select>`;
+            return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
           },
         },
         {
@@ -5109,7 +5129,7 @@ async function loadPedidosTodosLista(tipo) {
           render: (val, _type, row) => {
             const current = Number(val);
             return `
-              <select class="pedido-instancia-select" data-id="${row.id}">
+              <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">
                 <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
                 <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
                 <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
@@ -5248,7 +5268,7 @@ async function loadPedidosEmpaquetadosLista() {
                 )}</option>`;
               }),
             ].join('');
-            return `<select class="pedido-transporte-select" data-id="${row.id}">${options}</select>`;
+            return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
           },
         },
         {
@@ -5257,7 +5277,7 @@ async function loadPedidosEmpaquetadosLista() {
           render: (val, _type, row) => {
             const current = Number(val);
             return `
-              <select class="pedido-instancia-select" data-id="${row.id}">
+              <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">
                 <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
                 <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
                 <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
@@ -6209,6 +6229,7 @@ function applyTheme(mode) {
   document.body.classList.toggle('theme-light', isLight);
   if (themeToggle) themeToggle.checked = isLight;
   if (themeLabel) themeLabel.textContent = isLight ? 'Claro' : 'Dark';
+  refreshThemeTables();
 }
 
 function initThemeToggle() {
@@ -6222,6 +6243,28 @@ function initThemeToggle() {
     applyTheme(mode);
     localStorage.setItem('themeMode', mode);
   });
+}
+
+function getPedidoSelectClass() {
+  return document.body.classList.contains('theme-light') ? ' pedido-select-light' : '';
+}
+
+function getPedidoSelectStyle() {
+  if (!document.body.classList.contains('theme-light')) return '';
+  return ' style="background:#f5f5f5;color:#111;border-color:rgba(15,23,42,0.2);color-scheme:light;"';
+}
+
+function refreshThemeTables() {
+  setTimeout(() => {
+    const tableHeads = document.querySelectorAll('#pedidos-vendedora-lista-table thead');
+    tableHeads.forEach((head) => {
+      head.style.display = '';
+      head.style.visibility = 'visible';
+    });
+    if (pedidosVendedoraListaTable) {
+      pedidosVendedoraListaTable.columns.adjust().draw(false);
+    }
+  }, 0);
 }
 
 const permissionGroups = [
