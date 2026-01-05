@@ -1594,6 +1594,11 @@ body.theme-light .pedido-card {
   box-shadow: 0 18px 32px rgba(239, 68, 68, 0.18);
 }
 
+body.theme-light .pedido-card--alert {
+  border-color: rgba(239, 68, 68, 0.8);
+  box-shadow: 0 18px 32px rgba(239, 68, 68, 0.2);
+}
+
 .pedido-card-header {
   display: flex;
   justify-content: space-between;
