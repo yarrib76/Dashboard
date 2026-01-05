@@ -1169,6 +1169,7 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
         ctrl.nropedido,
         ctrl.fecha,
         ctrl.fecha_ultima_nota,
+        ctrl.fecha_pago,
         ctrl.vendedora,
         ctrl.nrofactura,
         ctrl.total,
@@ -1199,19 +1200,35 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
       ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
     `;
 
-    const orderMap = {
-      0: 'ctrl.nropedido',
-      1: 'c.nombre',
-      2: 'ctrl.fecha',
-      3: 'ctrl.vendedora',
-      4: 'ctrl.nrofactura',
-      5: 'ctrl.total',
-      6: 'ctrl.ordenweb',
-      7: 'ctrl.totalweb',
-      8: 'ctrl.transporte',
-      9: 'ctrl.instancia',
-      10: 'ctrl.estado',
-    };
+    const orderMap =
+      tipo === 'pagados'
+        ? {
+            0: 'ctrl.nropedido',
+            1: 'c.nombre',
+            2: 'ctrl.fecha',
+            3: 'ctrl.fecha_pago',
+            4: 'ctrl.vendedora',
+            5: 'ctrl.nrofactura',
+            6: 'ctrl.total',
+            7: 'ctrl.ordenweb',
+            8: 'ctrl.totalweb',
+            9: 'ctrl.transporte',
+            10: 'ctrl.instancia',
+            11: 'ctrl.estado',
+          }
+        : {
+            0: 'ctrl.nropedido',
+            1: 'c.nombre',
+            2: 'ctrl.fecha',
+            3: 'ctrl.vendedora',
+            4: 'ctrl.nrofactura',
+            5: 'ctrl.total',
+            6: 'ctrl.ordenweb',
+            7: 'ctrl.totalweb',
+            8: 'ctrl.transporte',
+            9: 'ctrl.instancia',
+            10: 'ctrl.estado',
+          };
     const orderBy = orderMap[orderCol] || 'ctrl.nropedido';
 
     const searchSql = searchValue
@@ -1260,6 +1277,7 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
       pedido: row.nropedido,
       nropedido: row.nropedido,
       fecha: row.fecha,
+      fecha_pago: row.fecha_pago,
       vendedora: row.vendedora,
       factura: row.nrofactura,
       nrofactura: row.nrofactura,
@@ -1364,7 +1382,7 @@ app.get('/api/pedidos/todos/empaquetados', requireAuth, async (req, res) => {
       `SELECT
          ctrl.id,
          ctrl.nropedido,
-         ctrl.fecha,
+         f.fecha AS fecha_factura,
          ctrl.vendedora,
          ctrl.total,
          ctrl.ordenweb,
@@ -1391,15 +1409,15 @@ app.get('/api/pedidos/todos/empaquetados', requireAuth, async (req, res) => {
          GROUP BY controlpedidos_id
        ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
        ${baseWhere}
-       ORDER BY ${orderBy} ${orderDir}
-       LIMIT ? OFFSET ?`,
+      ORDER BY ${orderBy} ${orderDir}
+      LIMIT ? OFFSET ?`,
       [...searchParams, length, start]
     );
 
     const data = rows.map((row) => ({
       id: row.id,
       pedido: row.nropedido,
-      fecha: row.fecha,
+      fecha: row.fecha_factura,
       vendedora: row.vendedora,
       total: row.total,
       ordenWeb: row.ordenweb,

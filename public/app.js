@@ -3814,25 +3814,48 @@ function renderPaqueteriaLista(rows) {
   });
 }
 
+function parseSqlDateLocal(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const str = String(value).trim();
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (match) {
+    const y = Number(match[1]);
+    const m = Number(match[2]) - 1;
+    const d = Number(match[3]);
+    const hh = Number(match[4] || 0);
+    const mm = Number(match[5] || 0);
+    const ss = Number(match[6] || 0);
+    return new Date(y, m, d, hh, mm, ss);
+  }
+  const parsed = new Date(str);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
 function formatDate(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toISOString().slice(0, 10);
+  const d = parseSqlDateLocal(dateStr);
+  if (!d) return dateStr || '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatDateTime(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  const iso = d.toISOString();
-  return iso.slice(0, 16).replace('T', ' ');
+  const d = parseSqlDateLocal(dateStr);
+  if (!d) return dateStr || '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
 function formatDateLong(dateStr) {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
+  const d = parseSqlDateLocal(dateStr);
+  if (!d) return dateStr || '';
   try {
     return new Intl.DateTimeFormat('es-AR', {
       day: 'numeric',
@@ -3840,7 +3863,7 @@ function formatDateLong(dateStr) {
       year: 'numeric',
     }).format(d);
   } catch (error) {
-    return d.toISOString().slice(0, 10);
+    return formatDate(d);
   }
 }
 
@@ -4020,13 +4043,14 @@ function renderPedidosClientes(rows) {
 }
 
 function formatDateTime(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  const iso = d.toISOString();
-  const date = iso.slice(0, 10);
-  const time = iso.slice(11, 16);
-  return `${date} ${time}`;
+  const d = parseSqlDateLocal(value);
+  if (!d) return value || '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
 async function loadEmpleados(fecha) {
@@ -5005,12 +5029,14 @@ async function loadPedidosTodosLista(tipo) {
       pedidosVendedoraListaTable.destroy();
       pedidosVendedoraListaTable = null;
     }
+    const showFechaPago = currentPedidosTipo === 'pagados';
     pedidosVendedoraListaTableEl.innerHTML = `
       <thead>
         <tr>
           <th>Pedido</th>
           <th>Cliente</th>
           <th>Fecha</th>
+          ${showFechaPago ? '<th>Fecha Pago</th>' : ''}
           <th>Vendedora</th>
           <th>Factura</th>
           <th>Total</th>
@@ -5046,6 +5072,14 @@ async function loadPedidosTodosLista(tipo) {
           data: 'fecha',
           render: (val) => escapeAttr(formatDateLong(val)),
         },
+        ...(showFechaPago
+          ? [
+              {
+                data: 'fecha_pago',
+                render: (val) => escapeAttr(formatDateTime(val)),
+              },
+            ]
+          : []),
         { data: 'vendedora' },
         { data: 'factura' },
         { data: 'total' },
