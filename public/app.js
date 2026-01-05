@@ -311,6 +311,8 @@ const pedidosVendedoraListaTitle = document.getElementById('pedidos-vendedora-li
 const pedidosVendedoraListaClose = document.getElementById('pedidos-vendedora-lista-close');
 const pedidosVendedoraListaTableEl = document.getElementById('pedidos-vendedora-lista-table');
 const pedidosVendedoraListaStatus = document.getElementById('pedidos-vendedora-lista-status');
+const pedidoCardsEl = document.getElementById('pedido-cards');
+const pedidoCardsSearchInput = document.getElementById('pedido-cards-search');
 const pedidoItemsOverlay = document.getElementById('pedido-items-overlay');
 const pedidoItemsTitle = document.getElementById('pedido-items-title');
 const pedidoItemsClose = document.getElementById('pedido-items-close');
@@ -371,6 +373,9 @@ const abmRefreshBtn = document.getElementById('abm-refresh');
 const abmTableBody = document.querySelector('#abm-table tbody');
 const abmTableHead = document.querySelector('#abm-table thead');
 const abmStatus = document.getElementById('abm-status');
+const abmCardsEl = document.getElementById('abm-cards');
+const abmMobileSearchInput = document.getElementById('abm-mobile-search-input');
+const abmMobileSearchBtn = document.getElementById('abm-mobile-search-btn');
 const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
 const abmBarcodeClose = document.getElementById('abm-barcode-close');
 const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
@@ -552,6 +557,20 @@ let mercImgZoom = 1;
 let mercChart = null;
 let abmDataTable = null;
 let abmLoaded = false;
+let abmRowsCache = [];
+let abmCardFilterTerm = '';
+let abmCardFilteredRows = [];
+let abmCardVisibleCount = 0;
+let abmCardLoading = false;
+const abmCardBatchSize = 20;
+let abmCardSearchTimer = null;
+let pedidoCardsRowsCache = [];
+let pedidoCardsFilterTerm = '';
+let pedidoCardsFilteredRows = [];
+let pedidoCardsVisibleCount = 0;
+let pedidoCardsLoading = false;
+const pedidoCardsBatchSize = 20;
+let pedidoCardsSearchTimer = null;
 let abmProvidersLoaded = false;
 let abmCurrentArticulo = null;
 let abmDolarRate = null;
@@ -589,7 +608,10 @@ let currentPermissions = {};
 function textMatchesAllTokens(text, filter) {
   if (!filter) return true;
   const base = (text || '').toLowerCase();
-  const tokens = filter.split(/\s+/).filter(Boolean);
+  const tokens = filter
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
   return tokens.every((t) => base.includes(t));
 }
 
@@ -1993,7 +2015,7 @@ function setMercImgZoom(factor) {
 }
 
 function escapeAttr(value) {
-  return String(value || '')
+  return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
@@ -2732,6 +2754,300 @@ function renderAbmTable(rows) {
   });
 }
 
+function buildAbmCard(row) {
+  const articulo = row.articulo || '';
+  const detalle = row.detalle || '';
+  const proveedorSku = row.proveedorSku || '';
+  const cantidad = row.cantidad ?? 0;
+  const enPedido = Number(row.enPedido) || 0;
+  const precioVenta = formatMoney(row.precioVenta || 0);
+  const enPedidoHtml =
+    enPedido > 0
+      ? `<button type="button" class="abm-link-btn abm-pedido-link" data-articulo="${escapeAttr(
+          articulo
+        )}">${enPedido}</button>`
+      : `${enPedido}`;
+  const card = document.createElement('article');
+  card.className = 'abm-card';
+  card.dataset.articulo = articulo;
+  card.dataset.detalle = detalle;
+  card.innerHTML = `
+    <div class="abm-card-header">
+      <div>
+        <p class="abm-card-title">${escapeAttr(articulo)}</p>
+        <p class="abm-card-sub">${escapeAttr(detalle)}</p>
+      </div>
+      <div class="abm-card-actions">
+        <button type="button" class="abm-card-menu-toggle" aria-label="Acciones">...</button>
+        <div class="abm-card-menu">
+          <button type="button" class="abm-action" data-action="barcode" data-articulo="${escapeAttr(
+            articulo
+          )}" data-detalle="${escapeAttr(detalle)}">Codigo Barras</button>
+          <button type="button" class="abm-action" data-action="edit" data-articulo="${escapeAttr(
+            articulo
+          )}">Modificar</button>
+          <button type="button" class="abm-action" data-action="photo" data-articulo="${escapeAttr(
+            articulo
+          )}">Foto</button>
+        </div>
+      </div>
+    </div>
+    <div class="abm-card-grid">
+      <div>
+        <div class="abm-card-label">ProveedorSKU</div>
+        <div class="abm-card-value">${escapeAttr(proveedorSku)}</div>
+      </div>
+      <div>
+        <div class="abm-card-label">Cantidad</div>
+        <div class="abm-card-value">${escapeAttr(cantidad)}</div>
+      </div>
+      <div>
+        <div class="abm-card-label">En Pedido</div>
+        <div class="abm-card-value">${enPedidoHtml}</div>
+      </div>
+      <div>
+        <div class="abm-card-label">Precio Venta</div>
+        <div class="abm-card-value">${escapeAttr(precioVenta)}</div>
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+function filterAbmRows(rows, term) {
+  const clean = String(term || '').trim();
+  if (!clean) return rows;
+  return rows.filter((row) =>
+    textMatchesAllTokens(
+      `${row.articulo || ''} ${row.detalle || ''} ${row.proveedorSku || ''}`,
+      clean
+    )
+  );
+}
+
+function resetAbmCards() {
+  if (!abmCardsEl) return;
+  abmCardFilteredRows = filterAbmRows(abmRowsCache, abmCardFilterTerm);
+  abmCardVisibleCount = 0;
+  abmCardsEl.innerHTML = '';
+  appendAbmCards();
+}
+
+function appendAbmCards() {
+  if (!abmCardsEl || abmCardLoading) return;
+  if (abmCardVisibleCount >= abmCardFilteredRows.length) return;
+  abmCardLoading = true;
+  const next = abmCardFilteredRows.slice(abmCardVisibleCount, abmCardVisibleCount + abmCardBatchSize);
+  next.forEach((row) => {
+    abmCardsEl.appendChild(buildAbmCard(row));
+  });
+  abmCardVisibleCount += next.length;
+  abmCardLoading = false;
+}
+
+function closeAbmCardMenus(except) {
+  if (!abmCardsEl) return;
+  abmCardsEl.querySelectorAll('.abm-card-menu.open').forEach((menu) => {
+    if (menu !== except) menu.classList.remove('open');
+  });
+}
+
+function buildPedidoCard(row) {
+  const pedido = row.pedido || '';
+  const cliente = row.cliente || '';
+  const fecha = formatDateLong(row.fecha || '');
+  const vendedora = row.vendedora || '';
+  const factura = row.factura || '';
+  const total = row.total ?? '';
+  const ordenWeb = row.ordenWeb || '';
+  const totalWeb = row.totalWeb ?? '';
+  const estado = mapEstado(row.estado, row.empaquetado);
+  const transporte = row.transporte || '';
+  const instancia = row.instancia ?? '';
+  const notaCount = Number(row.notasCount) || 0;
+  const options = [
+    `<option value=""${transporte ? '' : ' selected'}>SinTransporte</option>`,
+    ...transportesList.map((t) => {
+      const value = String(t.nombre || '');
+      const isSelected = value === String(transporte);
+      return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(value)}</option>`;
+    }),
+  ].join('');
+  const instanciaOptions = `
+    <option value="0"${Number(instancia) === 0 ? ' selected' : ''}>Pendiente</option>
+    <option value="1"${Number(instancia) === 1 ? ' selected' : ''}>Iniciado</option>
+    <option value="2"${Number(instancia) === 2 ? ' selected' : ''}>Finalizado</option>
+  `;
+  const card = document.createElement('article');
+  card.className = `pedido-card${Number(row.vencido) > 0 ? ' pedido-card--alert' : ''}`;
+  card.dataset.pedido = pedido;
+  card.dataset.cliente = cliente;
+  card.innerHTML = `
+    <div class="pedido-card-header">
+      <div>
+        <p class="pedido-card-title">Pedido ${escapeAttr(pedido)}</p>
+        <p class="pedido-card-sub">${escapeAttr(cliente)}</p>
+      </div>
+      <div class="pedido-card-actions">
+        <button type="button" class="pedido-card-menu-toggle" aria-label="Acciones">...</button>
+        <div class="pedido-card-menu">
+          <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
+            pedido
+          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
+          <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
+            row.id
+          )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
+            cliente
+          )}">📘<span class="nota-count">${notaCount}</span></button>
+          <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${escapeAttr(
+            pedido
+          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">✅</button>
+          <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+            Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
+          }" data-id="${escapeAttr(row.id)}" data-pagado="${Number(row.pagado)}">${
+            Number(row.pagado) === 1 ? '😊' : '😟'
+          }</button>
+          <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${escapeAttr(
+            row.id
+          )}">🚫</button>
+          <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${escapeAttr(
+            row.id
+          )}" data-cliente-id="${escapeAttr(row.id_cliente || '')}" data-pedido="${escapeAttr(
+            pedido
+          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">🤖</button>
+        </div>
+      </div>
+    </div>
+    <div class="pedido-card-grid">
+      <div>
+        <div class="pedido-card-label">Fecha</div>
+        <div class="pedido-card-value">${escapeAttr(fecha)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Vendedora</div>
+        <div class="pedido-card-value">${escapeAttr(vendedora)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Factura</div>
+        <div class="pedido-card-value">${escapeAttr(factura)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Total</div>
+        <div class="pedido-card-value">${escapeAttr(total)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">OrdenWeb</div>
+        <div class="pedido-card-value">${escapeAttr(ordenWeb)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">TotalWeb</div>
+        <div class="pedido-card-value">${escapeAttr(totalWeb)}</div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Transporte</div>
+        <div class="pedido-card-value">
+          <select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${escapeAttr(
+            row.id
+          )}">${options}</select>
+        </div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Instancia</div>
+        <div class="pedido-card-value">
+          <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${escapeAttr(
+            row.id
+          )}">${instanciaOptions}</select>
+        </div>
+      </div>
+      <div>
+        <div class="pedido-card-label">Estado</div>
+        <div class="pedido-card-value">${escapeAttr(estado)}</div>
+      </div>
+    </div>
+  `;
+  return card;
+}
+
+function filterPedidoRows(rows, term) {
+  const clean = String(term || '').trim();
+  if (!clean) return rows;
+  return rows.filter((row) =>
+    textMatchesAllTokens(
+      `${row.pedido || ''} ${row.cliente || ''} ${row.vendedora || ''} ${row.factura || ''} ${row.ordenWeb || ''} ${mapEstado(
+        row.estado,
+        row.empaquetado
+      )}`,
+      clean
+    )
+  );
+}
+
+function resetPedidoCards() {
+  if (!pedidoCardsEl) return;
+  pedidoCardsFilteredRows = filterPedidoRows(pedidoCardsRowsCache, pedidoCardsFilterTerm);
+  pedidoCardsVisibleCount = 0;
+  pedidoCardsEl.innerHTML = '';
+  appendPedidoCards();
+}
+
+function appendPedidoCards() {
+  if (!pedidoCardsEl || pedidoCardsLoading) return;
+  if (pedidoCardsVisibleCount >= pedidoCardsFilteredRows.length) return;
+  pedidoCardsLoading = true;
+  const next = pedidoCardsFilteredRows.slice(
+    pedidoCardsVisibleCount,
+    pedidoCardsVisibleCount + pedidoCardsBatchSize
+  );
+  next.forEach((row) => {
+    pedidoCardsEl.appendChild(buildPedidoCard(row));
+  });
+  pedidoCardsVisibleCount += next.length;
+  pedidoCardsLoading = false;
+}
+
+function closePedidoCardMenus(except) {
+  if (!pedidoCardsEl) return;
+  pedidoCardsEl.querySelectorAll('.pedido-card-menu.open').forEach((menu) => {
+    if (menu !== except) menu.classList.remove('open');
+  });
+}
+
+function updatePedidoCardsVisibility() {
+  const isMobile = document.body.classList.contains('is-mobile');
+  const shouldShow = isMobile && currentPedidosScope === 'vendedora';
+  const toolbar = pedidoCardsSearchInput?.closest('.pedido-cards-toolbar');
+  if (pedidoCardsEl) pedidoCardsEl.style.display = shouldShow ? 'grid' : 'none';
+  if (toolbar) toolbar.style.display = shouldShow ? 'block' : 'none';
+  if (pedidosVendedoraListaTableEl) pedidosVendedoraListaTableEl.style.display = shouldShow ? 'none' : '';
+  const wrapper = document.getElementById('pedidos-vendedora-lista-table_wrapper');
+  if (wrapper) wrapper.style.display = shouldShow ? 'none' : '';
+  if (shouldShow && pedidoCardsRowsCache.length && pedidoCardsEl && !pedidoCardsEl.innerHTML) {
+    resetPedidoCards();
+  }
+}
+
+async function handleAbmAction(action, articulo, detalle) {
+  if (!articulo) return;
+  if (action === 'photo') {
+    try {
+      if (abmStatus) abmStatus.textContent = 'Cargando foto...';
+      const res = await fetchJSON(`/api/mercaderia/abm/image?articulo=${encodeURIComponent(articulo)}`);
+      if (res.imagessrc) {
+        openMercImage(res.imagessrc);
+        if (abmStatus) abmStatus.textContent = '';
+      } else if (abmStatus) {
+        abmStatus.textContent = 'Sin foto disponible.';
+      }
+    } catch (error) {
+      if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar foto';
+    }
+  } else if (action === 'barcode') {
+    openAbmBarcode(articulo, detalle || '');
+  } else if (action === 'edit') {
+    openAbmEdit(articulo);
+  }
+}
+
 async function loadAbmDataTable(force = false) {
   if (!abmTableBody) return;
   try {
@@ -2739,6 +3055,8 @@ async function loadAbmDataTable(force = false) {
     if (abmStatus) abmStatus.textContent = 'Cargando...';
     const res = await fetchJSON('/api/mercaderia/abm/all');
     const rows = Array.isArray(res.data) ? res.data : [];
+    abmRowsCache = rows;
+    if (abmCardsEl) resetAbmCards();
     if (abmDataTable) {
       abmDataTable.clear();
       abmDataTable.rows.add(rows);
@@ -2792,6 +3110,8 @@ async function loadAbmDataTable(force = false) {
         order: [[0, 'asc']],
         autoWidth: false,
       });
+    } else {
+      renderAbmTable(rows);
     }
     abmLoaded = true;
     if (abmStatus) {
@@ -2824,26 +3144,249 @@ function initAbm() {
       if (!btn) return;
       const action = btn.dataset.action;
       const articulo = btn.dataset.articulo;
-      if (!articulo) return;
-      if (action === 'photo') {
-        try {
-          if (abmStatus) abmStatus.textContent = 'Cargando foto...';
-          const res = await fetchJSON(`/api/mercaderia/abm/image?articulo=${encodeURIComponent(articulo)}`);
-          if (res.imagessrc) {
-            openMercImage(res.imagessrc);
-            if (abmStatus) abmStatus.textContent = '';
-          } else if (abmStatus) {
-            abmStatus.textContent = 'Sin foto disponible.';
-          }
-        } catch (error) {
-          if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar foto';
+      const detalle = btn.dataset.detalle || '';
+      await handleAbmAction(action, articulo, detalle);
+    });
+  }
+  if (abmMobileSearchInput) {
+    abmMobileSearchInput.addEventListener('input', () => {
+      if (abmCardSearchTimer) clearTimeout(abmCardSearchTimer);
+      abmCardSearchTimer = setTimeout(() => {
+        abmCardFilterTerm = abmMobileSearchInput.value || '';
+        resetAbmCards();
+      }, 200);
+    });
+  }
+  if (abmCardsEl) {
+    abmCardsEl.addEventListener('click', async (e) => {
+      const toggle = e.target.closest('.abm-card-menu-toggle');
+      if (toggle) {
+        const menu = toggle.closest('.abm-card-actions')?.querySelector('.abm-card-menu');
+        if (menu) {
+          const isOpen = menu.classList.contains('open');
+          closeAbmCardMenus(menu);
+          menu.classList.toggle('open', !isOpen);
         }
-      } else if (action === 'barcode') {
-        const detalle = btn.dataset.detalle || '';
-        openAbmBarcode(articulo, detalle);
-      } else if (action === 'edit') {
-        openAbmEdit(articulo);
+        return;
       }
+      const pedidosBtn = e.target.closest('.abm-pedido-link');
+      if (pedidosBtn) {
+        const articulo = pedidosBtn.dataset.articulo;
+        const card = pedidosBtn.closest('.abm-card');
+        const detalle = card?.dataset?.detalle || '';
+        if (articulo) openAbmPedidos(articulo, detalle);
+        return;
+      }
+      const actionBtn = e.target.closest('.abm-action');
+      if (actionBtn) {
+        const action = actionBtn.dataset.action;
+        const articulo = actionBtn.dataset.articulo;
+        const detalle = actionBtn.dataset.detalle || '';
+        closeAbmCardMenus();
+        await handleAbmAction(action, articulo, detalle);
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.abm-card')) closeAbmCardMenus();
+    });
+  }
+  if (pedidoCardsSearchInput) {
+    pedidoCardsSearchInput.addEventListener('input', () => {
+      if (pedidoCardsSearchTimer) clearTimeout(pedidoCardsSearchTimer);
+      pedidoCardsSearchTimer = setTimeout(() => {
+        pedidoCardsFilterTerm = pedidoCardsSearchInput.value || '';
+        resetPedidoCards();
+      }, 200);
+    });
+  }
+  if (pedidoCardsEl) {
+    pedidoCardsEl.addEventListener('scroll', () => {
+      if (pedidoCardsEl.scrollTop + pedidoCardsEl.clientHeight >= pedidoCardsEl.scrollHeight - 140) {
+        appendPedidoCards();
+      }
+    });
+    pedidoCardsEl.addEventListener('click', async (e) => {
+      const toggle = e.target.closest('.pedido-card-menu-toggle');
+      if (toggle) {
+        const menu = toggle.closest('.pedido-card-actions')?.querySelector('.pedido-card-menu');
+        if (menu) {
+          const isOpen = menu.classList.contains('open');
+          closePedidoCardMenus(menu);
+          menu.classList.toggle('open', !isOpen);
+        }
+        return;
+      }
+      const itemsBtn = e.target.closest('.pedido-items-btn');
+      if (itemsBtn) {
+        const pedido = itemsBtn.dataset.pedido;
+        const vendedora = itemsBtn.dataset.vendedora || '';
+        const cliente = itemsBtn.dataset.cliente || '';
+        if (pedidoItemsTitle) {
+          const parts = [`Pedido ${pedido}`];
+          if (cliente) parts.push(cliente);
+          if (vendedora) parts.push(vendedora);
+          pedidoItemsTitle.textContent = parts.join(' - ');
+        }
+        pedidoItemsOverlay?.classList.add('open');
+        loadPedidoItems(pedido);
+        closePedidoCardMenus();
+        return;
+      }
+      const notasBtn = e.target.closest('.pedido-notas-btn');
+      if (notasBtn) {
+        const controlId = notasBtn.dataset.id;
+        const pedido = notasBtn.dataset.pedido;
+        const vendedora = notasBtn.dataset.vendedora || '';
+        const cliente = notasBtn.dataset.cliente || '';
+        openPedidoNotas(controlId, pedido, cliente ? `${vendedora} - ${cliente}` : vendedora);
+        closePedidoCardMenus();
+        return;
+      }
+      const checkoutBtn = e.target.closest('.pedido-checkout-btn');
+      if (checkoutBtn) {
+        const pedido = checkoutBtn.dataset.pedido;
+        const vendedora = checkoutBtn.dataset.vendedora || '';
+        const cliente = checkoutBtn.dataset.cliente || '';
+        if (pedidoCheckoutTitle) {
+          const parts = [`Pedido ${pedido}`];
+          if (cliente) parts.push(cliente);
+          if (vendedora) parts.push(vendedora);
+          pedidoCheckoutTitle.textContent = parts.join(' - ');
+        }
+        pedidoCheckoutOverlay?.classList.add('open');
+        loadPedidoCheckout(pedido);
+        closePedidoCardMenus();
+        return;
+      }
+      const pagoBtn = e.target.closest('.pedido-pago-btn');
+      if (pagoBtn) {
+        const id = Number(pagoBtn.dataset.id);
+        const current = Number(pagoBtn.dataset.pagado) || 0;
+        const next = current === 1 ? 0 : 1;
+        try {
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando pago...';
+          const res = await fetch('/api/pedidos/pago', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ id, pagado: next }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo actualizar pago.');
+          }
+          pagoBtn.dataset.pagado = String(next);
+          pagoBtn.textContent = next === 1 ? '😊' : '😟';
+          pagoBtn.classList.toggle('pago-ok', next === 1);
+          pagoBtn.classList.toggle('pago-pendiente', next === 0);
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pago actualizado.';
+        } catch (error) {
+          if (pedidosVendedoraListaStatus) {
+            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar pago.';
+          }
+        }
+        closePedidoCardMenus();
+        return;
+      }
+      const cancelBtn = e.target.closest('.pedido-cancel-btn');
+      if (cancelBtn) {
+        const id = Number(cancelBtn.dataset.id);
+        const card = cancelBtn.closest('.pedido-card');
+        const pedido = card?.dataset?.pedido || '';
+        const cliente = card?.dataset?.cliente || '';
+        const label = cliente ? `${cliente} - Pedido ${pedido}` : `Pedido ${pedido || id}`;
+        if (!confirm(`Cancelar ${label}?`)) return;
+        try {
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cancelando pedido...';
+          const res = await fetch('/api/pedidos/cancelar', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ id }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo cancelar pedido.');
+          }
+          await reloadPedidosLista();
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pedido cancelado.';
+        } catch (error) {
+          if (pedidosVendedoraListaStatus) {
+            pedidosVendedoraListaStatus.textContent = error.message || 'Error al cancelar pedido.';
+          }
+        }
+        closePedidoCardMenus();
+        return;
+      }
+      const iaBtn = e.target.closest('.pedido-ia-btn');
+      if (iaBtn) {
+        const pedido = iaBtn.dataset.pedido;
+        const vendedora = iaBtn.dataset.vendedora || '';
+        const cliente = iaBtn.dataset.cliente || '';
+        pedidoIaControlId = Number(iaBtn.dataset.id) || null;
+        pedidoIaClienteId = Number(iaBtn.dataset.clienteId) || null;
+        if (pedidoIaTitle) {
+          const parts = [`Pedido ${pedido}`];
+          if (cliente) parts.push(cliente);
+          if (vendedora) parts.push(vendedora);
+          pedidoIaTitle.textContent = parts.join(' - ');
+        }
+        pedidoIaOverlay?.classList.add('open');
+        loadPedidoIaHistory(pedidoIaControlId);
+        closePedidoCardMenus();
+      }
+    });
+    pedidoCardsEl.addEventListener('change', async (e) => {
+      const select = e.target.closest('.pedido-transporte-select');
+      const instanciaSelect = e.target.closest('.pedido-instancia-select');
+      if (select) {
+        const id = Number(select.dataset.id);
+        const transporte = select.value || '';
+        try {
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando transporte...';
+          const res = await fetch('/api/paqueteria/transporte', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ id, transporte }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo actualizar transporte.');
+          }
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Transporte actualizado.';
+        } catch (error) {
+          if (pedidosVendedoraListaStatus) {
+            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar transporte.';
+          }
+        }
+        return;
+      }
+      if (instanciaSelect) {
+        const id = Number(instanciaSelect.dataset.id);
+        const instancia = Number(instanciaSelect.value);
+        try {
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando instancia...';
+          const res = await fetch('/api/pedidos/instancia', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ id, instancia }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo actualizar instancia.');
+          }
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Instancia actualizada.';
+        } catch (error) {
+          if (pedidosVendedoraListaStatus) {
+            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar instancia.';
+          }
+        }
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.pedido-card')) closePedidoCardMenus();
     });
   }
   if (abmBarcodeClose) abmBarcodeClose.addEventListener('click', closeAbmBarcode);
@@ -4572,6 +5115,10 @@ function renderPedidosVendedoraLista(rows) {
     notasCount: Number(row.notas_count) || 0,
   }));
 
+  pedidoCardsRowsCache = data;
+  if (pedidoCardsEl) resetPedidoCards();
+  updatePedidoCardsVisibility();
+
   if (pedidosVendedoraListaTable) {
     pedidosVendedoraListaTable.clear();
     pedidosVendedoraListaTable.rows.add(data);
@@ -5014,6 +5561,7 @@ async function loadPedidosVendedoraLista(tipo) {
   if (!pedidosVendedoraActual || !tipo) return;
   currentPedidosScope = 'vendedora';
   currentPedidosTipo = tipo;
+  updatePedidoCardsVisibility();
   try {
     if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cargando...';
     const res = await fetchJSON(
@@ -5036,6 +5584,9 @@ async function loadPedidosTodosLista(tipo) {
   if (!tipo) return;
   currentPedidosScope = 'todos';
   currentPedidosTipo = tipo;
+  pedidoCardsRowsCache = [];
+  if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
+  updatePedidoCardsVisibility();
   if (!pedidosVendedoraListaTableEl) return;
   if (!transportesList.length) loadTransportes();
   try {
@@ -5200,6 +5751,9 @@ async function loadPedidosTodosLista(tipo) {
 async function loadPedidosEmpaquetadosLista() {
   currentPedidosScope = 'todos';
   currentPedidosTipo = 'empaquetados';
+  pedidoCardsRowsCache = [];
+  if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
+  updatePedidoCardsVisibility();
   if (!pedidosVendedoraListaTableEl) return;
   if (!transportesList.length) loadTransportes();
   try {
@@ -6265,6 +6819,20 @@ function refreshThemeTables() {
       pedidosVendedoraListaTable.columns.adjust().draw(false);
     }
   }, 0);
+}
+
+function syncMobileLayout() {
+  const isMobile = window.innerWidth <= 720;
+  document.body.classList.toggle('is-mobile', isMobile);
+  const abmTable = document.getElementById('abm-table');
+  const abmTableWrapper = document.getElementById('abm-table_wrapper');
+  if (abmTable) abmTable.style.display = isMobile ? 'none' : '';
+  if (abmTableWrapper) abmTableWrapper.style.display = isMobile ? 'none' : '';
+  if (abmCardsEl) abmCardsEl.style.display = isMobile ? 'grid' : '';
+  if (isMobile && abmRowsCache.length && abmCardsEl && !abmCardsEl.innerHTML) {
+    resetAbmCards();
+  }
+  updatePedidoCardsVisibility();
 }
 
 const permissionGroups = [
@@ -7656,6 +8224,19 @@ initAbm();
 initFacturas();
 initComisiones();
 initRolesModule();
+syncMobileLayout();
+window.addEventListener('resize', syncMobileLayout);
+window.addEventListener(
+  'scroll',
+  () => {
+    if (!document.body.classList.contains('is-mobile')) return;
+    if (!viewAbm || viewAbm.classList.contains('hidden')) return;
+    if (abmCardVisibleCount >= abmCardFilteredRows.length) return;
+    if (window.innerHeight + window.scrollY < document.body.offsetHeight - 200) return;
+    appendAbmCards();
+  },
+  { passive: true }
+);
 initConfigTabs();
 initUsersModule();
 initUserTabs();

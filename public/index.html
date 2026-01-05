@@ -841,9 +841,12 @@
           <h2>ABM Articulos</h2>
           <p class="status">Listado general de artículos con acciones rápidas.</p>
         </div>
-        <div class="actions inline no-wrap">
+      <div class="actions inline no-wrap">
           <button id="abm-refresh" type="button">Actualizar</button>
         </div>
+      </div>
+      <div class="abm-mobile-search">
+        <input type="search" id="abm-mobile-search-input" placeholder="Buscar articulo..." />
       </div>
       <div class="table-wrap">
         <table class="table" id="abm-table">
@@ -860,6 +863,7 @@
           </thead>
           <tbody></tbody>
         </table>
+        <div class="abm-cards" id="abm-cards"></div>
       </div>
       <div class="actions inline abm-footer-actions">
         <button id="abm-new" type="button">Modificar Articulos</button>
@@ -1678,6 +1682,10 @@
             <tbody></tbody>
           </table>
         </div>
+        <div class="pedido-cards-toolbar">
+          <input type="search" id="pedido-cards-search" placeholder="Buscar pedido..." />
+        </div>
+        <div class="pedido-cards" id="pedido-cards"></div>
         <p class="status" id="pedidos-vendedora-lista-status"></p>
       </div>
     </div>

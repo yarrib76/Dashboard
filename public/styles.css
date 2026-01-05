@@ -1438,6 +1438,237 @@ body.theme-light .row-alert td {
   border-radius: 8px;
 }
 
+.abm-mobile-search {
+  display: none;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 12px;
+}
+
+.abm-mobile-search input {
+  flex: 1;
+}
+
+.abm-cards {
+  display: none;
+  gap: 12px;
+}
+
+.abm-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.abm-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.abm-card-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.abm-card-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.abm-card-actions {
+  position: relative;
+}
+
+.abm-card-menu-toggle {
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-weight: 700;
+  min-width: 32px;
+  cursor: pointer;
+}
+
+.abm-card-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  min-width: 140px;
+  z-index: 5;
+}
+
+body.theme-light .abm-card-menu {
+  background: #ffffff;
+}
+
+.abm-card-menu.open {
+  display: grid;
+  gap: 6px;
+}
+
+.abm-card-menu .abm-action {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.abm-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  font-size: 12px;
+}
+
+.abm-card-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.abm-card-value {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.pedido-cards-toolbar {
+  display: none;
+  margin: 12px 0;
+}
+
+.pedido-cards-toolbar input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.2);
+  color: inherit;
+}
+
+body.theme-light .pedido-cards-toolbar input {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.2);
+}
+
+.pedido-cards {
+  display: none;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px 2px 14px;
+}
+
+.pedido-card {
+  background: #111827;
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.2);
+}
+
+body.theme-light .pedido-card {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.15);
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+}
+
+.pedido-card--alert {
+  border-color: rgba(239, 68, 68, 0.7);
+  box-shadow: 0 18px 32px rgba(239, 68, 68, 0.18);
+}
+
+.pedido-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.pedido-card-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.pedido-card-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.pedido-card-actions {
+  position: relative;
+}
+
+.pedido-card-menu-toggle {
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-weight: 700;
+  min-width: 32px;
+  cursor: pointer;
+}
+
+.pedido-card-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #0f172a;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  min-width: 140px;
+  z-index: 5;
+  gap: 6px;
+}
+
+body.theme-light .pedido-card-menu {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.pedido-card-menu.open {
+  display: grid;
+}
+
+.pedido-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.pedido-card-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.pedido-card-value {
+  font-size: 13px;
+}
+
 .barcode-body {
   display: flex;
   flex-direction: column;
@@ -2683,6 +2914,56 @@ body.theme-light select:focus {
   .chart-wrap.tall {
     height: 320px;
   }
+
+  .pedido-transporte-select,
+  .pedido-instancia-select {
+    min-width: 140px;
+    width: 140px;
+    font-size: 12px;
+    padding: 6px 30px 6px 10px;
+  }
+
+  #abm-table,
+  #abm-table_wrapper {
+    display: none;
+  }
+
+  .abm-cards {
+    display: grid;
+  }
+
+  .abm-mobile-search {
+    display: flex;
+  }
+
+  #pedidos-vendedora-lista-table,
+  #pedidos-vendedora-lista-table_wrapper {
+    display: none;
+  }
+
+  .pedido-cards-toolbar,
+  .pedido-cards {
+    display: block;
+  }
+}
+
+.is-mobile #abm-table,
+.is-mobile #abm-table_wrapper {
+  display: none;
+}
+
+.is-mobile .abm-cards {
+  display: grid;
+}
+
+.is-mobile #pedidos-vendedora-lista-table,
+.is-mobile #pedidos-vendedora-lista-table_wrapper {
+  display: none;
+}
+
+.is-mobile .pedido-cards-toolbar,
+.is-mobile .pedido-cards {
+  display: block;
 }
 
 
