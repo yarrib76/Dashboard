@@ -5705,9 +5705,10 @@ async function loadPedidosTodosLista(tipo) {
     setPedidoCardsServerMode(true);
     pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
     await loadPedidosTodosCards(true);
-  } else {
-    setPedidoCardsServerMode(false);
+    updatePedidoCardsVisibility();
+    return;
   }
+  setPedidoCardsServerMode(false);
   pedidoCardsRowsCache = [];
   if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
   updatePedidoCardsVisibility();
@@ -5879,9 +5880,10 @@ async function loadPedidosEmpaquetadosLista() {
     setPedidoCardsServerMode(true);
     pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
     await loadPedidosTodosCards(true);
-  } else {
-    setPedidoCardsServerMode(false);
+    updatePedidoCardsVisibility();
+    return;
   }
+  setPedidoCardsServerMode(false);
   pedidoCardsRowsCache = [];
   if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
   updatePedidoCardsVisibility();
@@ -6964,6 +6966,18 @@ function syncMobileLayout() {
     resetAbmCards();
   }
   updatePedidoCardsVisibility();
+  if (
+    !isMobile &&
+    currentPedidosScope === 'todos' &&
+    pedidosVendedoraListaOverlay?.classList.contains('open') &&
+    !pedidosVendedoraListaTable
+  ) {
+    if (currentPedidosTipo === 'empaquetados') {
+      loadPedidosEmpaquetadosLista();
+    } else {
+      loadPedidosTodosLista(currentPedidosTipo);
+    }
+  }
 }
 
 const permissionGroups = [
