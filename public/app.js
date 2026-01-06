@@ -571,6 +571,11 @@ let pedidoCardsVisibleCount = 0;
 let pedidoCardsLoading = false;
 const pedidoCardsBatchSize = 20;
 let pedidoCardsSearchTimer = null;
+let pedidoCardsServerMode = false;
+let pedidoCardsServerStart = 0;
+let pedidoCardsServerDone = false;
+let pedidoCardsServerLoading = false;
+let pedidoCardsServerSearch = '';
 let abmProvidersLoaded = false;
 let abmCurrentArticulo = null;
 let abmDolarRate = null;
@@ -2878,6 +2883,47 @@ function buildPedidoCard(row) {
     <option value="1"${Number(instancia) === 1 ? ' selected' : ''}>Iniciado</option>
     <option value="2"${Number(instancia) === 2 ? ' selected' : ''}>Finalizado</option>
   `;
+  const isTodosEmpaquetados = currentPedidosScope === 'todos' && currentPedidosTipo === 'empaquetados';
+  const actionsHtml = isTodosEmpaquetados
+    ? `
+        <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
+          pedido
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
+        <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
+          row.id
+        )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
+          cliente
+        )}">📘<span class="nota-count">${notaCount}</span></button>
+        <button type="button" class="abm-link-btn pedido-entregado-btn" title="Entregado" data-id="${escapeAttr(
+          row.id
+        )}" data-pedido="${escapeAttr(pedido)}">✅</button>
+      `
+    : `
+        <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
+          pedido
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
+        <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
+          row.id
+        )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
+          cliente
+        )}">📘<span class="nota-count">${notaCount}</span></button>
+        <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${escapeAttr(
+          pedido
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">✅</button>
+        <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+          Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
+        }" data-id="${escapeAttr(row.id)}" data-pagado="${Number(row.pagado)}">${
+          Number(row.pagado) === 1 ? '😊' : '😟'
+        }</button>
+        <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${escapeAttr(
+          row.id
+        )}">🚫</button>
+        <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${escapeAttr(
+          row.id
+        )}" data-cliente-id="${escapeAttr(row.id_cliente || '')}" data-pedido="${escapeAttr(
+          pedido
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">🤖</button>
+      `;
   const card = document.createElement('article');
   card.className = `pedido-card${Number(row.vencido) > 0 ? ' pedido-card--alert' : ''}`;
   card.dataset.pedido = pedido;
@@ -2891,30 +2937,7 @@ function buildPedidoCard(row) {
       <div class="pedido-card-actions">
         <button type="button" class="pedido-card-menu-toggle" aria-label="Acciones">...</button>
         <div class="pedido-card-menu">
-          <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
-            pedido
-          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
-          <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
-            row.id
-          )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
-            cliente
-          )}">📘<span class="nota-count">${notaCount}</span></button>
-          <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${escapeAttr(
-            pedido
-          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">✅</button>
-          <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
-            Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
-          }" data-id="${escapeAttr(row.id)}" data-pagado="${Number(row.pagado)}">${
-            Number(row.pagado) === 1 ? '😊' : '😟'
-          }</button>
-          <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${escapeAttr(
-            row.id
-          )}">🚫</button>
-          <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${escapeAttr(
-            row.id
-          )}" data-cliente-id="${escapeAttr(row.id_cliente || '')}" data-pedido="${escapeAttr(
-            pedido
-          )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">🤖</button>
+          ${actionsHtml}
         </div>
       </div>
     </div>
@@ -2984,7 +3007,9 @@ function filterPedidoRows(rows, term) {
 
 function resetPedidoCards() {
   if (!pedidoCardsEl) return;
-  pedidoCardsFilteredRows = filterPedidoRows(pedidoCardsRowsCache, pedidoCardsFilterTerm);
+  pedidoCardsFilteredRows = pedidoCardsServerMode
+    ? pedidoCardsRowsCache
+    : filterPedidoRows(pedidoCardsRowsCache, pedidoCardsFilterTerm);
   pedidoCardsVisibleCount = 0;
   pedidoCardsEl.innerHTML = '';
   appendPedidoCards();
@@ -3012,17 +3037,68 @@ function closePedidoCardMenus(except) {
   });
 }
 
+function isMobileView() {
+  return document.body.classList.contains('is-mobile');
+}
+
+function setPedidoCardsServerMode(enabled) {
+  pedidoCardsServerMode = enabled;
+  pedidoCardsServerStart = 0;
+  pedidoCardsServerDone = false;
+  pedidoCardsServerSearch = '';
+  if (pedidoCardsSearchInput) pedidoCardsSearchInput.value = '';
+}
+
+async function loadPedidosTodosCards(reset = false) {
+  if (!pedidoCardsServerMode || !currentPedidosTipo || !isMobileView()) return;
+  if (pedidoCardsServerLoading) return;
+  if (!reset && pedidoCardsServerDone) return;
+  pedidoCardsServerLoading = true;
+  const start = reset ? 0 : pedidoCardsServerStart;
+  const searchValue = (pedidoCardsServerSearch || '').trim();
+  const params = new URLSearchParams({
+    tipo: currentPedidosTipo,
+    start: String(start),
+    length: String(50),
+    'search[value]': searchValue,
+  });
+  try {
+    const res = await fetchJSON(`/api/pedidos/todos/lista?${params.toString()}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (reset) {
+      pedidoCardsRowsCache = rows;
+      resetPedidoCards();
+    } else {
+      pedidoCardsRowsCache = pedidoCardsRowsCache.concat(rows);
+      pedidoCardsFilteredRows = pedidoCardsRowsCache;
+      appendPedidoCards();
+    }
+    pedidoCardsServerStart = start + rows.length;
+    if (rows.length < 50) pedidoCardsServerDone = true;
+  } catch (error) {
+    if (pedidosVendedoraListaStatus) {
+      pedidosVendedoraListaStatus.textContent = error.message || 'Error al cargar pedidos.';
+    }
+  } finally {
+    pedidoCardsServerLoading = false;
+  }
+}
+
 function updatePedidoCardsVisibility() {
   const isMobile = document.body.classList.contains('is-mobile');
-  const shouldShow = isMobile && currentPedidosScope === 'vendedora';
+  const shouldShow = isMobile && (currentPedidosScope === 'vendedora' || currentPedidosScope === 'todos');
   const toolbar = pedidoCardsSearchInput?.closest('.pedido-cards-toolbar');
   if (pedidoCardsEl) pedidoCardsEl.style.display = shouldShow ? 'grid' : 'none';
   if (toolbar) toolbar.style.display = shouldShow ? 'block' : 'none';
   if (pedidosVendedoraListaTableEl) pedidosVendedoraListaTableEl.style.display = shouldShow ? 'none' : '';
   const wrapper = document.getElementById('pedidos-vendedora-lista-table_wrapper');
   if (wrapper) wrapper.style.display = shouldShow ? 'none' : '';
-  if (shouldShow && pedidoCardsRowsCache.length && pedidoCardsEl && !pedidoCardsEl.innerHTML) {
-    resetPedidoCards();
+  if (shouldShow && pedidoCardsEl && !pedidoCardsEl.innerHTML) {
+    if (pedidoCardsServerMode) {
+      loadPedidosTodosCards(true);
+    } else if (pedidoCardsRowsCache.length) {
+      resetPedidoCards();
+    }
   }
 }
 
@@ -3195,14 +3271,23 @@ function initAbm() {
       if (pedidoCardsSearchTimer) clearTimeout(pedidoCardsSearchTimer);
       pedidoCardsSearchTimer = setTimeout(() => {
         pedidoCardsFilterTerm = pedidoCardsSearchInput.value || '';
-        resetPedidoCards();
+        if (pedidoCardsServerMode) {
+          pedidoCardsServerSearch = pedidoCardsFilterTerm;
+          loadPedidosTodosCards(true);
+        } else {
+          resetPedidoCards();
+        }
       }, 200);
     });
   }
   if (pedidoCardsEl) {
     pedidoCardsEl.addEventListener('scroll', () => {
       if (pedidoCardsEl.scrollTop + pedidoCardsEl.clientHeight >= pedidoCardsEl.scrollHeight - 140) {
-        appendPedidoCards();
+        if (pedidoCardsServerMode) {
+          loadPedidosTodosCards(false);
+        } else {
+          appendPedidoCards();
+        }
       }
     });
     pedidoCardsEl.addEventListener('click', async (e) => {
@@ -3313,6 +3398,37 @@ function initAbm() {
         } catch (error) {
           if (pedidosVendedoraListaStatus) {
             pedidosVendedoraListaStatus.textContent = error.message || 'Error al cancelar pedido.';
+          }
+        }
+        closePedidoCardMenus();
+        return;
+      }
+      const entregadoBtn = e.target.closest('.pedido-entregado-btn');
+      if (entregadoBtn) {
+        const pedido = entregadoBtn.dataset.pedido;
+        const card = entregadoBtn.closest('.pedido-card');
+        const cliente = card?.dataset?.cliente || '';
+        if (!pedido) return;
+        const label = cliente ? `${cliente} - Pedido ${pedido}` : `Pedido ${pedido}`;
+        if (!confirm(`Marcar como entregado ${label}?`)) return;
+        try {
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Marcando entregado...';
+          const res = await fetch('/api/pedidos/entregado', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ nropedido: pedido }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || 'No se pudo marcar como entregado.');
+          }
+          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pedido entregado.';
+          await reloadPedidosLista();
+          loadPedidosTodosSummary();
+        } catch (error) {
+          if (pedidosVendedoraListaStatus) {
+            pedidosVendedoraListaStatus.textContent = error.message || 'Error al marcar entregado.';
           }
         }
         closePedidoCardMenus();
@@ -5116,6 +5232,7 @@ function renderPedidosVendedoraLista(rows) {
   }));
 
   pedidoCardsRowsCache = data;
+  setPedidoCardsServerMode(false);
   if (pedidoCardsEl) resetPedidoCards();
   updatePedidoCardsVisibility();
 
@@ -5584,6 +5701,13 @@ async function loadPedidosTodosLista(tipo) {
   if (!tipo) return;
   currentPedidosScope = 'todos';
   currentPedidosTipo = tipo;
+  if (isMobileView()) {
+    setPedidoCardsServerMode(true);
+    pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
+    await loadPedidosTodosCards(true);
+  } else {
+    setPedidoCardsServerMode(false);
+  }
   pedidoCardsRowsCache = [];
   if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
   updatePedidoCardsVisibility();
@@ -5751,6 +5875,13 @@ async function loadPedidosTodosLista(tipo) {
 async function loadPedidosEmpaquetadosLista() {
   currentPedidosScope = 'todos';
   currentPedidosTipo = 'empaquetados';
+  if (isMobileView()) {
+    setPedidoCardsServerMode(true);
+    pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
+    await loadPedidosTodosCards(true);
+  } else {
+    setPedidoCardsServerMode(false);
+  }
   pedidoCardsRowsCache = [];
   if (pedidoCardsEl) pedidoCardsEl.innerHTML = '';
   updatePedidoCardsVisibility();
