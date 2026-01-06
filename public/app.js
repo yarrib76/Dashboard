@@ -5282,6 +5282,7 @@ function renderPedidosVendedoraLista(rows) {
       {
         data: 'transporte',
         orderable: false,
+        searchable: false,
         render: (_val, _type, row) => {
           const current = String(row.transporte || '').trim();
           const options = [
@@ -5300,6 +5301,7 @@ function renderPedidosVendedoraLista(rows) {
       {
         data: 'instancia',
         orderable: false,
+        searchable: false,
         render: (val, _type, row) => {
           const current = Number(val);
           return `
@@ -5318,6 +5320,7 @@ function renderPedidosVendedoraLista(rows) {
       {
         data: null,
         orderable: false,
+        searchable: false,
         render: (_val, _type, row) =>
           `<div class="abm-actions">
             <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
