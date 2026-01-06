@@ -5678,6 +5678,11 @@ async function loadPedidosVendedoraLista(tipo) {
   if (!pedidosVendedoraActual || !tipo) return;
   currentPedidosScope = 'vendedora';
   currentPedidosTipo = tipo;
+  pedidoCardsFilterTerm = '';
+  if (pedidoCardsSearchInput) pedidoCardsSearchInput.value = '';
+  if (!pedidoCardsServerMode) {
+    pedidoCardsServerSearch = '';
+  }
   updatePedidoCardsVisibility();
   try {
     if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Cargando...';
@@ -5703,7 +5708,9 @@ async function loadPedidosTodosLista(tipo) {
   currentPedidosTipo = tipo;
   if (isMobileView()) {
     setPedidoCardsServerMode(true);
-    pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
+    pedidoCardsServerSearch = '';
+    pedidoCardsFilterTerm = '';
+    if (pedidoCardsSearchInput) pedidoCardsSearchInput.value = '';
     await loadPedidosTodosCards(true);
     updatePedidoCardsVisibility();
     return;
@@ -5878,7 +5885,9 @@ async function loadPedidosEmpaquetadosLista() {
   currentPedidosTipo = 'empaquetados';
   if (isMobileView()) {
     setPedidoCardsServerMode(true);
-    pedidoCardsServerSearch = pedidoCardsSearchInput?.value || '';
+    pedidoCardsServerSearch = '';
+    pedidoCardsFilterTerm = '';
+    if (pedidoCardsSearchInput) pedidoCardsSearchInput.value = '';
     await loadPedidosTodosCards(true);
     updatePedidoCardsVisibility();
     return;
