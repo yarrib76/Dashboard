@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
+const { processAbmCreate } = require('./lib/abmCreateService');
 const { processAbmBatch } = require('./lib/abmBatchService');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
@@ -108,6 +109,7 @@ function formatDateTimeLocal(dateObj) {
   const ss = String(dateObj.getSeconds()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
+
 
 function parseCookies(req) {
   const cookieHeader = req.headers.cookie || '';
@@ -2814,6 +2816,43 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
     res.json({ data: row });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar articulo', error: error.message });
+  }
+});
+
+app.post('/api/mercaderia/abm/articulo', requireAuth, async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const created = await processAbmCreate(conn, req.body || {});
+    await conn.commit();
+
+    res.json({
+      ok: true,
+      data: {
+        articulo: created.articulo,
+        detalle: created.detalle,
+        cantidad: created.cantidad,
+        proveedor: created.proveedor,
+      },
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    if (error.code === 'ARTICULO_INVALIDO') {
+      return res.status(400).json({ message: error.message || 'Articulo invalido.' });
+    }
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'El articulo ya existe.' });
+    }
+    res.status(500).json({ message: 'Error al crear articulo', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 

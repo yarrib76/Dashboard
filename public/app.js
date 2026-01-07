@@ -376,6 +376,7 @@ const abmStatus = document.getElementById('abm-status');
 const abmCardsEl = document.getElementById('abm-cards');
 const abmMobileSearchInput = document.getElementById('abm-mobile-search-input');
 const abmMobileSearchBtn = document.getElementById('abm-mobile-search-btn');
+const abmCreateBtn = document.getElementById('abm-create');
 const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
 const abmBarcodeClose = document.getElementById('abm-barcode-close');
 const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
@@ -400,6 +401,31 @@ const abmCalcVenta = document.getElementById('abm-calc-venta');
 const abmCalcGastos = document.getElementById('abm-calc-gastos');
 const abmCalcGanancia = document.getElementById('abm-calc-ganancia');
 const abmNewBtn = document.getElementById('abm-new');
+const abmCreateOverlay = document.getElementById('abm-create-overlay');
+const abmCreateClose = document.getElementById('abm-create-close');
+const abmCreateCancel = document.getElementById('abm-create-cancel');
+const abmCreateForm = document.getElementById('abm-create-form');
+const abmCreateArticuloInput = document.getElementById('abm-create-articulo');
+const abmCreateDetalleInput = document.getElementById('abm-create-detalle');
+const abmCreateCantidadInput = document.getElementById('abm-create-cantidad');
+const abmCreatePrecioOrigenInput = document.getElementById('abm-create-precio-origen');
+const abmCreatePrecioConvertidoInput = document.getElementById('abm-create-precio-convertido');
+const abmCreateDolaresInput = document.getElementById('abm-create-dolares');
+const abmCreatePesosInput = document.getElementById('abm-create-pesos');
+const abmCreateManualInput = document.getElementById('abm-create-manual');
+const abmCreatePrecioManualInput = document.getElementById('abm-create-precio-manual');
+const abmCreateGastosInput = document.getElementById('abm-create-gastos');
+const abmCreateGananciaInput = document.getElementById('abm-create-ganancia');
+const abmCreateProveedorSelect = document.getElementById('abm-create-proveedor');
+const abmCreateProveedorLoading = document.getElementById('abm-create-proveedor-loading');
+const abmCreatePaisInput = document.getElementById('abm-create-pais');
+const abmCreateGastosProveedorInput = document.getElementById('abm-create-gastos-proveedor');
+const abmCreateGananciaProveedorInput = document.getElementById('abm-create-ganancia-proveedor');
+const abmCreateOrdenInput = document.getElementById('abm-create-orden');
+const abmCreateCalcOpen = document.getElementById('abm-create-calc-open');
+const abmCreateObservacionesInput = document.getElementById('abm-create-observaciones');
+const abmCreateSave = document.getElementById('abm-create-save');
+const abmCreateStatus = document.getElementById('abm-create-status');
 const abmBatchCalcOpen = document.getElementById('abm-batch-calc-open');
 const abmBatchCalcOverlay = document.getElementById('abm-batch-calc-overlay');
 const abmBatchCalcClose = document.getElementById('abm-batch-calc-close');
@@ -577,6 +603,7 @@ let pedidoCardsServerDone = false;
 let pedidoCardsServerLoading = false;
 let pedidoCardsServerSearch = '';
 let abmProvidersLoaded = false;
+let abmCreateProvidersLoaded = false;
 let abmCurrentArticulo = null;
 let abmDolarRate = null;
 let abmBatchTable = null;
@@ -2187,6 +2214,14 @@ function setAbmBatchModo(opcion) {
   if (abmBatchGananciaInput) abmBatchGananciaInput.disabled = !isManual;
 }
 
+function setAbmCreateModo(opcion) {
+  const isManual = opcion === 'opcion_manual';
+  if (abmCreatePrecioConvertidoInput) abmCreatePrecioConvertidoInput.disabled = isManual;
+  if (abmCreatePrecioManualInput) abmCreatePrecioManualInput.disabled = !isManual;
+  if (abmCreateGastosInput) abmCreateGastosInput.disabled = !isManual;
+  if (abmCreateGananciaInput) abmCreateGananciaInput.disabled = !isManual;
+}
+
 function clearAbmBatchForm() {
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = '';
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = '';
@@ -2200,6 +2235,20 @@ function clearAbmBatchForm() {
   if (abmBatchObservacionesInput) abmBatchObservacionesInput.value = '';
   if (abmBatchRestaInput) abmBatchRestaInput.checked = false;
   abmBatchCurrentArticulo = null;
+}
+
+function clearAbmCreateForm() {
+  if (abmCreateArticuloInput) abmCreateArticuloInput.value = '';
+  if (abmCreateDetalleInput) abmCreateDetalleInput.value = '';
+  if (abmCreateCantidadInput) abmCreateCantidadInput.value = '';
+  if (abmCreatePrecioOrigenInput) abmCreatePrecioOrigenInput.value = '';
+  if (abmCreatePrecioConvertidoInput) abmCreatePrecioConvertidoInput.value = '';
+  if (abmCreatePrecioManualInput) abmCreatePrecioManualInput.value = '';
+  if (abmCreateGastosInput) abmCreateGastosInput.value = '';
+  if (abmCreateGananciaInput) abmCreateGananciaInput.value = '';
+  if (abmCreateObservacionesInput) abmCreateObservacionesInput.value = '';
+  if (abmCreatePesosInput) abmCreatePesosInput.checked = true;
+  setAbmCreateModo('opcion_pesos');
 }
 
 function ayudaPrecio(valor) {
@@ -2286,6 +2335,47 @@ async function openAbmCalc() {
 
 function closeAbmCalc() {
   if (abmCalcOverlay) abmCalcOverlay.classList.remove('open');
+}
+
+async function openAbmCreateCalc() {
+  if (!abmCalcOverlay) return;
+  if (abmCalcStatus) abmCalcStatus.textContent = '';
+  if (!abmCreateProvidersLoaded && abmCalcStatus) {
+    abmCalcStatus.textContent = 'Cargando proveedores...';
+  }
+
+  const isManual = !!abmCreateManualInput?.checked;
+  const isDolares = !!abmCreateDolaresInput?.checked;
+  if (isManual) {
+    const precioManual = Number(abmCreatePrecioManualInput?.value) || 0;
+    const gastos = Number(abmCreateGastosInput?.value) || 0;
+    const ganancia = Number(abmCreateGananciaInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioManual * gastos);
+    const precioVenta = ayudaPrecio(precioManual * ganancia * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  } else if (isDolares) {
+    const dolar = await loadAbmDolarRate();
+    if (!dolar && abmCalcStatus) {
+      abmCalcStatus.textContent = 'No se pudo cargar el dolar.';
+    }
+    const precioConvertido = Number(abmCreatePrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmCreateGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmCreateGananciaProveedorInput?.value) || 0;
+    const precioConvertidoDolar = precioConvertido * (dolar || 0);
+    const precioEnPesos = ayudaPrecio(precioConvertidoDolar * gastos);
+    const precioVenta = ayudaPrecio(precioConvertidoDolar * ganancia * gastos);
+    const precioEnDolares = ayudaPrecio(precioConvertido * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: precioEnDolares, venta: precioVenta, gastos, ganancia });
+  } else {
+    const precioConvertido = Number(abmCreatePrecioConvertidoInput?.value) || 0;
+    const gastos = Number(abmCreateGastosProveedorInput?.value) || 0;
+    const ganancia = Number(abmCreateGananciaProveedorInput?.value) || 0;
+    const precioEnPesos = ayudaPrecio(precioConvertido * gastos);
+    const precioVenta = ayudaPrecio(precioConvertido * ganancia * gastos);
+    setCalcValues({ pesos: precioEnPesos, dolares: 0, venta: precioVenta, gastos, ganancia });
+  }
+
+  abmCalcOverlay.classList.add('open');
 }
 
 async function openAbmBatchCalc() {
@@ -2381,6 +2471,30 @@ async function loadAbmBatchProveedores(selected) {
   }
 }
 
+async function loadAbmCreateProveedores(selected) {
+  if (!abmCreateProveedorSelect) return;
+  try {
+    if (abmCreateProveedorLoading) abmCreateProveedorLoading.style.display = 'block';
+    const res = await fetchJSON('/api/proveedores/select');
+    const data = Array.isArray(res.data) ? res.data : [];
+    abmCreateProveedorSelect.innerHTML = '';
+    data.forEach((row) => {
+      const opt = document.createElement('option');
+      opt.value = row.Nombre || row.nombre || '';
+      opt.textContent = row.Nombre || row.nombre || '';
+      abmCreateProveedorSelect.appendChild(opt);
+    });
+    if (selected) abmCreateProveedorSelect.value = selected;
+    abmCreateProvidersLoaded = true;
+    if (abmCreateSave) abmCreateSave.disabled = false;
+    if (abmCreateProveedorLoading) abmCreateProveedorLoading.style.display = 'none';
+  } catch (_err) {
+    if (abmCreateStatus) abmCreateStatus.textContent = 'No se pudieron cargar proveedores.';
+    if (abmCreateSave) abmCreateSave.disabled = true;
+    if (abmCreateProveedorLoading) abmCreateProveedorLoading.style.display = 'none';
+  }
+}
+
 async function loadProveedorMeta(nombre) {
   if (!nombre) return;
   try {
@@ -2406,6 +2520,21 @@ async function loadBatchProveedorMeta(nombre) {
     if (abmBatchPaisInput) abmBatchPaisInput.value = row.Pais || row.pais || '';
     if (abmBatchGastosProveedorInput) abmBatchGastosProveedorInput.value = row.Gastos ?? row.gastos ?? '';
     if (abmBatchGananciaProveedorInput) abmBatchGananciaProveedorInput.value = row.Ganancia ?? row.ganancia ?? '';
+  } catch (_err) {
+    /* silencioso */
+  }
+}
+
+async function loadCreateProveedorMeta(nombre) {
+  if (!nombre) return;
+  try {
+    const params = new URLSearchParams({ proveedor_name: nombre });
+    const res = await fetchJSON(`/api/proveedores/select?${params.toString()}`);
+    const row = Array.isArray(res.data) ? res.data[0] : res.data;
+    if (!row) return;
+    if (abmCreatePaisInput) abmCreatePaisInput.value = row.Pais || row.pais || '';
+    if (abmCreateGastosProveedorInput) abmCreateGastosProveedorInput.value = row.Gastos ?? row.gastos ?? '';
+    if (abmCreateGananciaProveedorInput) abmCreateGananciaProveedorInput.value = row.Ganancia ?? row.ganancia ?? '';
   } catch (_err) {
     /* silencioso */
   }
@@ -2460,6 +2589,35 @@ async function openAbmEdit(articulo) {
   } catch (error) {
     if (abmEditStatus) abmEditStatus.textContent = error.message || 'Error al cargar articulo';
   }
+}
+
+async function openAbmCreate() {
+  if (!abmCreateOverlay) return;
+  if (abmCreateSave) abmCreateSave.disabled = true;
+  if (abmCreateStatus) abmCreateStatus.textContent = 'Cargando...';
+  try {
+    clearAbmCreateForm();
+    const ordenRes = await fetchJSON('/api/ordencompras');
+    if (!abmCreateProvidersLoaded) {
+      await loadAbmCreateProveedores();
+    } else if (abmCreateProveedorSelect) {
+      if (abmCreateSave) abmCreateSave.disabled = false;
+    }
+    if (abmCreateOrdenInput) {
+      abmCreateOrdenInput.value = ordenRes.numeroOrden ?? ordenRes.NumeroOrden ?? '';
+    }
+    if (abmCreateProveedorSelect?.value) {
+      await loadCreateProveedorMeta(abmCreateProveedorSelect.value);
+    }
+    if (abmCreateStatus) abmCreateStatus.textContent = '';
+    abmCreateOverlay.classList.add('open');
+  } catch (error) {
+    if (abmCreateStatus) abmCreateStatus.textContent = error.message || 'Error al cargar formulario';
+  }
+}
+
+function closeAbmCreate() {
+  if (abmCreateOverlay) abmCreateOverlay.classList.remove('open');
 }
 
 function closeAbmEdit() {
@@ -3570,6 +3728,81 @@ function initAbm() {
   if (abmCalcOverlay)
     abmCalcOverlay.addEventListener('click', (e) => {
       if (e.target === abmCalcOverlay) closeAbmCalc();
+    });
+  if (abmCreateCalcOpen) abmCreateCalcOpen.addEventListener('click', openAbmCreateCalc);
+  if (abmCreateBtn) abmCreateBtn.addEventListener('click', openAbmCreate);
+  if (abmCreateClose) abmCreateClose.addEventListener('click', closeAbmCreate);
+  if (abmCreateCancel) abmCreateCancel.addEventListener('click', closeAbmCreate);
+  if (abmCreateProveedorSelect) {
+    abmCreateProveedorSelect.addEventListener('change', (e) => {
+      loadCreateProveedorMeta(e.target.value);
+    });
+  }
+  if (abmCreateDolaresInput)
+    abmCreateDolaresInput.addEventListener('change', () => setAbmCreateModo('opcion_dolares'));
+  if (abmCreatePesosInput)
+    abmCreatePesosInput.addEventListener('change', () => setAbmCreateModo('opcion_pesos'));
+  if (abmCreateManualInput)
+    abmCreateManualInput.addEventListener('change', () => setAbmCreateModo('opcion_manual'));
+  if (abmCreateForm)
+    abmCreateForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (abmCreateSave) abmCreateSave.disabled = true;
+      if (abmCreateStatus) abmCreateStatus.textContent = '';
+      const articuloBase = (abmCreateArticuloInput?.value || '').trim();
+      if (!/^\d{8}$/.test(articuloBase)) {
+        if (abmCreateStatus) abmCreateStatus.textContent = 'El articulo debe tener 8 digitos.';
+        if (abmCreateSave) abmCreateSave.disabled = false;
+        return;
+      }
+      if (!abmCreateProvidersLoaded || !abmCreateProveedorSelect?.value) {
+        if (abmCreateStatus) abmCreateStatus.textContent = 'Espera a que cargue el proveedor.';
+        if (abmCreateSave) abmCreateSave.disabled = false;
+        return;
+      }
+      const opcion = abmCreateManualInput?.checked
+        ? 'opcion_manual'
+        : abmCreatePesosInput?.checked
+        ? 'opcion_pesos'
+        : 'opcion_dolares';
+      const payload = {
+        articuloBase,
+        detalle: abmCreateDetalleInput?.value || '',
+        cantidad: Number(abmCreateCantidadInput?.value) || 0,
+        precioOrigen: Number(abmCreatePrecioOrigenInput?.value) || 0,
+        precioConvertido: Number(abmCreatePrecioConvertidoInput?.value) || 0,
+        precioManual: Number(abmCreatePrecioManualInput?.value) || 0,
+        gastos: Number(abmCreateGastosInput?.value) || 0,
+        ganancia: Number(abmCreateGananciaInput?.value) || 0,
+        proveedor: abmCreateProveedorSelect?.value || '',
+        observaciones: abmCreateObservacionesInput?.value || '',
+        ordenCompra: Number(abmCreateOrdenInput?.value) || 0,
+        opcion,
+        paisProveedor: abmCreatePaisInput?.value || '',
+        gastosProveedor: Number(abmCreateGastosProveedorInput?.value) || 0,
+        gananciaProveedor: Number(abmCreateGananciaProveedorInput?.value) || 0,
+      };
+      try {
+        if (abmCreateStatus) abmCreateStatus.textContent = 'Guardando...';
+        const res = await fetch('/api/mercaderia/abm/articulo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.message || 'No se pudo crear el articulo.');
+        }
+        if (abmCreateStatus) abmCreateStatus.textContent = 'Articulo creado.';
+        closeAbmCreate();
+        loadAbmDataTable(true);
+        if (abmStatus) abmStatus.textContent = `Articulo ${data?.data?.articulo || ''} creado.`;
+      } catch (error) {
+        if (abmCreateStatus) abmCreateStatus.textContent = error.message || 'Error al crear articulo.';
+      } finally {
+        if (abmCreateSave) abmCreateSave.disabled = false;
+      }
     });
   if (abmBatchCalcOpen) abmBatchCalcOpen.addEventListener('click', openAbmBatchCalc);
   if (abmBatchCalcClose) abmBatchCalcClose.addEventListener('click', closeAbmBatchCalc);

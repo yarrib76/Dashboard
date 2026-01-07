@@ -443,17 +443,52 @@ input[type='month'] {
   justify-content: space-between;
 }
 
+.actions.between.abm-actions-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.actions.between.abm-actions-header > .actions.inline {
+  margin-left: auto;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.actions.between.abm-actions-header button {
+  white-space: nowrap;
+}
+
 .abm-actions-header {
   flex-wrap: nowrap;
 }
 
 .abm-actions-header > .actions.inline {
   margin-left: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .abm-footer-actions {
   margin-top: 8px;
-  justify-content: flex-end;
+  justify-content: center;
+}
+
+.abm-footer-actions-center {
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.abm-footer-actions-center > button {
+  display: inline-flex;
 }
 
 .abm-batch-table-wrap {
@@ -1693,6 +1728,48 @@ body.theme-light .pedido-notas-badge {
   color: #fff;
 }
 
+/* FIX ABM header: fuerza layout en fila solo en ABM */
+#view-abm .actions.between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+#view-abm .actions.between > .actions.inline.no-wrap {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+#view-abm .actions.between > .actions.inline.no-wrap > button {
+  width: auto;
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+#view-abm .abm-actions-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#view-abm .abm-header-left,
+#view-abm .abm-header-right {
+  flex: 1 1 0;
+}
+
+#view-abm .abm-header-center {
+  flex: 0 0 auto;
+}
+
+#view-abm .abm-header-right {
+  display: flex;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
 .barcode-body {
   display: flex;
   flex-direction: column;
@@ -1778,6 +1855,21 @@ body.theme-light .pedido-notas-badge {
 .abm-inline-group input {
   flex: 1;
   min-width: 0;
+}
+
+.abm-prefix {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+}
+
+#abm-create-status {
+  font-size: 14px;
 }
 
 .abm-icon-btn {

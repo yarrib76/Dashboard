@@ -373,7 +373,7 @@
 
   <section class="view hidden" id="view-clientes">
     <article class="card wide">
-      <div class="actions between">
+      <div class="actions between abm-actions-header">
         <h2>Clientes</h2>
         <div class="actions inline compact clients-controls">
         <label class="client-inline">
@@ -836,16 +836,20 @@
 
   <section class="view hidden" id="view-abm">
     <article class="card wide">
-      <div class="actions between">
-        <div>
+      <div class="actions between abm-actions-header">
+        <div class="abm-header-left">
           <h2>ABM Articulos</h2>
           <p class="status">Listado general de artículos con acciones rápidas.</p>
         </div>
-      <div class="actions inline no-wrap">
+        <div class="abm-header-center">
+          <button id="abm-create" type="button">Crear Articulo</button>
+        </div>
+        <div class="actions inline no-wrap abm-header-right">
           <button id="abm-refresh" type="button">Actualizar</button>
         </div>
       </div>
-      <div class="abm-mobile-search">
+      
+<div class="abm-mobile-search">
         <input type="search" id="abm-mobile-search-input" placeholder="Buscar articulo..." />
       </div>
       <div class="table-wrap">
@@ -865,7 +869,7 @@
         </table>
         <div class="abm-cards" id="abm-cards"></div>
       </div>
-      <div class="actions inline abm-footer-actions">
+      <div class="actions inline no-wrap abm-footer-actions abm-footer-actions-center">
         <button id="abm-new" type="button">Modificar Articulos</button>
       </div>
       <p class="status" id="abm-status"></p>
@@ -1247,6 +1251,92 @@
         <button id="abm-barcode-print" type="button">Imprimir</button>
         <p class="status" id="abm-barcode-status"></p>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-create-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Nuevo Articulo</h3>
+        <button id="abm-create-close" class="close-btn" type="button">×</button>
+      </div>
+      <form id="abm-create-form">
+        <div class="abm-form-grid">
+          <label class="abm-span-2">
+            Articulo
+            <div class="abm-inline-group">
+              <span class="abm-prefix">7798</span>
+              <input type="text" id="abm-create-articulo" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" minlength="8" required />
+            </div>
+          </label>
+          <label class="abm-span-2">
+            Detalle
+            <input type="text" id="abm-create-detalle" required />
+          </label>
+          <label>
+            Cantidad
+            <input type="number" id="abm-create-cantidad" min="-99999999" max="99999999" required />
+          </label>
+          <label>
+            Precio Origen
+            <input type="number" step="any" id="abm-create-precio-origen" required />
+          </label>
+          <label>
+            Precio Convertido
+            <input type="number" step="any" id="abm-create-precio-convertido" required />
+          </label>
+          <div class="abm-radio-group">
+            <label><input type="radio" name="abm-create-opcion" id="abm-create-dolares" value="opcion_dolares" /> Dolares</label>
+            <label><input type="radio" name="abm-create-opcion" id="abm-create-pesos" value="opcion_pesos" checked /> Pesos</label>
+            <label><input type="radio" name="abm-create-opcion" id="abm-create-manual" value="opcion_manual" /> Manual</label>
+          </div>
+          <label>
+            Precio Manual
+            <input type="number" step="any" id="abm-create-precio-manual" disabled />
+          </label>
+          <label>
+            Gastos
+            <input type="number" step="any" id="abm-create-gastos" disabled />
+          </label>
+          <label>
+            Ganancia
+            <input type="number" step="any" id="abm-create-ganancia" disabled />
+          </label>
+          <label>
+            Proveedor
+            <select id="abm-create-proveedor"></select>
+            <small class="abm-loading" id="abm-create-proveedor-loading">Cargando proveedores...</small>
+          </label>
+          <label>
+            Pais
+            <input type="text" id="abm-create-pais" readonly />
+          </label>
+          <label>
+            Gastos
+            <input type="number" step="any" id="abm-create-gastos-proveedor" readonly />
+          </label>
+          <label>
+            Ganancia
+            <input type="number" step="any" id="abm-create-ganancia-proveedor" readonly />
+          </label>
+          <label class="abm-inline">
+            Numero de Orden
+            <input type="number" id="abm-create-orden" readonly />
+          </label>
+          <label class="abm-inline">
+            <button type="button" id="abm-create-calc-open" class="abm-calc-btn" title="Calculadora">🧮</button>
+          </label>
+          <label class="abm-span-2">
+            Observaciones
+            <textarea id="abm-create-observaciones" rows="3"></textarea>
+          </label>
+        </div>
+        <div class="abm-form-actions">
+          <button type="submit" id="abm-create-save">Guardar</button>
+          <button type="button" id="abm-create-cancel">Cancelar</button>
+        </div>
+        <p class="status" id="abm-create-status"></p>
+      </form>
     </div>
   </div>
 
