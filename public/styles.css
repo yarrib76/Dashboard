@@ -1674,6 +1674,25 @@ body.theme-light .pedido-card-menu {
   font-size: 13px;
 }
 
+.pedido-notas-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  background: #1f2937;
+  color: #fff;
+}
+
+body.theme-light .pedido-notas-badge {
+  background: #0f172a;
+  color: #fff;
+}
+
 .barcode-body {
   display: flex;
   flex-direction: column;

@@ -1886,9 +1886,38 @@ function initCargarTicket() {
 function exportMercaderia() {
   const rows = mercFiltered.filter((r) => mercSelected.has(r.articulo));
   if (!rows.length) {
-    if (mercStatus) mercStatus.textContent = 'Seleccione al menos un artículo para exportar.';
+    if (mercStatus) mercStatus.textContent = 'Seleccione al menos un art︷ulo para exportar.';
     return;
   }
+  exportMercaderiaXlsx(rows).catch(() => {
+    exportMercaderiaCsv(rows);
+  });
+}
+
+async function exportMercaderiaXlsx(rows) {
+  if (!window.XLSX) {
+    await loadXlsxLibrary();
+  }
+  if (!window.XLSX) {
+    throw new Error('XLSX no disponible');
+  }
+  const headers = ['Articulo', 'Detalle', 'ProveedorSku', 'Total Vendido', 'Total Stock', 'Precio Venta'];
+  const data = rows.map((r) => [
+    r.articulo,
+    r.detalle || '',
+    r.proveedorSku || '',
+    r.totalVendido ?? 0,
+    r.totalStock ?? 0,
+    r.precioVenta ?? 0,
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Mercaderia');
+  XLSX.writeFile(workbook, 'mercaderia.xlsx');
+  if (mercStatus) mercStatus.textContent = `Exportado ${rows.length} art︷ulo(s).`;
+}
+
+function exportMercaderiaCsv(rows) {
   const headers = ['Articulo', 'Detalle', 'ProveedorSku', 'Total Vendido', 'Total Stock', 'Precio Venta'];
   const csvRows = [headers.join(',')];
   rows.forEach((r) => {
@@ -1911,7 +1940,25 @@ function exportMercaderia() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  if (mercStatus) mercStatus.textContent = `Exportado ${rows.length} artículo(s).`;
+  if (mercStatus) mercStatus.textContent = `Exportado ${rows.length} art︷ulo(s).`;
+}
+
+function loadXlsxLibrary() {
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[data-xlsx]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => resolve());
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.async = true;
+    script.dataset.xlsx = '1';
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
 }
 
 async function graficarMercaderia() {
@@ -2942,6 +2989,10 @@ function buildPedidoCard(row) {
       </div>
     </div>
     <div class="pedido-card-grid">
+      <div>
+        <div class="pedido-card-label">Notas</div>
+        <div class="pedido-card-value"><span class="pedido-notas-badge">${notaCount}</span></div>
+      </div>
       <div>
         <div class="pedido-card-label">Fecha</div>
         <div class="pedido-card-value">${escapeAttr(fecha)}</div>
