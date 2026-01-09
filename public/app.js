@@ -248,6 +248,25 @@ let pedidoCheckoutDiffTable = null;
 let pedidoIaControlId = null;
 let pedidoIaClienteId = null;
 let pedidoIaMessages = [];
+let controlOrdenesRows = [];
+let controlOrdenesFiltered = [];
+let controlOrdenesSearchTerm = '';
+let controlOrdenesNotasCompraId = null;
+let controlOrdenesNotasEditingId = null;
+let controlOrdenesDecisionResolver = null;
+let controlOrdenesPage = 1;
+let controlOrdenesPageSize = 10;
+let controlOrdenesTotal = 0;
+let controlOrdenesTotalPages = 1;
+let controlOrdenesEstadoDefaulted = false;
+const controlOrdenesFilters = {
+  orden: '',
+  articulo: '',
+  detalle: '',
+  fecha: '',
+  observaciones: '',
+  proveedor: '',
+};
 const viewDashboard = document.getElementById('view-dashboard');
 const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
@@ -258,6 +277,7 @@ const viewIa = document.getElementById('view-ia');
   const viewPedidosTodos = document.getElementById('view-pedidos-todos');
   const viewMercaderia = document.getElementById('view-mercaderia');
   const viewAbm = document.getElementById('view-abm');
+  const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
 const DEBUG_OCR = true;
   const viewConfiguracion = document.getElementById('view-configuracion');
@@ -337,6 +357,36 @@ const pedidoIaOverlay = document.getElementById('pedido-ia-overlay');
 const pedidoIaTitle = document.getElementById('pedido-ia-title');
 const pedidoIaClose = document.getElementById('pedido-ia-close');
 const pedidoIaWindow = document.getElementById('pedido-ia-window');
+const controlOrdenesEstado = document.getElementById('control-ordenes-estado');
+const controlOrdenesDesde = document.getElementById('control-ordenes-desde');
+const controlOrdenesHasta = document.getElementById('control-ordenes-hasta');
+const controlOrdenesRefreshBtn = document.getElementById('control-ordenes-refresh');
+const controlOrdenesExportBtn = document.getElementById('control-ordenes-export');
+const controlOrdenesSearchInput = document.getElementById('control-ordenes-search');
+const controlOrdenesTableBody = document.querySelector('#control-ordenes-table tbody');
+const controlOrdenesCards = document.getElementById('control-ordenes-cards');
+const controlOrdenesStatus = document.getElementById('control-ordenes-status');
+const controlOrdenesPrev = document.getElementById('control-ordenes-prev');
+const controlOrdenesNext = document.getElementById('control-ordenes-next');
+const controlOrdenesPageInfo = document.getElementById('control-ordenes-page-info');
+const controlOrdenesFilterOrden = document.getElementById('co-filter-orden');
+const controlOrdenesFilterArticulo = document.getElementById('co-filter-articulo');
+const controlOrdenesFilterDetalle = document.getElementById('co-filter-detalle');
+const controlOrdenesFilterFecha = document.getElementById('co-filter-fecha');
+const controlOrdenesFilterProveedor = document.getElementById('co-filter-proveedor');
+const controlOrdenesNotasOverlay = document.getElementById('control-ordenes-notas-overlay');
+const controlOrdenesNotasClose = document.getElementById('control-ordenes-notas-close');
+const controlOrdenesNotasTitle = document.getElementById('control-ordenes-notas-title');
+const controlOrdenesNotasList = document.getElementById('control-ordenes-notas-list');
+const controlOrdenesNotasInput = document.getElementById('control-ordenes-notas-input');
+const controlOrdenesNotasSave = document.getElementById('control-ordenes-notas-save');
+const controlOrdenesNotasStatus = document.getElementById('control-ordenes-notas-status');
+const controlOrdenesDecisionOverlay = document.getElementById('control-ordenes-decision-overlay');
+const controlOrdenesDecisionClose = document.getElementById('control-ordenes-decision-close');
+const controlOrdenesDecisionText = document.getElementById('control-ordenes-decision-text');
+const controlOrdenesDecisionIncompleto = document.getElementById('control-ordenes-decision-incompleto');
+const controlOrdenesDecisionCompleto = document.getElementById('control-ordenes-decision-completo');
+const controlOrdenesDecisionSinEstado = document.getElementById('control-ordenes-decision-sin-estado');
 const pedidoIaInput = document.getElementById('pedido-ia-input');
 const pedidoIaSend = document.getElementById('pedido-ia-send');
 const pedidoIaStatus = document.getElementById('pedido-ia-status');
@@ -6468,6 +6518,604 @@ async function loadPaqueteriaLista(tipo) {
   }
 }
 
+
+function normalizeControlOrdenRow(row) {
+  return {
+    id: row.id_compra ?? row.id ?? row.ID ?? null,
+    orden: row.OrdenCompra ?? row.ordenCompra ?? row.orden ?? '',
+    articulo: row.Articulo ?? row.articulo ?? '',
+    detalle: row.Detalle ?? row.detalle ?? '',
+    cantidad: Number(row.Cantidad ?? row.cantidad ?? 0),
+    fecha: row.Fecha ?? row.fecha ?? '',
+    observaciones: row.Observaciones ?? row.observaciones ?? '',
+    pventa: Number(row.PVenta ?? row.pventa ?? row.precioVenta ?? 0),
+    cantNotas: Number(row.cant_notas ?? row.cantNotas ?? 0),
+    ordenControlada: Number(row.ordenControlada ?? row.ordencontrolada ?? 0),
+    proveedor: row.Proveedor ?? row.proveedor ?? '',
+    precioArgen: Number(row.PrecioArgen ?? row.precioArgen ?? row.precioOrigen ?? 0),
+  };
+}
+
+function getControlOrdenEstadoLabel(value) {
+  if (Number(value) === 1) return 'Confirmada';
+  if (Number(value) === 2) return 'Incompleta';
+  return 'Sin Procesar';
+}
+
+function getControlOrdenesEstadoSelection() {
+  const values = Array.from(controlOrdenesEstado?.selectedOptions || []).map((opt) => opt.value);
+  if (!values.length) return [];
+  if (values.includes('all')) return [];
+  return values;
+}
+
+function hasControlOrdenesFilters() {
+  const estados = getControlOrdenesEstadoSelection();
+  const hasEstados = estados.length > 0;
+  const hasFechas = !!(controlOrdenesDesde?.value && controlOrdenesHasta?.value);
+  return hasEstados || hasFechas;
+}
+
+function updateControlOrdenesBuscarState() {
+  return;
+}
+
+function buildControlOrdenesParams(forceOrden) {
+  const params = new URLSearchParams();
+  const estados = getControlOrdenesEstadoSelection();
+  const estadoMap = { confirmada: 1, incompleta: 2, sin_procesar: 0 };
+  const mappedEstados = estados
+    .map((value) => estadoMap[value])
+    .filter((val) => Number.isFinite(val));
+  if (mappedEstados.length) {
+    params.set('estado', mappedEstados.join(','));
+  }
+  const desde = controlOrdenesDesde?.value;
+  const hasta = controlOrdenesHasta?.value;
+  if (desde && hasta) {
+    params.set('desde', desde);
+    params.set('hasta', hasta);
+  }
+  if (controlOrdenesSearchTerm) {
+    params.set('q', controlOrdenesSearchTerm);
+  }
+  params.set('page', String(controlOrdenesPage));
+  params.set('pageSize', String(controlOrdenesPageSize));
+  return params;
+}
+
+function applyControlOrdenesFilters() {
+  let rows = controlOrdenesRows.slice();
+  if (controlOrdenesFilters.orden) {
+    rows = rows.filter((row) => String(row.orden || '').includes(controlOrdenesFilters.orden));
+  }
+  if (controlOrdenesFilters.articulo) {
+    rows = rows.filter((row) => textMatchesAllTokens(row.articulo, controlOrdenesFilters.articulo));
+  }
+  if (controlOrdenesFilters.detalle) {
+    rows = rows.filter((row) => textMatchesAllTokens(row.detalle, controlOrdenesFilters.detalle));
+  }
+  if (controlOrdenesFilters.fecha) {
+    rows = rows.filter((row) => String(row.fecha || '').includes(controlOrdenesFilters.fecha));
+  }
+  if (controlOrdenesFilters.proveedor) {
+    rows = rows.filter((row) => textMatchesAllTokens(row.proveedor, controlOrdenesFilters.proveedor));
+  }
+  if (controlOrdenesSearchTerm) {
+    rows = rows.filter((row) =>
+      textMatchesAllTokens(
+        `${row.orden} ${row.articulo} ${row.detalle} ${row.proveedor} ${row.observaciones}`,
+        controlOrdenesSearchTerm
+      )
+    );
+  }
+  controlOrdenesFiltered = rows;
+  renderControlOrdenesTable(rows);
+  renderControlOrdenesCards(rows);
+  if (controlOrdenesStatus) {
+    const totalLabel = controlOrdenesTotal ? ` de ${controlOrdenesTotal}` : '';
+    controlOrdenesStatus.textContent = `Mostrando ${rows.length}${totalLabel} orden(es)`;
+  }
+  if (controlOrdenesPageInfo) {
+    controlOrdenesPageInfo.textContent = `Pagina ${controlOrdenesPage} de ${controlOrdenesTotalPages}`;
+  }
+  if (controlOrdenesPrev) controlOrdenesPrev.disabled = controlOrdenesPage <= 1;
+  if (controlOrdenesNext) controlOrdenesNext.disabled = controlOrdenesPage >= controlOrdenesTotalPages;
+}
+
+async function loadControlOrdenes(options = {}) {
+  if (!viewControlOrdenes || viewControlOrdenes.classList.contains('hidden')) return;
+  if (controlOrdenesStatus) controlOrdenesStatus.textContent = 'Cargando...';
+  try {
+    if (options.page) controlOrdenesPage = options.page;
+    const params = buildControlOrdenesParams(options.forceOrden);
+    const url = params.toString() ? `/api/control-ordenes?${params.toString()}` : '/api/control-ordenes';
+    const res = await fetch(url, { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || 'No se pudieron cargar las ordenes');
+    }
+    const rows = (data.data || data.rows || []).map((row) => normalizeControlOrdenRow(row));
+    controlOrdenesTotal = Number(data.total || rows.length || 0);
+    controlOrdenesTotalPages = Math.max(1, Math.ceil(controlOrdenesTotal / controlOrdenesPageSize));
+    controlOrdenesPage = Math.min(controlOrdenesPage, controlOrdenesTotalPages);
+    controlOrdenesRows = rows;
+    applyControlOrdenesFilters();
+    if (!rows.length && controlOrdenesStatus) {
+      controlOrdenesStatus.textContent = 'Sin resultados.';
+    }
+  } catch (error) {
+    if (controlOrdenesStatus) controlOrdenesStatus.textContent = error.message || 'Error al cargar ordenes.';
+  }
+}
+
+function renderControlOrdenesTable(rows) {
+  if (!controlOrdenesTableBody) return;
+  controlOrdenesTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    if (row.ordenControlada === 1) tr.classList.add('control-ordenes-row-ok');
+    if (row.ordenControlada === 2) tr.classList.add('control-ordenes-row-warn');
+    const closeIcon = row.ordenControlada === 1 || row.ordenControlada === 2 ? '✖' : '✓';
+    tr.innerHTML = `
+      <td>${escapeAttr(row.orden)}</td>
+      <td>${escapeAttr(row.articulo)}</td>
+      <td>${escapeAttr(row.detalle)}</td>
+      <td>${row.cantidad ?? 0}</td>
+      <td>${escapeAttr(row.fecha)}</td>
+      <td>${escapeAttr(row.observaciones)}</td>
+      <td>${formatMoney(row.pventa)}</td>
+      <td>
+        <button type="button" class="co-notas-btn" data-id="${row.id}" data-orden="${escapeAttr(
+      row.orden
+    )}" title="Notas">
+          <span class="badge">${row.cantNotas ?? 0}</span>📘
+        </button>
+      </td>
+      <td>
+        <button type="button" class="co-close-btn" data-id="${row.id}" data-orden="${escapeAttr(
+      row.orden
+    )}" data-estado="${row.ordenControlada}">${closeIcon}</button>
+      </td>
+      <td>${escapeAttr(row.proveedor)}</td>
+      <td>${formatMoney(row.precioArgen)}</td>
+    `;
+    controlOrdenesTableBody.appendChild(tr);
+  });
+}
+
+function renderControlOrdenesCards(rows) {
+  if (!controlOrdenesCards) return;
+  controlOrdenesCards.innerHTML = '';
+  rows.forEach((row) => {
+    const estadoLabel = getControlOrdenEstadoLabel(row.ordenControlada);
+    const estadoClass =
+      row.ordenControlada === 1
+        ? 'orden-card--ok'
+        : row.ordenControlada === 2
+        ? 'orden-card--warn'
+        : '';
+    const closeLabel = row.ordenControlada === 1 || row.ordenControlada === 2 ? 'Reabrir' : 'Cerrar';
+    const card = document.createElement('div');
+    card.className = `orden-card ${estadoClass}`.trim();
+    card.dataset.id = row.id;
+    card.dataset.orden = row.orden;
+    card.dataset.estado = row.ordenControlada;
+    card.dataset.notas = row.cantNotas ?? 0;
+    card.innerHTML = `
+      <div class="orden-card-header">
+        <div>
+          <p class="orden-card-title">Orden ${escapeAttr(row.orden)}</p>
+          <p class="orden-card-sub">${escapeAttr(row.articulo)} · ${escapeAttr(estadoLabel)}</p>
+        </div>
+        <div class="orden-card-actions">
+          <button type="button" class="orden-card-menu-toggle" aria-label="Acciones">...</button>
+          <div class="orden-card-menu">
+            <button type="button" class="orden-card-notas-btn">Notas</button>
+            <button type="button" class="orden-card-close-btn">${closeLabel}</button>
+          </div>
+        </div>
+      </div>
+      <div class="orden-card-grid">
+        <div>
+          <div class="orden-card-label">Detalle</div>
+          <div class="orden-card-value">${escapeAttr(row.detalle)}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">Cantidad</div>
+          <div class="orden-card-value">${row.cantidad ?? 0}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">Fecha</div>
+          <div class="orden-card-value">${escapeAttr(row.fecha)}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">Proveedor</div>
+          <div class="orden-card-value">${escapeAttr(row.proveedor)}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">PVenta</div>
+          <div class="orden-card-value">${formatMoney(row.pventa)}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">Notas</div>
+          <div class="orden-card-value orden-card-notas"><span class="badge">${row.cantNotas ?? 0}</span></div>
+        </div>
+      </div>
+    `;
+    controlOrdenesCards.appendChild(card);
+  });
+}
+
+function openControlOrdenNotas(id, orden) {
+  controlOrdenesNotasCompraId = id;
+  controlOrdenesNotasEditingId = null;
+  if (controlOrdenesNotasTitle) controlOrdenesNotasTitle.textContent = `Orden ${orden}`;
+  if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = '';
+  if (controlOrdenesNotasInput) controlOrdenesNotasInput.value = '';
+  if (controlOrdenesNotasList) controlOrdenesNotasList.innerHTML = '';
+  controlOrdenesNotasOverlay?.classList.add('open');
+  loadControlOrdenNotas();
+}
+
+function closeControlOrdenNotas() {
+  controlOrdenesNotasOverlay?.classList.remove('open');
+}
+
+function openControlOrdenDecision(articulo) {
+  return new Promise((resolve) => {
+    controlOrdenesDecisionResolver = resolve;
+    if (controlOrdenesDecisionText) {
+      controlOrdenesDecisionText.textContent = `Seleccione una opcion para el Articulo ${articulo || ''}`.trim();
+    }
+    controlOrdenesDecisionOverlay?.classList.add('open');
+  });
+}
+
+function closeControlOrdenDecision(result = null) {
+  if (controlOrdenesDecisionOverlay) controlOrdenesDecisionOverlay.classList.remove('open');
+  if (controlOrdenesDecisionResolver) {
+    controlOrdenesDecisionResolver(result);
+    controlOrdenesDecisionResolver = null;
+  }
+}
+
+async function loadControlOrdenNotas() {
+  if (!controlOrdenesNotasCompraId) return;
+  try {
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Cargando...';
+    const res = await fetch(`/api/control-ordenes/notas?id_compra=${controlOrdenesNotasCompraId}`, {
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error cargando notas');
+    const notes = data.data || [];
+    if (!controlOrdenesNotasList) return;
+    controlOrdenesNotasList.innerHTML = '';
+    if (!notes.length) {
+      controlOrdenesNotasList.innerHTML = '<p class="status">Sin notas.</p>';
+      if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = '';
+      return;
+    }
+    notes.forEach((note) => {
+      const item = document.createElement('div');
+      item.className = 'carritos-nota';
+      if (controlOrdenesNotasEditingId && Number(note.id) === controlOrdenesNotasEditingId) {
+        item.classList.add('active');
+      }
+      item.dataset.id = note.id;
+      item.dataset.text = note.comentario || note.notas || '';
+      item.innerHTML = `
+        <div class="meta">${escapeAttr(note.nombre || '')} · ${escapeAttr(formatDateTime(note.fecha || ''))}</div>
+        <div class="text"><strong>Comentario:</strong> ${escapeAttr(note.comentario || note.notas || '')}</div>
+        <button type="button" class="nota-delete-btn" title="Eliminar nota">🗑️</button>
+      `;
+      controlOrdenesNotasList.appendChild(item);
+    });
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = `Notas: ${notes.length}`;
+  } catch (error) {
+    if (controlOrdenesNotasStatus) {
+      controlOrdenesNotasStatus.textContent = error.message || 'Error cargando notas.';
+    }
+  }
+}
+
+async function saveControlOrdenNota() {
+  if (!controlOrdenesNotasCompraId) return;
+  const nota = (controlOrdenesNotasInput?.value || '').trim();
+  if (!nota) {
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Debe agregar una nota.';
+    return;
+  }
+  try {
+    if (controlOrdenesNotasSave) controlOrdenesNotasSave.disabled = true;
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Guardando...';
+    if (controlOrdenesNotasEditingId) {
+      const res = await fetch(`/api/control-ordenes/notas/${encodeURIComponent(controlOrdenesNotasEditingId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ nota }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'No se pudo actualizar la nota');
+    } else {
+      const res = await fetch('/api/control-ordenes/notas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id_compra: controlOrdenesNotasCompraId, nota }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'No se pudo guardar la nota');
+      const row = controlOrdenesRows.find((r) => Number(r.id) === Number(controlOrdenesNotasCompraId));
+      if (row) row.cantNotas = (row.cantNotas || 0) + 1;
+    }
+    controlOrdenesNotasEditingId = null;
+    if (controlOrdenesNotasInput) controlOrdenesNotasInput.value = '';
+    applyControlOrdenesFilters();
+    await loadControlOrdenNotas();
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Nota guardada.';
+  } catch (error) {
+    if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = error.message || 'Error al guardar nota.';
+  } finally {
+    if (controlOrdenesNotasSave) controlOrdenesNotasSave.disabled = false;
+  }
+}
+
+async function cerrarControlOrden(row) {
+  if (!row?.id) return;
+  const decision = await openControlOrdenDecision(row.articulo || '');
+  if (!decision) return;
+  if (!row.cantNotas || row.cantNotas <= 0) {
+    alert('Para finalizar debe agregar una nota');
+    return;
+  }
+  const estado = decision === 'complete' ? 1 : decision === 'incomplete' ? 2 : 0;
+  try {
+    const res = await fetch('/api/control-ordenes/cerrar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id_compra: row.id, estado }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudo cerrar la orden');
+    row.ordenControlada = data.ordenControlada ?? estado;
+    applyControlOrdenesFilters();
+  } catch (error) {
+    alert(error.message || 'Error al cerrar la orden.');
+  }
+}
+
+async function exportControlOrdenesXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const headers = [
+    'Orden',
+    'Articulo',
+    'Detalle',
+    'Cantidad',
+    'Fecha',
+    'Observaciones',
+    'PVenta',
+    'Notas',
+    'Proveedor',
+    'PreOrigen',
+    'Estado',
+  ];
+  const data = controlOrdenesFiltered.map((row) => [
+    row.orden,
+    row.articulo,
+    row.detalle,
+    row.cantidad ?? 0,
+    row.fecha,
+    row.observaciones,
+    row.pventa ?? 0,
+    row.cantNotas ?? 0,
+    row.proveedor,
+    row.precioArgen ?? 0,
+    getControlOrdenEstadoLabel(row.ordenControlada),
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Ordenes');
+  XLSX.writeFile(workbook, 'ordenes_compra.xlsx');
+}
+
+function initControlOrdenes() {
+  if (!viewControlOrdenes) return;
+  updateControlOrdenesBuscarState();
+  if (controlOrdenesEstado && !controlOrdenesEstadoDefaulted) {
+    Array.from(controlOrdenesEstado.options || []).forEach((opt) => {
+      opt.selected = opt.value === 'all';
+    });
+    controlOrdenesEstadoDefaulted = true;
+  }
+  if (controlOrdenesRefreshBtn) {
+    controlOrdenesRefreshBtn.addEventListener('click', () => loadControlOrdenes());
+  }
+  if (controlOrdenesEstado) {
+    controlOrdenesEstado.addEventListener('change', () => {
+      updateControlOrdenesBuscarState();
+      loadControlOrdenes();
+    });
+  }
+  if (controlOrdenesDesde) {
+    controlOrdenesDesde.addEventListener('change', () => {
+      updateControlOrdenesBuscarState();
+      loadControlOrdenes();
+    });
+  }
+  if (controlOrdenesHasta) {
+    controlOrdenesHasta.addEventListener('change', () => {
+      updateControlOrdenesBuscarState();
+      loadControlOrdenes();
+    });
+  }
+  if (controlOrdenesSearchInput) {
+    controlOrdenesSearchInput.addEventListener('input', (e) => {
+      controlOrdenesSearchTerm = (e.target.value || '').trim().toLowerCase();
+      controlOrdenesPage = 1;
+      loadControlOrdenes({ page: 1 });
+    });
+  }
+  const filterInputs = [
+    { el: controlOrdenesFilterOrden, key: 'orden' },
+    { el: controlOrdenesFilterArticulo, key: 'articulo' },
+    { el: controlOrdenesFilterDetalle, key: 'detalle' },
+    { el: controlOrdenesFilterFecha, key: 'fecha' },
+    { el: controlOrdenesFilterProveedor, key: 'proveedor' },
+  ];
+  filterInputs.forEach(({ el, key }) => {
+    if (!el) return;
+    el.addEventListener('input', (e) => {
+      controlOrdenesFilters[key] = (e.target.value || '').trim().toLowerCase();
+      applyControlOrdenesFilters();
+    });
+  });
+  if (controlOrdenesTableBody) {
+    controlOrdenesTableBody.addEventListener('click', (e) => {
+      const notasBtn = e.target.closest('.co-notas-btn');
+      if (notasBtn) {
+        const id = Number(notasBtn.dataset.id);
+        const orden = notasBtn.dataset.orden || '';
+        openControlOrdenNotas(id, orden);
+        return;
+      }
+      const closeBtn = e.target.closest('.co-close-btn');
+      if (closeBtn) {
+        const id = Number(closeBtn.dataset.id);
+        const row = controlOrdenesRows.find((r) => Number(r.id) === id);
+        if (row) cerrarControlOrden(row);
+      }
+    });
+  }
+  if (controlOrdenesCards) {
+    controlOrdenesCards.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.orden-card-menu-toggle');
+      if (toggle) {
+        const menu = toggle.closest('.orden-card-actions')?.querySelector('.orden-card-menu');
+        if (menu) {
+          const isOpen = menu.classList.contains('open');
+          controlOrdenesCards.querySelectorAll('.orden-card-menu.open').forEach((m) => m.classList.remove('open'));
+          menu.classList.toggle('open', !isOpen);
+        }
+        return;
+      }
+      const notasBtn = e.target.closest('.orden-card-notas-btn');
+      if (notasBtn) {
+        const card = notasBtn.closest('.orden-card');
+        const id = Number(card?.dataset.id);
+        const orden = card?.dataset.orden || '';
+        openControlOrdenNotas(id, orden);
+        return;
+      }
+      const closeBtn = e.target.closest('.orden-card-close-btn');
+      if (closeBtn) {
+        const card = closeBtn.closest('.orden-card');
+        const id = Number(card?.dataset.id);
+        const row = controlOrdenesRows.find((r) => Number(r.id) === id);
+        if (row) cerrarControlOrden(row);
+        return;
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.orden-card')) {
+        controlOrdenesCards.querySelectorAll('.orden-card-menu.open').forEach((m) => m.classList.remove('open'));
+      }
+    });
+  }
+  if (controlOrdenesExportBtn) {
+    controlOrdenesExportBtn.addEventListener('click', () => {
+      exportControlOrdenesXlsx().catch((err) => {
+        alert(err.message || 'No se pudo exportar.');
+      });
+    });
+  }
+  if (controlOrdenesPrev) {
+    controlOrdenesPrev.addEventListener('click', () => {
+      if (controlOrdenesPage > 1) {
+        loadControlOrdenes({ page: controlOrdenesPage - 1 });
+      }
+    });
+  }
+  if (controlOrdenesNext) {
+    controlOrdenesNext.addEventListener('click', () => {
+      if (controlOrdenesPage < controlOrdenesTotalPages) {
+        loadControlOrdenes({ page: controlOrdenesPage + 1 });
+      }
+    });
+  }
+  if (controlOrdenesNotasClose) controlOrdenesNotasClose.addEventListener('click', closeControlOrdenNotas);
+  if (controlOrdenesNotasOverlay) {
+    controlOrdenesNotasOverlay.addEventListener('click', (e) => {
+      if (e.target === controlOrdenesNotasOverlay) closeControlOrdenNotas();
+    });
+  }
+  if (controlOrdenesNotasSave) controlOrdenesNotasSave.addEventListener('click', saveControlOrdenNota);
+  if (controlOrdenesNotasList) {
+    controlOrdenesNotasList.addEventListener('click', async (e) => {
+      const delBtn = e.target.closest('.nota-delete-btn');
+      if (delBtn) {
+        const note = delBtn.closest('.carritos-nota');
+        const noteId = Number(note?.dataset.id);
+        if (!noteId) return;
+        if (!confirm('Eliminar nota?')) return;
+        try {
+          if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Eliminando...';
+          const res = await fetch(`/api/control-ordenes/notas/${encodeURIComponent(noteId)}`, {
+            method: 'DELETE',
+            credentials: 'include',
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || 'No se pudo eliminar la nota');
+          await loadControlOrdenNotas();
+          if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Nota eliminada.';
+        } catch (error) {
+          if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = error.message || 'Error al eliminar nota.';
+        }
+        return;
+      }
+      const note = e.target.closest('.carritos-nota');
+      if (note) {
+        controlOrdenesNotasEditingId = Number(note.dataset.id) || null;
+        if (controlOrdenesNotasInput) {
+          controlOrdenesNotasInput.value = note.dataset.text || '';
+          controlOrdenesNotasInput.focus();
+        }
+        Array.from(controlOrdenesNotasList.querySelectorAll('.carritos-nota')).forEach((node) => {
+          node.classList.toggle('active', node === note);
+        });
+        if (controlOrdenesNotasStatus) controlOrdenesNotasStatus.textContent = 'Editando nota.';
+      }
+    });
+  }
+  if (controlOrdenesDecisionClose) {
+    controlOrdenesDecisionClose.addEventListener('click', () => closeControlOrdenDecision(null));
+  }
+  if (controlOrdenesDecisionSinEstado) {
+    controlOrdenesDecisionSinEstado.addEventListener('click', () =>
+      closeControlOrdenDecision('none')
+    );
+  }
+  if (controlOrdenesDecisionIncompleto) {
+    controlOrdenesDecisionIncompleto.addEventListener('click', () =>
+      closeControlOrdenDecision('incomplete')
+    );
+  }
+  if (controlOrdenesDecisionCompleto) {
+    controlOrdenesDecisionCompleto.addEventListener('click', () =>
+      closeControlOrdenDecision('complete')
+    );
+  }
+  if (controlOrdenesDecisionOverlay) {
+    controlOrdenesDecisionOverlay.addEventListener('click', (e) => {
+      if (e.target === controlOrdenesDecisionOverlay) closeControlOrdenDecision(null);
+    });
+  }
+}
+
 function resolvePermissionKey(target) {
   return target;
 }
@@ -6503,6 +7151,7 @@ function getFirstAllowedView(perms = {}) {
     'pedidos-todos',
     'mercaderia',
     'abm',
+    'control-ordenes',
     'facturas',
     'comisiones',
     'configuracion',
@@ -7397,6 +8046,9 @@ function syncMobileLayout() {
   if (isMobile && abmRowsCache.length && abmCardsEl && !abmCardsEl.innerHTML) {
     resetAbmCards();
   }
+  const controlOrdenesTable = document.getElementById('control-ordenes-table');
+  if (controlOrdenesTable) controlOrdenesTable.style.display = isMobile ? 'none' : '';
+  if (controlOrdenesCards) controlOrdenesCards.style.display = isMobile ? 'grid' : '';
   updatePedidoCardsVisibility();
   if (
     !isMobile &&
@@ -7440,6 +8092,7 @@ const permissionGroups = [
     items: [
       { key: 'mercaderia', label: 'Articulos Mas Vendido' },
       { key: 'abm', label: 'ABM Articulos' },
+      { key: 'control-ordenes', label: 'Control Ordenes' },
     ],
   },
   {
@@ -8700,6 +9353,7 @@ function switchView(target) {
       viewPedidosTodos,
       viewMercaderia,
       viewAbm,
+      viewControlOrdenes,
       viewConfiguracion,
       viewFacturas,
       viewComisiones,
@@ -8727,6 +9381,7 @@ function switchView(target) {
     viewPedidosTodos,
     viewMercaderia,
     viewAbm,
+    viewControlOrdenes,
     viewConfiguracion,
     viewFacturas,
     viewComisiones,
@@ -8757,12 +9412,15 @@ function switchView(target) {
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     loadAbmDataTable();
-    } else if (target === 'panel-control') {
-      viewPanelControl.classList.remove('hidden');
-    } else if (target === 'cargar-ticket') {
-      viewCargarTicket.classList.remove('hidden');
-    } else if (target === 'configuracion') {
-      viewConfiguracion.classList.remove('hidden');
+  } else if (target === 'control-ordenes') {
+    viewControlOrdenes.classList.remove('hidden');
+    loadControlOrdenes();
+  } else if (target === 'panel-control') {
+    viewPanelControl.classList.remove('hidden');
+  } else if (target === 'cargar-ticket') {
+    viewCargarTicket.classList.remove('hidden');
+  } else if (target === 'configuracion') {
+    viewConfiguracion.classList.remove('hidden');
   } else if (target === 'facturas') {
     viewFacturas.classList.remove('hidden');
     if (!facturasLoaded) loadFacturas();
@@ -8798,6 +9456,7 @@ initSalonResumen();
 initPedidosResumen();
 initMercaderia();
 initAbm();
+initControlOrdenes();
 initFacturas();
 initComisiones();
 initRolesModule();

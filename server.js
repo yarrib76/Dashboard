@@ -251,6 +251,7 @@ const ROLE_PERMISSIONS = [
   'comisiones',
   'mercaderia',
   'abm',
+  'control-ordenes',
   'configuracion',
 ];
 
@@ -2833,6 +2834,197 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
     res.json({ data: row });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar articulo', error: error.message });
+  }
+});
+
+app.get('/api/control-ordenes', requireAuth, async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
+    const offset = (page - 1) * pageSize;
+    const estadosRaw = String(req.query.estado || '').trim();
+    const estados = estadosRaw
+      ? estadosRaw
+          .split(',')
+          .map((v) => Number(v))
+          .filter((v) => [0, 1, 2].includes(v))
+      : [];
+    const desde = req.query.desde || '';
+    const hasta = req.query.hasta || '';
+    const nroOrden = String(req.query.nroOrden || '').trim();
+    const searchTerm = String(req.query.q || '').trim();
+
+    const conditions = [
+      'c.TipoOrden IS NOT NULL',
+      'c.TipoOrden = 2',
+      'c.Cantidad <> 0',
+    ];
+    const params = [];
+
+    if (estados.length) {
+      conditions.push(`c.ordenControlada IN (${estados.map(() => '?').join(',')})`);
+      params.push(...estados);
+    }
+    if (desde && hasta) {
+      conditions.push('DATE(c.FechaCompra) BETWEEN ? AND ?');
+      params.push(desde, hasta);
+    }
+    if (nroOrden) {
+      conditions.push('c.OrdenCompra = ?');
+      params.push(nroOrden);
+    }
+    if (searchTerm) {
+      const like = `%${searchTerm}%`;
+      conditions.push(
+        '(c.OrdenCompra LIKE ? OR c.Articulo LIKE ? OR c.Detalle LIKE ? OR c.Observaciones LIKE ? OR c.Proveedor LIKE ?)'
+      );
+      params.push(like, like, like, like, like);
+    }
+
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM compras c
+      WHERE ${conditions.join(' AND ')}
+    `;
+    const [countRows] = await pool.query(countSql, params);
+    const total = Number(countRows?.[0]?.total || 0);
+
+    const sql = `
+      SELECT
+        c.id_compra,
+        c.OrdenCompra,
+        c.Articulo,
+        c.Detalle,
+        c.Cantidad,
+        DATE_FORMAT(c.FechaCompra, '%Y-%m-%d') AS Fecha,
+        ra.PrecioVenta AS PVenta,
+        c.Observaciones,
+        (
+          SELECT COUNT(*)
+          FROM notas_control_orden n
+          WHERE n.id_compras = c.id_compra
+        ) AS cant_notas,
+        c.ordenControlada,
+        c.Proveedor,
+        c.PrecioArgen
+      FROM compras c
+      INNER JOIN reportearticulo ra ON c.Articulo = ra.Articulo
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY c.FechaCompra DESC, c.OrdenCompra DESC
+      LIMIT ? OFFSET ?
+    `;
+    const dataParams = params.slice();
+    dataParams.push(pageSize, offset);
+    const [rows] = await pool.query(sql, dataParams);
+    res.json({ data: rows || [], total, page, pageSize });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar ordenes', error: error.message });
+  }
+});
+
+app.get('/api/control-ordenes/notas', requireAuth, async (req, res) => {
+  try {
+    const idCompra = Number(req.query.id_compra);
+    if (!idCompra) return res.status(400).json({ message: 'id_compra requerido' });
+    const [rows] = await pool.query(
+      `SELECT n.id_notas_control_orden AS id,
+              u.name AS nombre,
+              n.notas AS comentario,
+              DATE_FORMAT(n.fecha_creacion, '%d de %M %Y %H:%i') AS fecha
+       FROM notas_control_orden n
+       INNER JOIN users u ON u.id = n.users_id
+       WHERE n.id_compras = ?
+       ORDER BY n.fecha_creacion DESC`,
+      [idCompra]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar notas', error: error.message });
+  }
+});
+
+app.post('/api/control-ordenes/notas', requireAuth, async (req, res) => {
+  try {
+    const idCompra = Number(req.body?.id_compra);
+    const nota = (req.body?.nota || '').trim();
+    const userId = req.user?.id;
+    if (!idCompra) return res.status(400).json({ message: 'id_compra requerido' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+    if (!userId) return res.status(401).json({ message: 'Usuario no autenticado' });
+    const fecha = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    await pool.query(
+      `INSERT INTO notas_control_orden (id_compras, users_id, notas, fecha_creacion)
+       VALUES (?, ?, ?, ?)`,
+      [idCompra, userId, nota, fecha]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar nota', error: error.message });
+  }
+});
+
+app.put('/api/control-ordenes/notas/:id', requireAuth, async (req, res) => {
+  try {
+    const notaId = Number(req.params.id);
+    const nota = (req.body?.nota || '').trim();
+    if (!notaId) return res.status(400).json({ message: 'Id de nota requerido' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+    await pool.query('UPDATE notas_control_orden SET notas = ? WHERE id_notas_control_orden = ? LIMIT 1', [
+      nota,
+      notaId,
+    ]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar nota', error: error.message });
+  }
+});
+
+app.delete('/api/control-ordenes/notas/:id', requireAuth, async (req, res) => {
+  try {
+    const notaId = Number(req.params.id);
+    if (!notaId) return res.status(400).json({ message: 'Id de nota requerido' });
+    await pool.query('DELETE FROM notas_control_orden WHERE id_notas_control_orden = ? LIMIT 1', [notaId]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar nota', error: error.message });
+  }
+});
+
+app.patch('/api/control-ordenes/cerrar', requireAuth, async (req, res) => {
+  try {
+    const idCompra = Number(req.body?.id_compra);
+    const estadoReq = Number(req.body?.estado);
+    if (!idCompra) return res.status(400).json({ message: 'id_compra requerido' });
+    const [[row]] = await pool.query(
+      'SELECT ordenControlada FROM compras WHERE id_compra = ? LIMIT 1',
+      [idCompra]
+    );
+    if (!row) return res.status(404).json({ message: 'Orden no encontrada' });
+    let nextEstado = 0;
+    if (row.ordenControlada === 1 || row.ordenControlada === 2) {
+      nextEstado = 0;
+    } else if ([1, 2].includes(estadoReq)) {
+      const [[countRow]] = await pool.query(
+        'SELECT COUNT(*) AS total FROM notas_control_orden WHERE id_compras = ?',
+        [idCompra]
+      );
+      if (!countRow || Number(countRow.total) <= 0) {
+        return res.status(400).json({ message: 'Para finalizar debe agregar una nota' });
+      }
+      nextEstado = estadoReq;
+    }
+    const fecha = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    await pool.query(
+      'UPDATE compras SET fechaControl = ?, ordenControlada = ? WHERE id_compra = ? LIMIT 1',
+      [fecha, nextEstado, idCompra]
+    );
+    res.json({ ok: true, ordenControlada: nextEstado });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cerrar control', error: error.message });
   }
 });
 
