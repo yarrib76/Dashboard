@@ -1770,6 +1770,18 @@ body.theme-light .orden-card {
   box-shadow: 0 0 0 2px rgba(255, 170, 0, 0.2);
 }
 
+body.theme-light .orden-card--ok {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.35);
+  background: #e7f7ed;
+}
+
+body.theme-light .orden-card--warn {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+  background: #fff4d6;
+}
+
 .orden-card-header {
   display: flex;
   justify-content: space-between;
