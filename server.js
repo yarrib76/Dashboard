@@ -3003,9 +3003,7 @@ app.patch('/api/control-ordenes/cerrar', requireAuth, async (req, res) => {
     );
     if (!row) return res.status(404).json({ message: 'Orden no encontrada' });
     let nextEstado = 0;
-    if (row.ordenControlada === 1 || row.ordenControlada === 2) {
-      nextEstado = 0;
-    } else if ([1, 2].includes(estadoReq)) {
+    if ([1, 2].includes(estadoReq)) {
       const [[countRow]] = await pool.query(
         'SELECT COUNT(*) AS total FROM notas_control_orden WHERE id_compras = ?',
         [idCompra]

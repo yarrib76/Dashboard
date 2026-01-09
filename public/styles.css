@@ -1641,7 +1641,7 @@ body.theme-light .pedido-cards-toolbar input {
 
 .control-ordenes-select {
   min-width: 180px;
-  min-height: 110px;
+  min-height: auto;
 }
 
 .control-ordenes-select option:checked {

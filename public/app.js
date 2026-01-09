@@ -259,6 +259,7 @@ let controlOrdenesPageSize = 10;
 let controlOrdenesTotal = 0;
 let controlOrdenesTotalPages = 1;
 let controlOrdenesEstadoDefaulted = false;
+let controlOrdenesOrdenTimer = null;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -360,6 +361,7 @@ const pedidoIaWindow = document.getElementById('pedido-ia-window');
 const controlOrdenesEstado = document.getElementById('control-ordenes-estado');
 const controlOrdenesDesde = document.getElementById('control-ordenes-desde');
 const controlOrdenesHasta = document.getElementById('control-ordenes-hasta');
+const controlOrdenesOrdenInput = document.getElementById('control-ordenes-orden');
 const controlOrdenesRefreshBtn = document.getElementById('control-ordenes-refresh');
 const controlOrdenesExportBtn = document.getElementById('control-ordenes-export');
 const controlOrdenesSearchInput = document.getElementById('control-ordenes-search');
@@ -6553,7 +6555,8 @@ function hasControlOrdenesFilters() {
   const estados = getControlOrdenesEstadoSelection();
   const hasEstados = estados.length > 0;
   const hasFechas = !!(controlOrdenesDesde?.value && controlOrdenesHasta?.value);
-  return hasEstados || hasFechas;
+  const hasOrden = !!String(controlOrdenesOrdenInput?.value || '').trim();
+  return hasEstados || hasFechas || hasOrden;
 }
 
 function updateControlOrdenesBuscarState() {
@@ -6575,6 +6578,10 @@ function buildControlOrdenesParams(forceOrden) {
   if (desde && hasta) {
     params.set('desde', desde);
     params.set('hasta', hasta);
+  }
+  const ordenValue = String(controlOrdenesOrdenInput?.value || '').trim();
+  if (ordenValue) {
+    params.set('nroOrden', ordenValue);
   }
   if (controlOrdenesSearchTerm) {
     params.set('q', controlOrdenesSearchTerm);
@@ -6867,11 +6874,11 @@ async function cerrarControlOrden(row) {
   if (!row?.id) return;
   const decision = await openControlOrdenDecision(row.articulo || '');
   if (!decision) return;
-  if (!row.cantNotas || row.cantNotas <= 0) {
+  const estado = decision === 'complete' ? 1 : decision === 'incomplete' ? 2 : 0;
+  if (estado !== 0 && (!row.cantNotas || row.cantNotas <= 0)) {
     alert('Para finalizar debe agregar una nota');
     return;
   }
-  const estado = decision === 'complete' ? 1 : decision === 'incomplete' ? 2 : 0;
   try {
     const res = await fetch('/api/control-ordenes/cerrar', {
       method: 'PATCH',
@@ -6951,6 +6958,15 @@ function initControlOrdenes() {
     controlOrdenesHasta.addEventListener('change', () => {
       updateControlOrdenesBuscarState();
       loadControlOrdenes();
+    });
+  }
+  if (controlOrdenesOrdenInput) {
+    controlOrdenesOrdenInput.addEventListener('input', () => {
+      if (controlOrdenesOrdenTimer) clearTimeout(controlOrdenesOrdenTimer);
+      controlOrdenesOrdenTimer = setTimeout(() => {
+        controlOrdenesPage = 1;
+        loadControlOrdenes({ page: 1 });
+      }, 300);
     });
   }
   if (controlOrdenesSearchInput) {
