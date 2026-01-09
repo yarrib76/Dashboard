@@ -1682,10 +1682,15 @@ body.theme-light .control-ordenes-row input[type='search'] {
   min-width: 20px;
   height: 20px;
   border-radius: 12px;
-  background: #ffbb33;
-  color: #111;
+  background: #e2e8f0;
+  color: #0f172a;
   font-size: 12px;
   margin-right: 6px;
+}
+
+body.theme-light .orden-card-notas .badge {
+  background: #cbd5e1;
+  color: #0f172a;
 }
 
 .control-ordenes-row-ok {
