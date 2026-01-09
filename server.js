@@ -2840,7 +2840,7 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
 app.get('/api/control-ordenes', requireAuth, async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
+    const pageSize = Math.min(100000, Math.max(1, Number(req.query.pageSize) || 10));
     const offset = (page - 1) * pageSize;
     const estadosRaw = String(req.query.estado || '').trim();
     const estados = estadosRaw

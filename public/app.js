@@ -6591,6 +6591,34 @@ function buildControlOrdenesParams(forceOrden) {
   return params;
 }
 
+function buildControlOrdenesExportParams() {
+  const params = new URLSearchParams();
+  const estados = getControlOrdenesEstadoSelection();
+  const estadoMap = { confirmada: 1, incompleta: 2, sin_procesar: 0 };
+  const mappedEstados = estados
+    .map((value) => estadoMap[value])
+    .filter((val) => Number.isFinite(val));
+  if (mappedEstados.length) {
+    params.set('estado', mappedEstados.join(','));
+  }
+  const desde = controlOrdenesDesde?.value;
+  const hasta = controlOrdenesHasta?.value;
+  if (desde && hasta) {
+    params.set('desde', desde);
+    params.set('hasta', hasta);
+  }
+  const ordenValue = String(controlOrdenesOrdenInput?.value || '').trim();
+  if (ordenValue) {
+    params.set('nroOrden', ordenValue);
+  }
+  if (controlOrdenesSearchTerm) {
+    params.set('q', controlOrdenesSearchTerm);
+  }
+  params.set('page', '1');
+  params.set('pageSize', '100000');
+  return params;
+}
+
 function applyControlOrdenesFilters() {
   let rows = controlOrdenesRows.slice();
   if (controlOrdenesFilters.orden) {
@@ -6727,6 +6755,10 @@ function renderControlOrdenesCards(rows) {
         <div>
           <div class="orden-card-label">Detalle</div>
           <div class="orden-card-value">${escapeAttr(row.detalle)}</div>
+        </div>
+        <div>
+          <div class="orden-card-label">Observaciones</div>
+          <div class="orden-card-value">${escapeAttr(row.observaciones)}</div>
         </div>
         <div>
           <div class="orden-card-label">Cantidad</div>
@@ -6898,6 +6930,12 @@ async function cerrarControlOrden(row) {
 async function exportControlOrdenesXlsx() {
   if (!window.XLSX) await loadXlsxLibrary();
   if (!window.XLSX) throw new Error('XLSX no disponible');
+  const params = buildControlOrdenesExportParams();
+  const url = params.toString() ? `/api/control-ordenes?${params.toString()}` : '/api/control-ordenes';
+  const res = await fetch(url, { credentials: 'include' });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.message || 'No se pudo exportar.');
+  const rows = (data.data || []).map((row) => normalizeControlOrdenRow(row));
   const headers = [
     'Orden',
     'Articulo',
@@ -6911,7 +6949,7 @@ async function exportControlOrdenesXlsx() {
     'PreOrigen',
     'Estado',
   ];
-  const data = controlOrdenesFiltered.map((row) => [
+  const sheetRows = rows.map((row) => [
     row.orden,
     row.articulo,
     row.detalle,
@@ -6924,7 +6962,7 @@ async function exportControlOrdenesXlsx() {
     row.precioArgen ?? 0,
     getControlOrdenEstadoLabel(row.ordenControlada),
   ]);
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sheetRows]);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Ordenes');
   XLSX.writeFile(workbook, 'ordenes_compra.xlsx');
