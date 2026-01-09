@@ -973,6 +973,19 @@ app.patch('/api/pedidos/instancia', requireAuth, async (req, res) => {
     if (![0, 1, 2].includes(nuevaInstancia)) {
       return res.status(400).json({ message: 'Instancia invalida' });
     }
+    if (nuevaInstancia === 2) {
+      const [[row]] = await pool.query(
+        'SELECT transporte FROM controlpedidos WHERE id = ? LIMIT 1',
+        [pedidoId]
+      );
+      const transporteRaw = String(row?.transporte || '').trim();
+      const transporte = transporteRaw.toLowerCase().replace(/\s+/g, '');
+      if (!transporte || transporte === 'sintransporte') {
+        return res
+          .status(400)
+          .json({ message: 'Debe seleccionar un transporte para finalizar.' });
+      }
+    }
     const now = formatDateTimeLocal(
       new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
     );
@@ -1793,8 +1806,12 @@ app.patch('/api/paqueteria/transporte', async (req, res) => {
   try {
     const { id, transporte } = req.body || {};
     if (!id) return res.status(400).json({ message: 'Id de pedido requerido' });
+    const transporteRaw = String(transporte || '').trim();
+    const normalized = transporteRaw.toLowerCase().replace(/\s+/g, '');
+    const transporteValue =
+      !normalized || normalized === 'sintransporte' ? null : transporteRaw;
     await pool.query('UPDATE controlpedidos SET transporte = ? WHERE id = ? LIMIT 1', [
-      transporte || null,
+      transporteValue,
       id,
     ]);
     res.json({ ok: true });

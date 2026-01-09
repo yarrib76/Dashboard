@@ -222,6 +222,7 @@ const nePageSizeSelect = document.getElementById('ne-page-size');
 let paqueteriaRows = [];
 let carritosRows = [];
 let transportesList = [];
+const pedidoTransporteCache = new Map();
 let empleadosRows = [];
 let carritosTable = null;
 let carritosCurrentTipo = 'pendientes';
@@ -3077,14 +3078,10 @@ function buildPedidoCard(row) {
   const transporte = row.transporte || '';
   const instancia = row.instancia ?? '';
   const notaCount = Number(row.notasCount) || 0;
-  const options = [
-    `<option value=""${transporte ? '' : ' selected'}>SinTransporte</option>`,
-    ...transportesList.map((t) => {
-      const value = String(t.nombre || '');
-      const isSelected = value === String(transporte);
-      return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(value)}</option>`;
-    }),
-  ].join('');
+  if (row?.id) {
+    pedidoTransporteCache.set(Number(row.id), row.transporte || '');
+  }
+  const options = buildTransporteOptions(transporte);
   const instanciaOptions = `
     <option value="0"${Number(instancia) === 0 ? ' selected' : ''}>Pendiente</option>
     <option value="1"${Number(instancia) === 1 ? ' selected' : ''}>Iniciado</option>
@@ -3190,7 +3187,7 @@ function buildPedidoCard(row) {
         <div class="pedido-card-value">
           <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${escapeAttr(
             row.id
-          )}">${instanciaOptions}</select>
+          )}" data-prev="${Number(instancia)}">${instanciaOptions}</select>
         </div>
       </div>
       <div>
@@ -3310,6 +3307,138 @@ function updatePedidoCardsVisibility() {
     } else if (pedidoCardsRowsCache.length) {
       resetPedidoCards();
     }
+  }
+}
+
+function normalizeTransporte(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function getTransporteValueForSave(value) {
+  const normalized = normalizeTransporte(value);
+  if (!normalized || normalized === 'sintransporte') return '';
+  return String(value || '').trim();
+}
+
+function isTransporteSnapshotValido(value) {
+  const normalized = normalizeTransporte(value);
+  return normalized !== '' && normalized !== 'sintransporte';
+}
+
+function buildTransporteOptions(currentValue) {
+  const current = normalizeTransporte(currentValue);
+  const isEmpty = !current || current === 'sintransporte';
+  const options = [
+    `<option value="SinTransporte"${isEmpty ? ' selected' : ''}>Sin Transporte</option>`,
+    ...transportesList.map((t) => {
+      const value = String(t.nombre || '');
+      const normalized = normalizeTransporte(value);
+      const isSelected = normalized === current && !isEmpty;
+      return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
+        value
+      )}</option>`;
+    }),
+  ].join('');
+  return options;
+}
+
+function getTransporteState(select) {
+  if (!select) return { value: '', label: '' };
+  const value = String(select.value || '').trim();
+  let label = select.selectedOptions?.[0]?.textContent?.trim() || '';
+  if (!label && typeof select.selectedIndex === 'number' && select.selectedIndex >= 0) {
+    label = select.options?.[select.selectedIndex]?.textContent?.trim() || '';
+  }
+  return { value, label };
+}
+
+function getTransporteSnapshot(select) {
+  if (!select) return '';
+  const label = select.dataset.transporteLabel || '';
+  if (label) return label;
+  const options = Array.from(select.options || []);
+  const selectedOption =
+    options.find((opt) => opt.selected) ||
+    (typeof select.selectedIndex === 'number' && select.selectedIndex >= 0
+      ? select.options?.[select.selectedIndex]
+      : null);
+  const selectedLabel = selectedOption?.textContent?.trim() || '';
+  if (selectedLabel) return selectedLabel;
+  const value = select.dataset.transporte || select.value || '';
+  if (value) {
+    const normalized = normalizeTransporte(value);
+    const match = options.find((opt) => {
+      const optValue = normalizeTransporte(opt.value || '');
+      const optLabel = normalizeTransporte(opt.textContent || '');
+      return optValue === normalized || optLabel === normalized;
+    });
+    if (match?.textContent) return match.textContent.trim();
+  }
+  return value;
+}
+
+function isTransporteSeleccionado(select) {
+  if (!select) return false;
+  const idx = typeof select.selectedIndex === 'number' ? select.selectedIndex : -1;
+  if (idx > 0) {
+    const text = select.options?.[idx]?.textContent || '';
+    const normalizedText = normalizeTransporte(text);
+    return normalizedText !== '' && normalizedText !== 'sintransporte';
+  }
+  const { value, label } = getTransporteState(select);
+  const normalized = normalizeTransporte(value || label);
+  return normalized !== '' && normalized !== 'sintransporte';
+}
+
+function isTransporteValido(select, fallbackValue) {
+  if (select) return isTransporteSeleccionado(select);
+  return isTransporteSnapshotValido(fallbackValue || '');
+}
+
+function findTransporteSelectById(id) {
+  if (!id) return null;
+  const selector = `.pedido-transporte-select[data-id="${id}"]`;
+  return (
+    pedidosVendedoraListaTableEl?.querySelector(selector) ||
+    document.querySelector(selector)
+  );
+}
+
+async function savePedidoTransporte(id, transporte, select) {
+  if (!id) return false;
+  const rawValue = String(transporte || '').trim();
+  const value = getTransporteValueForSave(rawValue);
+  pedidoTransporteCache.set(Number(id), value);
+  if (select) {
+    select.dataset.pending = '1';
+    select.dataset.transporte = rawValue;
+  }
+  try {
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando transporte...';
+    const res = await fetch('/api/paqueteria/transporte', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id, transporte: value }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'No se pudo actualizar transporte.');
+    }
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Transporte actualizado.';
+    if (select) {
+      select.dataset.pending = '0';
+      select.dataset.lastValue = value;
+    }
+    return true;
+  } catch (error) {
+    if (select) {
+      select.dataset.pending = '0';
+    }
+    if (pedidosVendedoraListaStatus) {
+      pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar transporte.';
+    }
+    return false;
   }
 }
 
@@ -3669,29 +3798,43 @@ function initAbm() {
       if (select) {
         const id = Number(select.dataset.id);
         const transporte = select.value || '';
-        try {
-          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando transporte...';
-          const res = await fetch('/api/paqueteria/transporte', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ id, transporte }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.message || 'No se pudo actualizar transporte.');
-          }
-          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Transporte actualizado.';
-        } catch (error) {
-          if (pedidosVendedoraListaStatus) {
-            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar transporte.';
-          }
+        const label = select.options?.[select.selectedIndex]?.textContent?.trim() || '';
+        select.dataset.transporteLabel = label;
+        pedidoTransporteCache.set(Number(id), transporte);
+        const card = select.closest('.pedido-card');
+        const instanciaSelect = card?.querySelector('.pedido-instancia-select');
+        if (instanciaSelect) {
+          instanciaSelect.dataset.transporte = transporte;
+          if (label) instanciaSelect.dataset.transporteLabel = label;
         }
+        const ok = await savePedidoTransporte(id, transporte, select);
         return;
       }
       if (instanciaSelect) {
         const id = Number(instanciaSelect.dataset.id);
         const instancia = Number(instanciaSelect.value);
+        if (instancia === 2) {
+          const card = instanciaSelect.closest('.pedido-card');
+          const transporteSelect = card?.querySelector('.pedido-transporte-select') || findTransporteSelectById(id);
+          const transporteSnapshot =
+            getTransporteSnapshot(transporteSelect) ||
+            instanciaSelect.dataset.transporteLabel ||
+            instanciaSelect.dataset.transporte ||
+            '';
+          if (!isTransporteSnapshotValido(transporteSnapshot)) {
+            alert('Para finalizar, seleccione un transporte.');
+            instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+            return;
+          }
+          if (transporteSelect) {
+            const saved = await savePedidoTransporte(id, transporteSnapshot, transporteSelect);
+            if (!saved) {
+              alert('No se pudo guardar el transporte.');
+              instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+              return;
+            }
+          }
+        }
         try {
           if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando instancia...';
           const res = await fetch('/api/pedidos/instancia', {
@@ -3704,11 +3847,11 @@ function initAbm() {
             const data = await res.json().catch(() => ({}));
             throw new Error(data.message || 'No se pudo actualizar instancia.');
           }
+          instanciaSelect.dataset.prev = String(instancia);
           if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Instancia actualizada.';
         } catch (error) {
-          if (pedidosVendedoraListaStatus) {
-            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar instancia.';
-          }
+          instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+          alert(error.message || 'Error al actualizar instancia.');
         }
       }
     });
@@ -5517,6 +5660,9 @@ function renderPedidosVendedoraLista(rows) {
     pagado: row.pagado ?? 0,
     notasCount: Number(row.notas_count) || 0,
   }));
+  data.forEach((row) => {
+    if (row?.id) pedidoTransporteCache.set(Number(row.id), row.transporte || '');
+  });
 
   pedidoCardsRowsCache = data;
   setPedidoCardsServerMode(false);
@@ -5572,16 +5718,7 @@ function renderPedidosVendedoraLista(rows) {
         searchable: false,
         render: (_val, _type, row) => {
           const current = String(row.transporte || '').trim();
-          const options = [
-            `<option value=""${current ? '' : ' selected'}>SinTransporte</option>`,
-            ...transportesList.map((t) => {
-              const value = String(t.nombre || '');
-              const isSelected = value === current;
-              return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
-                value
-              )}</option>`;
-            }),
-          ].join('');
+          const options = buildTransporteOptions(current);
           return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
         },
       },
@@ -5592,7 +5729,7 @@ function renderPedidosVendedoraLista(rows) {
         render: (val, _type, row) => {
           const current = Number(val);
           return `
-            <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">
+            <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}" data-prev="${current}">
               <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
               <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
               <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
@@ -6083,26 +6220,17 @@ async function loadPedidosTodosLista(tipo) {
           orderable: false,
           render: (_val, _type, row) => {
             const current = String(row.transporte || '').trim();
-            const options = [
-              `<option value=""${current ? '' : ' selected'}>SinTransporte</option>`,
-              ...transportesList.map((t) => {
-                const value = String(t.nombre || '');
-                const isSelected = value === current;
-                return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
-                  value
-                )}</option>`;
-              }),
-            ].join('');
-            return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
-          },
+          const options = buildTransporteOptions(current);
+          return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
         },
+      },
         {
           data: 'instancia',
           orderable: false,
           render: (val, _type, row) => {
             const current = Number(val);
             return `
-              <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">
+              <select class="pedido-instancia-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}" data-prev="${current}">
                 <option value="0"${current === 0 ? ' selected' : ''}>Pendiente</option>
                 <option value="1"${current === 1 ? ' selected' : ''}>Iniciado</option>
                 <option value="2"${current === 2 ? ' selected' : ''}>Finalizado</option>
@@ -6244,19 +6372,10 @@ async function loadPedidosEmpaquetadosLista() {
           orderable: false,
           render: (_val, _type, row) => {
             const current = String(row.transporte || '').trim();
-            const options = [
-              `<option value=""${current ? '' : ' selected'}>SinTransporte</option>`,
-              ...transportesList.map((t) => {
-                const value = String(t.nombre || '');
-                const isSelected = value === current;
-                return `<option value="${escapeAttr(value)}"${isSelected ? ' selected' : ''}>${escapeAttr(
-                  value
-                )}</option>`;
-              }),
-            ].join('');
-            return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
-          },
+          const options = buildTransporteOptions(current);
+          return `<select class="pedido-transporte-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${row.id}">${options}</select>`;
         },
+      },
         {
           data: 'instancia',
           orderable: false,
@@ -6573,29 +6692,43 @@ if (pedidosTodosGrid) {
       if (select) {
         const id = Number(select.dataset.id);
         const transporte = select.value || '';
-        try {
-          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando transporte...';
-          const res = await fetch('/api/paqueteria/transporte', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ id, transporte }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.message || 'No se pudo actualizar transporte.');
-          }
-          if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Transporte actualizado.';
-        } catch (error) {
-          if (pedidosVendedoraListaStatus) {
-            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar transporte.';
-          }
+        const label = select.options?.[select.selectedIndex]?.textContent?.trim() || '';
+        select.dataset.transporteLabel = label;
+        pedidoTransporteCache.set(Number(id), transporte);
+        const card = select.closest('.pedido-card');
+        const instanciaSelect = card?.querySelector('.pedido-instancia-select');
+        if (instanciaSelect) {
+          instanciaSelect.dataset.transporte = transporte;
+          if (label) instanciaSelect.dataset.transporteLabel = label;
         }
+        await savePedidoTransporte(id, transporte, select);
         return;
       }
       if (instanciaSelect) {
         const id = Number(instanciaSelect.dataset.id);
         const instancia = Number(instanciaSelect.value);
+        if (instancia === 2) {
+          const card = instanciaSelect.closest('.pedido-card');
+          const transporteSelect = card?.querySelector('.pedido-transporte-select') || findTransporteSelectById(id);
+          const transporteSnapshot =
+            getTransporteSnapshot(transporteSelect) ||
+            instanciaSelect.dataset.transporteLabel ||
+            instanciaSelect.dataset.transporte ||
+            '';
+          if (!isTransporteSnapshotValido(transporteSnapshot)) {
+            alert('Para finalizar, seleccione un transporte.');
+            instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+            return;
+          }
+          if (transporteSelect) {
+            const saved = await savePedidoTransporte(id, transporteSnapshot, transporteSelect);
+            if (!saved) {
+              alert('No se pudo guardar el transporte.');
+              instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+              return;
+            }
+          }
+        }
         try {
           if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando instancia...';
           const res = await fetch('/api/pedidos/instancia', {
@@ -6608,11 +6741,11 @@ if (pedidosTodosGrid) {
             const data = await res.json().catch(() => ({}));
             throw new Error(data.message || 'No se pudo actualizar instancia.');
           }
+          instanciaSelect.dataset.prev = String(instancia);
           if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Instancia actualizada.';
         } catch (error) {
-          if (pedidosVendedoraListaStatus) {
-            pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar instancia.';
-          }
+          instanciaSelect.value = instanciaSelect.dataset.prev || '0';
+          alert(error.message || 'Error al actualizar instancia.');
         }
       }
     });
