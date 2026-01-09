@@ -407,6 +407,7 @@ const abmCreateCancel = document.getElementById('abm-create-cancel');
 const abmCreateForm = document.getElementById('abm-create-form');
 const abmCreateArticuloInput = document.getElementById('abm-create-articulo');
 const abmCreateDetalleInput = document.getElementById('abm-create-detalle');
+const abmCreateProveedorSkuInput = document.getElementById('abm-create-proveedor-sku');
 const abmCreateCantidadInput = document.getElementById('abm-create-cantidad');
 const abmCreatePrecioOrigenInput = document.getElementById('abm-create-precio-origen');
 const abmCreatePrecioConvertidoInput = document.getElementById('abm-create-precio-convertido');
@@ -2240,6 +2241,7 @@ function clearAbmBatchForm() {
 function clearAbmCreateForm() {
   if (abmCreateArticuloInput) abmCreateArticuloInput.value = '';
   if (abmCreateDetalleInput) abmCreateDetalleInput.value = '';
+  if (abmCreateProveedorSkuInput) abmCreateProveedorSkuInput.value = '';
   if (abmCreateCantidadInput) abmCreateCantidadInput.value = '';
   if (abmCreatePrecioOrigenInput) abmCreatePrecioOrigenInput.value = '';
   if (abmCreatePrecioConvertidoInput) abmCreatePrecioConvertidoInput.value = '';
@@ -3768,6 +3770,7 @@ function initAbm() {
       const payload = {
         articuloBase,
         detalle: abmCreateDetalleInput?.value || '',
+        proveedorSku: abmCreateProveedorSkuInput?.value || '',
         cantidad: Number(abmCreateCantidadInput?.value) || 0,
         precioOrigen: Number(abmCreatePrecioOrigenInput?.value) || 0,
         precioConvertido: Number(abmCreatePrecioConvertidoInput?.value) || 0,

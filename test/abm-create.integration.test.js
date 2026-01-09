@@ -65,6 +65,7 @@ test('ABM create integration', async (t) => {
       const payload = {
         articuloBase: baseDigits,
         detalle: 'UTEST NUEVO',
+        proveedorSku: 'UTEST-SKU-01',
         cantidad: 5,
         precioOrigen: 100,
         precioConvertido: 200,
@@ -86,7 +87,7 @@ test('ABM create integration', async (t) => {
       assert.equal(created.moneda, 'ARG');
 
       const [[artRow]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
+        `SELECT Articulo, Detalle, ProveedorSKU, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          WHERE Articulo = ?
          LIMIT 1`,
@@ -94,6 +95,7 @@ test('ABM create integration', async (t) => {
       );
       assert.ok(artRow, 'articulo no encontrado');
       assert.equal(artRow.Detalle, payload.detalle);
+      assert.equal(artRow.ProveedorSKU || '', payload.proveedorSku);
       assert.equal(Number(artRow.Cantidad) || 0, payload.cantidad);
       assert.equal(Number(artRow.PrecioOrigen) || 0, payload.precioOrigen);
       assert.equal(Number(artRow.PrecioConvertido) || 0, created.precioConvertidoFinal);
