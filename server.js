@@ -252,6 +252,8 @@ const ROLE_PERMISSIONS = [
   'mercaderia',
   'abm',
   'control-ordenes',
+  'cajas',
+  'cajas-cierre',
   'configuracion',
 ];
 
@@ -2962,6 +2964,197 @@ app.post('/api/control-ordenes/notas', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al guardar nota', error: error.message });
+  }
+});
+
+app.get('/api/cajas/cierres', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         ROUND(SUM(CASE WHEN Descuento <> "null" OR Descuento = 0 THEN Descuento ELSE Total END), 2) AS Total,
+         DATE_FORMAT(f.fecha_dia, "%Y-%m-%d") AS Fecha,
+         CASE WHEN MAX(f.Estado) = 1 THEN "Caja Cerrada" ELSE "Caja Abierta" END AS Estado
+       FROM (
+         SELECT DATE(Fecha) AS fecha_dia, Estado, Descuento, Total
+         FROM facturah
+       ) AS f
+       GROUP BY f.fecha_dia
+       ORDER BY f.fecha_dia DESC`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar cierres', error: error.message });
+  }
+});
+
+app.get('/api/cajas/gastos', requireAuth, async (req, res) => {
+  try {
+    const fecha = String(req.query.fecha || '').trim();
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    const [rows] = await pool.query(
+      `SELECT Id, Nbr_Gasto, Detalle, Importe, DATE_FORMAT(Fecha, "%Y-%m-%d") AS Fecha
+       FROM gastos
+       WHERE DATE(Fecha) = ?
+       ORDER BY Fecha DESC`,
+      [fecha]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar gastos', error: error.message });
+  }
+});
+
+app.post('/api/cajas/gastos', requireAuth, async (req, res) => {
+  try {
+    const nombre = String(req.body?.Nbr_Gasto || '').trim();
+    const detalle = String(req.body?.Detalle || '').trim();
+    const importe = Number(req.body?.Importe || 0);
+    const fecha = String(req.body?.Fecha || '').trim();
+    if (!nombre) return res.status(400).json({ message: 'Gasto requerido' });
+    if (!fecha) return res.status(400).json({ message: 'Fecha requerida' });
+    const fechaFull = `${fecha} 00:00:00`;
+    await pool.query(
+      `INSERT INTO gastos (Nbr_Gasto, Detalle, Importe, Fecha, Estado)
+       VALUES (?, ?, ?, ?, ?)`,
+      [nombre, detalle, importe, fechaFull, 0]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al crear gasto', error: error.message });
+  }
+});
+
+app.put('/api/cajas/gastos/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const nombre = String(req.body?.Nbr_Gasto || '').trim();
+    const detalle = String(req.body?.Detalle || '').trim();
+    const importe = Number(req.body?.Importe || 0);
+    const fecha = String(req.body?.Fecha || '').trim();
+    if (!id) return res.status(400).json({ message: 'Id requerido' });
+    if (!nombre) return res.status(400).json({ message: 'Gasto requerido' });
+    if (!fecha) return res.status(400).json({ message: 'Fecha requerida' });
+    const fechaFull = `${fecha} 00:00:00`;
+    await pool.query(
+      `UPDATE gastos
+          SET Nbr_Gasto = ?,
+              Detalle = ?,
+              Importe = ?,
+              Fecha = ?
+        WHERE Id = ?
+        LIMIT 1`,
+      [nombre, detalle, importe, fechaFull, id]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar gasto', error: error.message });
+  }
+});
+
+app.delete('/api/cajas/gastos/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Id requerido' });
+    await pool.query('DELETE FROM gastos WHERE Id = ? LIMIT 1', [id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar gasto', error: error.message });
+  }
+});
+
+app.get('/api/cajas/facturas', requireAuth, async (req, res) => {
+  try {
+    const fecha = String(req.query.fecha || '').trim();
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    const [rows] = await pool.query(
+      `SELECT f.NroFactura,
+              f.Total,
+              f.Porcentaje,
+              f.Descuento,
+              DATE_FORMAT(f.Fecha, "%Y-%m-%d") AS Fecha,
+              CASE WHEN f.Estado = 1 THEN "Caja Cerrada" ELSE "Caja Abierta" END AS Estado,
+              CONCAT(cli.nombre, ",", cli.apellido) AS Cliente
+         FROM facturah f
+         INNER JOIN clientes cli ON cli.id_clientes = f.id_clientes
+        WHERE DATE(f.Fecha) = ?
+        ORDER BY f.NroFactura ASC`,
+      [fecha]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar facturas', error: error.message });
+  }
+});
+
+app.get('/api/cajas/factura-items', requireAuth, async (req, res) => {
+  try {
+    const nroFactura = String(req.query.nroFactura || '').trim();
+    if (!nroFactura) return res.status(400).json({ message: 'nroFactura requerido' });
+    const [rows] = await pool.query(
+      `SELECT NroFactura,
+              Articulo,
+              Detalle,
+              Cantidad,
+              ROUND(PrecioUnitario, 2) AS PrecioUnitario,
+              ROUND(PrecioVenta, 2) AS PrecioVenta
+         FROM factura
+        WHERE NroFactura = ?
+        ORDER BY Articulo`,
+      [nroFactura]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar items', error: error.message });
+  }
+});
+
+app.patch('/api/cajas/cerrar', requireAuth, async (req, res) => {
+  let conn;
+  try {
+    const fecha = String(req.body?.fecha || '').trim();
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await conn.query('UPDATE facturah SET Estado = 1 WHERE DATE(Fecha) = ?', [fecha]);
+    await conn.query('UPDATE gastos SET Estado = 1 WHERE DATE(Fecha) = ?', [fecha]);
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al cerrar caja', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.patch('/api/cajas/abrir', requireAuth, async (req, res) => {
+  let conn;
+  try {
+    const fecha = String(req.body?.fecha || '').trim();
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await conn.query('UPDATE facturah SET Estado = 0 WHERE DATE(Fecha) = ?', [fecha]);
+    await conn.query('UPDATE gastos SET Estado = 0 WHERE DATE(Fecha) = ?', [fecha]);
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al abrir caja', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 

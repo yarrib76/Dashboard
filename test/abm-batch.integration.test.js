@@ -324,7 +324,7 @@ test('ABM batch integration', async (t) => {
     }
   });
 
-  await t.test('rechaza articulos duplicados en batch', async () => {
+  await t.test('permite articulos duplicados en batch', async () => {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -340,10 +340,8 @@ test('ABM batch integration', async (t) => {
       }
       const ordenCompra = 960000;
       const item = buildItemFromRow(row, 5, { ordenCompra });
-      await assert.rejects(
-        () => processAbmBatch(conn, ordenCompra, [item, item]),
-        /duplicado/i
-      );
+      const result = await processAbmBatch(conn, ordenCompra, [item, item]);
+      assert.ok(Array.isArray(result));
       await conn.rollback();
     } finally {
       conn.release();

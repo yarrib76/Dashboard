@@ -260,6 +260,7 @@ let controlOrdenesTotal = 0;
 let controlOrdenesTotalPages = 1;
 let controlOrdenesEstadoDefaulted = false;
 let controlOrdenesOrdenTimer = null;
+let cajasCierreRows = [];
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -275,10 +276,12 @@ const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
   const viewSalon = document.getElementById('view-salon');
   const viewPedidos = document.getElementById('view-pedidos');
-  const viewPedidosTodos = document.getElementById('view-pedidos-todos');
-  const viewMercaderia = document.getElementById('view-mercaderia');
-  const viewAbm = document.getElementById('view-abm');
-  const viewControlOrdenes = document.getElementById('view-control-ordenes');
+const viewPedidosTodos = document.getElementById('view-pedidos-todos');
+const viewMercaderia = document.getElementById('view-mercaderia');
+const viewAbm = document.getElementById('view-abm');
+const viewControlOrdenes = document.getElementById('view-control-ordenes');
+const viewCajas = document.getElementById('view-cajas');
+const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
 const DEBUG_OCR = true;
   const viewConfiguracion = document.getElementById('view-configuracion');
@@ -389,6 +392,51 @@ const controlOrdenesDecisionText = document.getElementById('control-ordenes-deci
 const controlOrdenesDecisionIncompleto = document.getElementById('control-ordenes-decision-incompleto');
 const controlOrdenesDecisionCompleto = document.getElementById('control-ordenes-decision-completo');
 const controlOrdenesDecisionSinEstado = document.getElementById('control-ordenes-decision-sin-estado');
+const cajasCierreTableBody = document.querySelector('#cajas-cierre-table tbody');
+const cajasCierreCards = document.getElementById('cajas-cierre-cards');
+const cajasCierreStatus = document.getElementById('cajas-cierre-status');
+const cajasCierreRefreshBtn = document.getElementById('cajas-cierre-refresh');
+const cajasCierreExportBtn = document.getElementById('cajas-cierre-export');
+const cajasCierreSearch = document.getElementById('cajas-cierre-search');
+const cajasCierrePrev = document.getElementById('cajas-cierre-prev');
+const cajasCierreNext = document.getElementById('cajas-cierre-next');
+const cajasCierrePageInfo = document.getElementById('cajas-cierre-page-info');
+const cajasGastosOverlay = document.getElementById('cajas-gastos-overlay');
+const cajasGastosClose = document.getElementById('cajas-gastos-close');
+const cajasGastosTitle = document.getElementById('cajas-gastos-title');
+const cajasGastosTableBody = document.querySelector('#cajas-gastos-table tbody');
+const cajasGastosStatus = document.getElementById('cajas-gastos-status');
+const cajasGastosSearch = document.getElementById('cajas-gastos-search');
+const cajasGastosExport = document.getElementById('cajas-gastos-export');
+const cajasGastosPrev = document.getElementById('cajas-gastos-prev');
+const cajasGastosNext = document.getElementById('cajas-gastos-next');
+const cajasGastosPageInfo = document.getElementById('cajas-gastos-page-info');
+const cajasGastoId = document.getElementById('cajas-gasto-id');
+const cajasGastoNombre = document.getElementById('cajas-gasto-nombre');
+const cajasGastoDetalle = document.getElementById('cajas-gasto-detalle');
+const cajasGastoImporte = document.getElementById('cajas-gasto-importe');
+const cajasGastoSave = document.getElementById('cajas-gasto-save');
+const cajasGastoCancel = document.getElementById('cajas-gasto-cancel');
+const cajasFacturasOverlay = document.getElementById('cajas-facturas-overlay');
+const cajasFacturasClose = document.getElementById('cajas-facturas-close');
+const cajasFacturasTitle = document.getElementById('cajas-facturas-title');
+const cajasFacturasTableBody = document.querySelector('#cajas-facturas-table tbody');
+const cajasFacturasStatus = document.getElementById('cajas-facturas-status');
+const cajasFacturasSearch = document.getElementById('cajas-facturas-search');
+const cajasFacturasExport = document.getElementById('cajas-facturas-export');
+const cajasFacturasPrev = document.getElementById('cajas-facturas-prev');
+const cajasFacturasNext = document.getElementById('cajas-facturas-next');
+const cajasFacturasPageInfo = document.getElementById('cajas-facturas-page-info');
+const cajasFacturaItemsOverlay = document.getElementById('cajas-factura-items-overlay');
+const cajasFacturaItemsClose = document.getElementById('cajas-factura-items-close');
+const cajasFacturaItemsTitle = document.getElementById('cajas-factura-items-title');
+const cajasFacturaItemsTableBody = document.querySelector('#cajas-factura-items-table tbody');
+const cajasFacturaItemsStatus = document.getElementById('cajas-factura-items-status');
+const cajasFacturaItemsSearch = document.getElementById('cajas-factura-items-search');
+const cajasFacturaItemsExport = document.getElementById('cajas-factura-items-export');
+const cajasFacturaItemsPrev = document.getElementById('cajas-factura-items-prev');
+const cajasFacturaItemsNext = document.getElementById('cajas-factura-items-next');
+const cajasFacturaItemsPageInfo = document.getElementById('cajas-factura-items-page-info');
 const pedidoIaInput = document.getElementById('pedido-ia-input');
 const pedidoIaSend = document.getElementById('pedido-ia-send');
 const pedidoIaStatus = document.getElementById('pedido-ia-status');
@@ -665,7 +713,9 @@ let abmPickTable = null;
 let abmBatchProvidersLoaded = false;
 let abmBatchCurrentArticulo = null;
 let abmPickLoaded = false;
-const abmBatchItems = new Map();
+let abmBatchItems = [];
+let abmBatchItemSeq = 1;
+let abmBatchEditingId = null;
 let facturasRows = [];
 let facturasTipoPagos = [];
 let facturasEstados = [];
@@ -2696,8 +2746,8 @@ async function openAbmBatch() {
       if (abmBatchSubmit) abmBatchSubmit.disabled = false;
       if (abmBatchProveedorLoading) abmBatchProveedorLoading.style.display = 'none';
     }
-    abmBatchItems.clear();
-    renderBatchTable();
+        abmBatchItems = [];
+        renderBatchTable();
     clearAbmBatchForm();
     abmBatchOverlay.classList.add('open');
   } catch (error) {
@@ -2894,7 +2944,7 @@ function setBatchFormFromItem(item) {
 }
 
 function getBatchItemsArray() {
-  return Array.from(abmBatchItems.values());
+  return abmBatchItems.slice();
 }
 
 function renderBatchTable() {
@@ -2925,8 +2975,8 @@ function renderBatchTable() {
           orderable: false,
           render: (_data, _type, row) => `
             <div class="abm-actions">
-              <button type="button" class="abm-batch-edit" data-articulo="${escapeAttr(row.articulo)}">Modificar</button>
-              <button type="button" class="abm-batch-remove" data-articulo="${escapeAttr(row.articulo)}">Eliminar</button>
+              <button type="button" class="abm-batch-edit" data-batch-id="${row._batchId}">Modificar</button>
+              <button type="button" class="abm-batch-remove" data-batch-id="${row._batchId}">Eliminar</button>
             </div>
           `,
         },
@@ -2979,13 +3029,21 @@ async function openAbmPedidos(articulo, detalle) {
 
 function upsertBatchItem(item) {
   if (!item?.articulo) return;
-  abmBatchItems.set(String(item.articulo), item);
+  if (abmBatchEditingId) {
+    abmBatchItems = abmBatchItems.map((row) =>
+      row._batchId === abmBatchEditingId ? { ...item, _batchId: row._batchId } : row
+    );
+    abmBatchEditingId = null;
+  } else {
+    abmBatchItems.push({ ...item, _batchId: abmBatchItemSeq++ });
+  }
   renderBatchTable();
 }
 
-function removeBatchItem(articulo) {
-  if (!articulo) return;
-  abmBatchItems.delete(String(articulo));
+function removeBatchItem(batchId) {
+  if (!batchId) return;
+  if (abmBatchEditingId === batchId) abmBatchEditingId = null;
+  abmBatchItems = abmBatchItems.filter((item) => item._batchId !== batchId);
   renderBatchTable();
 }
 
@@ -4099,6 +4157,7 @@ function initAbm() {
       };
       upsertBatchItem(item);
       clearAbmBatchForm();
+      abmBatchEditingId = null;
       if (abmBatchFormStatus) abmBatchFormStatus.textContent = 'Agregado.';
     });
   if (abmBatchCantidadInput)
@@ -4112,12 +4171,15 @@ function initAbm() {
       const editBtn = e.target.closest('.abm-batch-edit');
       const delBtn = e.target.closest('.abm-batch-remove');
       if (editBtn) {
-        const articulo = editBtn.dataset.articulo;
-        const item = abmBatchItems.get(String(articulo));
-        if (item) setBatchFormFromItem(item);
+        const batchId = Number(editBtn.dataset.batchId || 0);
+        const item = abmBatchItems.find((row) => row._batchId === batchId);
+        if (item) {
+          abmBatchEditingId = batchId;
+          setBatchFormFromItem(item);
+        }
       } else if (delBtn) {
-        const articulo = delBtn.dataset.articulo;
-        removeBatchItem(articulo);
+        const batchId = Number(delBtn.dataset.batchId || 0);
+        removeBatchItem(batchId);
       }
     });
   if (abmBatchSubmit)
@@ -4159,7 +4221,8 @@ function initAbm() {
           const currentOrden = Number(abmBatchOrdenInput.value) || 0;
           abmBatchOrdenInput.value = currentOrden + 1;
         }
-        abmBatchItems.clear();
+        abmBatchItems = [];
+        abmBatchEditingId = null;
         renderBatchTable();
         clearAbmBatchForm();
       } catch (error) {
@@ -7170,6 +7233,724 @@ function initControlOrdenes() {
   }
 }
 
+
+function normalizeCajaRow(row) {
+  return {
+    fecha: row.Fecha ?? row.fecha ?? '',
+    total: Number(row.Total ?? row.total ?? 0),
+    estado: row.Estado ?? row.estado ?? '',
+  };
+}
+
+const cajasCierreState = { rows: [], query: '', page: 1, pageSize: 10 };
+const cajasGastosState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
+const cajasFacturasState = { rows: [], query: '', page: 1, pageSize: 10 };
+const cajasFacturaItemsState = { rows: [], query: '', page: 1, pageSize: 10 };
+
+function filterRows(rows, query, keys) {
+  if (!query) return rows;
+  const q = query.toLowerCase();
+  return rows.filter((row) =>
+    keys.some((key) => String(row[key] ?? '').toLowerCase().includes(q))
+  );
+}
+
+function paginateRows(rows, page, pageSize) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const start = (safePage - 1) * pageSize;
+  return {
+    page: safePage,
+    totalPages,
+    slice: rows.slice(start, start + pageSize),
+  };
+}
+
+function renderCajasCierreTable(rows) {
+  if (!cajasCierreTableBody) return;
+  cajasCierreTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const isAbierta = row.estado === 'Caja Abierta';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.fecha)}</td>
+      <td>${formatMoney(row.total)}</td>
+      <td>${escapeAttr(row.estado)}</td>
+      <td>
+        <button type="button" class="caja-ver-btn" data-fecha="${escapeAttr(row.fecha)}">Ver</button>
+        <button type="button" class="caja-gastos-btn" data-fecha="${escapeAttr(row.fecha)}">Gastos</button>
+        ${
+          isAbierta
+            ? `<button type="button" class="caja-cerrar-btn" data-fecha="${escapeAttr(row.fecha)}">Cerrar Caja</button>`
+            : `<button type="button" class="caja-abrir-btn" data-fecha="${escapeAttr(row.fecha)}">Abrir Caja</button>`
+        }
+      </td>
+    `;
+    cajasCierreTableBody.appendChild(tr);
+  });
+}
+
+function renderCajasCierreCards(rows) {
+  if (!cajasCierreCards) return;
+  cajasCierreCards.innerHTML = '';
+  rows.forEach((row) => {
+    const cls = row.estado === 'Caja Abierta' ? 'caja-card--abierta' : 'caja-card--cerrada';
+    const isAbierta = row.estado === 'Caja Abierta';
+    const card = document.createElement('div');
+    card.className = `caja-card ${cls}`.trim();
+    card.innerHTML = `
+      <div class="caja-card-header">
+        <div>
+          <p class="caja-card-title">${escapeAttr(row.fecha)}</p>
+          <p class="caja-card-sub">${escapeAttr(row.estado)}</p>
+        </div>
+      </div>
+      <div class="caja-card-grid">
+        <div>
+          <div class="caja-card-label">Total</div>
+          <div class="caja-card-value">${formatMoney(row.total)}</div>
+        </div>
+      </div>
+      <div class="caja-card-actions">
+        <button type="button" class="caja-ver-btn" data-fecha="${escapeAttr(row.fecha)}">Ver</button>
+        <button type="button" class="caja-gastos-btn" data-fecha="${escapeAttr(row.fecha)}">Gastos</button>
+        ${
+          isAbierta
+            ? `<button type="button" class="caja-cerrar-btn" data-fecha="${escapeAttr(row.fecha)}">Cerrar</button>`
+            : `<button type="button" class="caja-abrir-btn" data-fecha="${escapeAttr(row.fecha)}">Abrir Caja</button>`
+        }
+      </div>
+    `;
+    cajasCierreCards.appendChild(card);
+  });
+}
+
+function renderCajasCierreView() {
+  const filtered = filterRows(cajasCierreState.rows, cajasCierreState.query, [
+    'fecha',
+    'total',
+    'estado',
+  ]);
+  const { page, totalPages, slice } = paginateRows(
+    filtered,
+    cajasCierreState.page,
+    cajasCierreState.pageSize
+  );
+  cajasCierreState.page = page;
+  renderCajasCierreTable(slice);
+  renderCajasCierreCards(slice);
+  if (cajasCierrePageInfo) cajasCierrePageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasCierrePrev) cajasCierrePrev.disabled = page <= 1;
+  if (cajasCierreNext) cajasCierreNext.disabled = page >= totalPages;
+  if (cajasCierreStatus)
+    cajasCierreStatus.textContent = filtered.length ? `${filtered.length} cierres` : 'Sin cierres.';
+}
+
+function renderCajasGastosTable() {
+  if (!cajasGastosTableBody) return;
+  const filtered = filterRows(cajasGastosState.rows, cajasGastosState.query, [
+    'gasto',
+    'detalle',
+    'importe',
+    'fecha',
+  ]);
+  cajasGastosState.filtered = filtered;
+  const { page, totalPages, slice } = paginateRows(filtered, cajasGastosState.page, cajasGastosState.pageSize);
+  cajasGastosState.page = page;
+  cajasGastosTableBody.innerHTML = '';
+  slice.forEach((row, idx) => {
+    const absoluteIndex = (page - 1) * cajasGastosState.pageSize + idx;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.gasto)}</td>
+      <td>${escapeAttr(row.detalle)}</td>
+      <td>${formatMoney(row.importe)}</td>
+      <td>${escapeAttr(row.fecha)}</td>
+      <td>
+        <button type="button" class="caja-gasto-edit-btn" data-id="${row.id}" data-index="${absoluteIndex}">Editar</button>
+        <button type="button" class="caja-gasto-delete-btn btn-trash" data-id="${row.id}" data-index="${absoluteIndex}" title="Eliminar" aria-label="Eliminar">Del</button>
+      </td>
+    `;
+    cajasGastosTableBody.appendChild(tr);
+  });
+  if (cajasGastosPageInfo) cajasGastosPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasGastosPrev) cajasGastosPrev.disabled = page <= 1;
+  if (cajasGastosNext) cajasGastosNext.disabled = page >= totalPages;
+  if (cajasGastosStatus) cajasGastosStatus.textContent = filtered.length ? `${filtered.length} gastos` : 'Sin gastos.';
+}
+
+function renderCajasFacturasTable() {
+  if (!cajasFacturasTableBody) return;
+  const filtered = filterRows(cajasFacturasState.rows, cajasFacturasState.query, [
+    'nroFactura',
+    'cliente',
+    'total',
+    'porcentaje',
+    'descuento',
+  ]);
+  const { page, totalPages, slice } = paginateRows(filtered, cajasFacturasState.page, cajasFacturasState.pageSize);
+  cajasFacturasState.page = page;
+  cajasFacturasTableBody.innerHTML = '';
+  slice.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.nroFactura)}</td>
+      <td>${formatMoney(row.total)}</td>
+      <td>${row.porcentaje ?? ''}</td>
+      <td>${row.descuento ?? ''}</td>
+      <td>${escapeAttr(row.cliente)}</td>
+      <td><button type="button" class="caja-factura-items-btn" data-factura="${escapeAttr(row.nroFactura)}">Ver</button></td>
+    `;
+    cajasFacturasTableBody.appendChild(tr);
+  });
+  if (cajasFacturasPageInfo) cajasFacturasPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasFacturasPrev) cajasFacturasPrev.disabled = page <= 1;
+  if (cajasFacturasNext) cajasFacturasNext.disabled = page >= totalPages;
+  if (cajasFacturasStatus) cajasFacturasStatus.textContent = filtered.length ? `${filtered.length} facturas` : 'Sin facturas.';
+}
+
+function renderCajasFacturaItemsTable() {
+  if (!cajasFacturaItemsTableBody) return;
+  const filtered = filterRows(cajasFacturaItemsState.rows, cajasFacturaItemsState.query, [
+    'articulo',
+    'detalle',
+    'cantidad',
+    'precioUnitario',
+    'precioVenta',
+  ]);
+  const { page, totalPages, slice } = paginateRows(
+    filtered,
+    cajasFacturaItemsState.page,
+    cajasFacturaItemsState.pageSize
+  );
+  cajasFacturaItemsState.page = page;
+  cajasFacturaItemsTableBody.innerHTML = '';
+  slice.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.articulo)}</td>
+      <td>${escapeAttr(row.detalle)}</td>
+      <td>${row.cantidad ?? 0}</td>
+      <td>${formatMoney(row.precioUnitario)}</td>
+      <td>${formatMoney(row.precioVenta)}</td>
+    `;
+    cajasFacturaItemsTableBody.appendChild(tr);
+  });
+  if (cajasFacturaItemsPageInfo) cajasFacturaItemsPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasFacturaItemsPrev) cajasFacturaItemsPrev.disabled = page <= 1;
+  if (cajasFacturaItemsNext) cajasFacturaItemsNext.disabled = page >= totalPages;
+  if (cajasFacturaItemsStatus)
+    cajasFacturaItemsStatus.textContent = filtered.length ? `${filtered.length} items` : 'Sin items.';
+}
+
+async function loadCajasCierre() {
+  if (!viewCajasCierre || viewCajasCierre.classList.contains('hidden')) return;
+  if (cajasCierreStatus) cajasCierreStatus.textContent = 'Cargando...';
+  try {
+    const res = await fetch('/api/cajas/cierres', { credentials: 'include' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los cierres');
+    cajasCierreRows = (data.data || []).map((row) => normalizeCajaRow(row));
+    cajasCierreState.rows = cajasCierreRows;
+    cajasCierreState.page = 1;
+    renderCajasCierreView();
+  } catch (error) {
+    if (cajasCierreStatus) cajasCierreStatus.textContent = error.message || 'Error al cargar cierres.';
+  }
+}
+
+async function loadCajasGastos(fecha) {
+  if (!fecha) return;
+  if (cajasGastosStatus) cajasGastosStatus.textContent = 'Cargando...';
+  if (cajasGastosTitle) cajasGastosTitle.textContent = `Gastos - ${fecha}`;
+  if (cajasGastosTableBody) cajasGastosTableBody.innerHTML = '';
+  try {
+    const res = await fetch(`/api/cajas/gastos?fecha=${encodeURIComponent(fecha)}`, {
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los gastos');
+    cajasGastosState.fecha = fecha;
+    cajasGastosState.rows = (data.data || []).map((row) => ({
+      id: row.Id ?? row.id ?? 0,
+      gasto: row.Nbr_Gasto ?? row.gasto ?? '',
+      detalle: row.Detalle ?? row.descripcion ?? '',
+      importe: Number(row.Importe ?? row.importe ?? 0),
+      fecha: row.Fecha ?? row.fecha ?? '',
+    }));
+    cajasGastosState.page = 1;
+    renderCajasGastosTable();
+  } catch (error) {
+    if (cajasGastosStatus) cajasGastosStatus.textContent = error.message || 'Error al cargar gastos.';
+  }
+}
+
+function openCajasGastos(fecha) {
+  if (!cajasGastosOverlay) return;
+  if (cajasGastosSearch) cajasGastosSearch.value = '';
+  if (cajasGastoId) cajasGastoId.value = '';
+  if (cajasGastoNombre) cajasGastoNombre.value = '';
+  if (cajasGastoDetalle) cajasGastoDetalle.value = '';
+  if (cajasGastoImporte) cajasGastoImporte.value = '';
+  cajasGastosState.query = '';
+  cajasGastosState.page = 1;
+  cajasGastosOverlay.classList.add('open');
+  loadCajasGastos(fecha);
+}
+
+async function cerrarCaja(fecha) {
+  if (!fecha) return;
+  if (!confirm(`Esta seguro que desea cerrar la caja con fecha: ${fecha}?`)) return;
+  try {
+    if (cajasCierreStatus) cajasCierreStatus.textContent = 'Cerrando caja...';
+    const res = await fetch('/api/cajas/cerrar', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ fecha }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudo cerrar la caja');
+    await loadCajasCierre();
+    alert(`Caja ${fecha} Cerrada`);
+  } catch (error) {
+    if (cajasCierreStatus) cajasCierreStatus.textContent = error.message || 'Error al cerrar caja.';
+  }
+}
+
+async function abrirCaja(fecha) {
+  if (!fecha) return;
+  if (!confirm(`Esta seguro que desea abrir la caja con fecha: ${fecha}?`)) return;
+  try {
+    if (cajasCierreStatus) cajasCierreStatus.textContent = 'Abriendo caja...';
+    const res = await fetch('/api/cajas/abrir', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ fecha }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudo abrir la caja');
+    await loadCajasCierre();
+    alert(`Caja ${fecha} Abierta`);
+  } catch (error) {
+    if (cajasCierreStatus) cajasCierreStatus.textContent = error.message || 'Error al abrir caja.';
+  }
+}
+
+async function loadCajasFacturas(fecha) {
+  if (!fecha) return;
+  if (cajasFacturasStatus) cajasFacturasStatus.textContent = 'Cargando...';
+  if (cajasFacturasTitle) cajasFacturasTitle.textContent = `Cierre de Caja - ${fecha}`;
+  if (cajasFacturasTableBody) cajasFacturasTableBody.innerHTML = '';
+  try {
+    const res = await fetch(`/api/cajas/facturas?fecha=${encodeURIComponent(fecha)}`, {
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar las facturas');
+    cajasFacturasState.rows = (data.data || []).map((row) => ({
+      nroFactura: row.NroFactura ?? row.nroFactura ?? '',
+      total: Number(row.Total ?? row.total ?? 0),
+      porcentaje: row.Porcentaje ?? row.porcentaje ?? '',
+      descuento: row.Descuento ?? row.descuento ?? '',
+      cliente: row.Cliente ?? row.cliente ?? '',
+    }));
+    cajasFacturasState.page = 1;
+    renderCajasFacturasTable();
+  } catch (error) {
+    if (cajasFacturasStatus) cajasFacturasStatus.textContent = error.message || 'Error al cargar facturas.';
+  }
+}
+
+function openCajasFacturas(fecha) {
+  if (!cajasFacturasOverlay) return;
+  if (cajasFacturasSearch) cajasFacturasSearch.value = '';
+  cajasFacturasState.query = '';
+  cajasFacturasState.page = 1;
+  cajasFacturasOverlay.classList.add('open');
+  loadCajasFacturas(fecha);
+}
+
+async function loadCajasFacturaItems(nroFactura) {
+  if (!nroFactura) return;
+  if (cajasFacturaItemsStatus) cajasFacturaItemsStatus.textContent = 'Cargando...';
+  if (cajasFacturaItemsTitle) cajasFacturaItemsTitle.textContent = `Factura Nro ${nroFactura}`;
+  if (cajasFacturaItemsTableBody) cajasFacturaItemsTableBody.innerHTML = '';
+  try {
+    const res = await fetch(`/api/cajas/factura-items?nroFactura=${encodeURIComponent(nroFactura)}`, {
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los items');
+    cajasFacturaItemsState.rows = (data.data || []).map((row) => ({
+      articulo: row.Articulo ?? row.articulo ?? '',
+      detalle: row.Detalle ?? row.detalle ?? '',
+      cantidad: row.Cantidad ?? row.cantidad ?? 0,
+      precioUnitario: Number(row.PrecioUnitario ?? row.precioUnitario ?? 0),
+      precioVenta: Number(row.PrecioVenta ?? row.precioVenta ?? 0),
+    }));
+    cajasFacturaItemsState.page = 1;
+    renderCajasFacturaItemsTable();
+  } catch (error) {
+    if (cajasFacturaItemsStatus) cajasFacturaItemsStatus.textContent = error.message || 'Error al cargar items.';
+  }
+}
+function openCajasFacturaItems(nroFactura) {
+  if (!cajasFacturaItemsOverlay) return;
+  if (cajasFacturaItemsSearch) cajasFacturaItemsSearch.value = '';
+  cajasFacturaItemsState.query = '';
+  cajasFacturaItemsState.page = 1;
+  cajasFacturaItemsOverlay.classList.add('open');
+  loadCajasFacturaItems(nroFactura);
+}
+
+async function saveCajasGasto() {
+  if (!cajasGastoNombre || !cajasGastoImporte) return;
+  const id = Number(cajasGastoId?.value || cajasGastoSave?.dataset?.id || 0);
+  const payload = {
+    Nbr_Gasto: cajasGastoNombre.value.trim(),
+    Detalle: cajasGastoDetalle?.value.trim() || '',
+    Importe: Number(cajasGastoImporte.value || 0),
+    Fecha: cajasGastosState.fecha || '',
+  };
+  if (!payload.Nbr_Gasto) {
+    alert('Debe ingresar el nombre del gasto.');
+    return;
+  }
+  if (!payload.Fecha) {
+    alert('Debe seleccionar la fecha.');
+    return;
+  }
+  try {
+    if (cajasGastosStatus) cajasGastosStatus.textContent = id ? 'Actualizando gasto...' : 'Guardando gasto...';
+    const res = await fetch(id ? `/api/cajas/gastos/${id}` : '/api/cajas/gastos', {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudo guardar el gasto');
+    resetCajasGastoForm();
+    await loadCajasGastos(cajasGastosState.fecha || payload.Fecha);
+  } catch (error) {
+    if (cajasGastosStatus) cajasGastosStatus.textContent = error.message || 'Error al guardar gasto.';
+  }
+}
+
+function fillCajasGastoForm(row) {
+  if (!row) return;
+  if (cajasGastoId) cajasGastoId.value = row.id ? String(row.id) : '';
+  if (cajasGastoSave) cajasGastoSave.dataset.id = row.id ? String(row.id) : '';
+  if (cajasGastoNombre) cajasGastoNombre.value = row.gasto || '';
+  if (cajasGastoDetalle) cajasGastoDetalle.value = row.detalle || '';
+  if (cajasGastoImporte) cajasGastoImporte.value = row.importe ?? '';
+}
+
+function resetCajasGastoForm() {
+  if (cajasGastoId) cajasGastoId.value = '';
+  if (cajasGastoSave) delete cajasGastoSave.dataset.id;
+  if (cajasGastoNombre) cajasGastoNombre.value = '';
+  if (cajasGastoDetalle) cajasGastoDetalle.value = '';
+  if (cajasGastoImporte) cajasGastoImporte.value = '';
+}
+
+async function deleteCajasGasto(id) {
+  if (!id) return;
+  if (!confirm('Esta seguro que desea eliminar el gasto?')) return;
+  try {
+    if (cajasGastosStatus) cajasGastosStatus.textContent = 'Eliminando gasto...';
+    const res = await fetch(`/api/cajas/gastos/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudo eliminar el gasto');
+    await loadCajasGastos(cajasGastosState.fecha);
+    resetCajasGastoForm();
+  } catch (error) {
+    if (cajasGastosStatus) cajasGastosStatus.textContent = error.message || 'Error al eliminar gasto.';
+  }
+}
+
+
+function initCajasCierre() {
+  if (!viewCajasCierre) return;
+  if (cajasCierreRefreshBtn) cajasCierreRefreshBtn.addEventListener('click', loadCajasCierre);
+  if (cajasCierreExportBtn) {
+    cajasCierreExportBtn.addEventListener('click', () => {
+      exportCajasCierreXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasCierreTableBody) {
+    cajasCierreTableBody.addEventListener('click', (e) => {
+      const gastosBtn = e.target.closest('.caja-gastos-btn');
+      if (gastosBtn) {
+        openCajasGastos(gastosBtn.dataset.fecha || '');
+        return;
+      }
+      const cerrarBtn = e.target.closest('.caja-cerrar-btn');
+      if (cerrarBtn) {
+        cerrarCaja(cerrarBtn.dataset.fecha || '');
+        return;
+      }
+      const abrirBtn = e.target.closest('.caja-abrir-btn');
+      if (abrirBtn) {
+        abrirCaja(abrirBtn.dataset.fecha || '');
+        return;
+      }
+      const verBtn = e.target.closest('.caja-ver-btn');
+      if (verBtn) {
+        const fecha = verBtn.dataset.fecha || '';
+        openCajasFacturas(fecha);
+      }
+    });
+  }
+  if (cajasCierreCards) {
+    cajasCierreCards.addEventListener('click', (e) => {
+      const gastosBtn = e.target.closest('.caja-gastos-btn');
+      if (gastosBtn) {
+        openCajasGastos(gastosBtn.dataset.fecha || '');
+        return;
+      }
+      const cerrarBtn = e.target.closest('.caja-cerrar-btn');
+      if (cerrarBtn) {
+        cerrarCaja(cerrarBtn.dataset.fecha || '');
+        return;
+      }
+      const abrirBtn = e.target.closest('.caja-abrir-btn');
+      if (abrirBtn) {
+        abrirCaja(abrirBtn.dataset.fecha || '');
+        return;
+      }
+      const verBtn = e.target.closest('.caja-ver-btn');
+      if (verBtn) {
+        const fecha = verBtn.dataset.fecha || '';
+        openCajasFacturas(fecha);
+      }
+    });
+  }
+  if (cajasGastosClose) cajasGastosClose.addEventListener('click', () => cajasGastosOverlay?.classList.remove('open'));
+  if (cajasGastosOverlay) {
+    cajasGastosOverlay.addEventListener('click', (e) => {
+      if (e.target === cajasGastosOverlay) cajasGastosOverlay.classList.remove('open');
+    });
+  }
+  if (cajasCierreSearch) {
+    cajasCierreSearch.addEventListener('input', () => {
+      cajasCierreState.query = cajasCierreSearch.value.trim();
+      cajasCierreState.page = 1;
+      renderCajasCierreView();
+    });
+  }
+  if (cajasCierrePrev) {
+    cajasCierrePrev.addEventListener('click', () => {
+      cajasCierreState.page = Math.max(1, cajasCierreState.page - 1);
+      renderCajasCierreView();
+    });
+  }
+  if (cajasCierreNext) {
+    cajasCierreNext.addEventListener('click', () => {
+      cajasCierreState.page += 1;
+      renderCajasCierreView();
+    });
+  }
+  if (cajasFacturasTableBody) {
+    cajasFacturasTableBody.addEventListener('click', (e) => {
+      const itemsBtn = e.target.closest('.caja-factura-items-btn');
+      if (itemsBtn) {
+        openCajasFacturaItems(itemsBtn.dataset.factura || '');
+      }
+    });
+  }
+  if (cajasFacturasClose) cajasFacturasClose.addEventListener('click', () => cajasFacturasOverlay?.classList.remove('open'));
+  if (cajasFacturasOverlay) {
+    cajasFacturasOverlay.addEventListener('click', (e) => {
+      if (e.target === cajasFacturasOverlay) cajasFacturasOverlay.classList.remove('open');
+    });
+  }
+  if (cajasGastosSearch) {
+    cajasGastosSearch.addEventListener('input', () => {
+      cajasGastosState.query = cajasGastosSearch.value.trim();
+      cajasGastosState.page = 1;
+      renderCajasGastosTable();
+    });
+  }
+  if (cajasGastosPrev) {
+    cajasGastosPrev.addEventListener('click', () => {
+      cajasGastosState.page = Math.max(1, cajasGastosState.page - 1);
+      renderCajasGastosTable();
+    });
+  }
+  if (cajasGastosNext) {
+    cajasGastosNext.addEventListener('click', () => {
+      cajasGastosState.page += 1;
+      renderCajasGastosTable();
+    });
+  }
+  if (cajasGastosExport) {
+    cajasGastosExport.addEventListener('click', () => {
+      exportCajasGastosXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasGastosTableBody) {
+    cajasGastosTableBody.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.caja-gasto-edit-btn');
+      if (editBtn) {
+        const id = Number(editBtn.dataset.id || 0);
+        let row = null;
+        if (Number.isFinite(id) && id > 0) {
+          row = cajasGastosState.rows.find((item) => Number(item.id) === id);
+        }
+        if (!row && cajasGastosState.filtered) {
+          const idx = Number(editBtn.dataset.index || -1);
+          row = cajasGastosState.filtered[idx];
+        }
+        if (row) fillCajasGastoForm(row);
+        return;
+      }
+      const deleteBtn = e.target.closest('.caja-gasto-delete-btn');
+      if (deleteBtn) {
+        const id = Number(deleteBtn.dataset.id || 0);
+        let rowId = id;
+        if (!Number.isFinite(rowId) || rowId <= 0) {
+          const idx = Number(deleteBtn.dataset.index || -1);
+          const row = cajasGastosState.filtered ? cajasGastosState.filtered[idx] : null;
+          rowId = row?.id || 0;
+        }
+        deleteCajasGasto(rowId);
+      }
+    });
+  }
+  if (cajasGastoSave) cajasGastoSave.addEventListener('click', saveCajasGasto);
+  if (cajasGastoCancel) cajasGastoCancel.addEventListener('click', resetCajasGastoForm);
+  if (cajasFacturasSearch) {
+    cajasFacturasSearch.addEventListener('input', () => {
+      cajasFacturasState.query = cajasFacturasSearch.value.trim();
+      cajasFacturasState.page = 1;
+      renderCajasFacturasTable();
+    });
+  }
+  if (cajasFacturasPrev) {
+    cajasFacturasPrev.addEventListener('click', () => {
+      cajasFacturasState.page = Math.max(1, cajasFacturasState.page - 1);
+      renderCajasFacturasTable();
+    });
+  }
+  if (cajasFacturasNext) {
+    cajasFacturasNext.addEventListener('click', () => {
+      cajasFacturasState.page += 1;
+      renderCajasFacturasTable();
+    });
+  }
+  if (cajasFacturasExport) {
+    cajasFacturasExport.addEventListener('click', () => {
+      exportCajasFacturasXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasFacturaItemsSearch) {
+    cajasFacturaItemsSearch.addEventListener('input', () => {
+      cajasFacturaItemsState.query = cajasFacturaItemsSearch.value.trim();
+      cajasFacturaItemsState.page = 1;
+      renderCajasFacturaItemsTable();
+    });
+  }
+  if (cajasFacturaItemsPrev) {
+    cajasFacturaItemsPrev.addEventListener('click', () => {
+      cajasFacturaItemsState.page = Math.max(1, cajasFacturaItemsState.page - 1);
+      renderCajasFacturaItemsTable();
+    });
+  }
+  if (cajasFacturaItemsNext) {
+    cajasFacturaItemsNext.addEventListener('click', () => {
+      cajasFacturaItemsState.page += 1;
+      renderCajasFacturaItemsTable();
+    });
+  }
+  if (cajasFacturaItemsExport) {
+    cajasFacturaItemsExport.addEventListener('click', () => {
+      exportCajasFacturaItemsXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasFacturaItemsClose) cajasFacturaItemsClose.addEventListener('click', () => cajasFacturaItemsOverlay?.classList.remove('open'));
+  if (cajasFacturaItemsOverlay) {
+    cajasFacturaItemsOverlay.addEventListener('click', (e) => {
+      if (e.target === cajasFacturaItemsOverlay) cajasFacturaItemsOverlay.classList.remove('open');
+    });
+  }
+}
+
+async function exportCajasCierreXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const headers = ['Fecha', 'Total', 'Estado'];
+  const rows = cajasCierreRows.map((row) => [row.fecha, row.total, row.estado]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Cierres');
+  XLSX.writeFile(workbook, 'cierres_caja.xlsx');
+}
+
+async function exportCajasGastosXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const filtered = filterRows(cajasGastosState.rows, cajasGastosState.query, [
+    'gasto',
+    'detalle',
+    'importe',
+    'fecha',
+  ]);
+  const headers = ['Gasto', 'Detalle', 'Importe', 'Fecha'];
+  const rows = filtered.map((row) => [row.gasto, row.detalle, row.importe, row.fecha]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Gastos');
+  XLSX.writeFile(workbook, 'cajas_gastos.xlsx');
+}
+
+async function exportCajasFacturasXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const filtered = filterRows(cajasFacturasState.rows, cajasFacturasState.query, [
+    'nroFactura',
+    'cliente',
+    'total',
+    'porcentaje',
+    'descuento',
+  ]);
+  const headers = ['Factura', 'Total', 'Porcentaje', 'Descuento', 'Cliente'];
+  const rows = filtered.map((row) => [row.nroFactura, row.total, row.porcentaje, row.descuento, row.cliente]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas');
+  XLSX.writeFile(workbook, 'cajas_facturas.xlsx');
+}
+
+async function exportCajasFacturaItemsXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const filtered = filterRows(cajasFacturaItemsState.rows, cajasFacturaItemsState.query, [
+    'articulo',
+    'detalle',
+    'cantidad',
+    'precioUnitario',
+    'precioVenta',
+  ]);
+  const headers = ['Articulo', 'Detalle', 'Cantidad', 'Precio Unitario', 'Precio Venta'];
+  const rows = filtered.map((row) => [
+    row.articulo,
+    row.detalle,
+    row.cantidad,
+    row.precioUnitario,
+    row.precioVenta,
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Factura');
+  XLSX.writeFile(workbook, 'cajas_factura_items.xlsx');
+}
+
 function resolvePermissionKey(target) {
   return target;
 }
@@ -7206,6 +7987,8 @@ function getFirstAllowedView(perms = {}) {
     'mercaderia',
     'abm',
     'control-ordenes',
+    'cajas',
+    'cajas-cierre',
     'facturas',
     'comisiones',
     'configuracion',
@@ -8103,6 +8886,9 @@ function syncMobileLayout() {
   const controlOrdenesTable = document.getElementById('control-ordenes-table');
   if (controlOrdenesTable) controlOrdenesTable.style.display = isMobile ? 'none' : '';
   if (controlOrdenesCards) controlOrdenesCards.style.display = isMobile ? 'grid' : '';
+  const cajasCierreTable = document.getElementById('cajas-cierre-table');
+  if (cajasCierreTable) cajasCierreTable.style.display = isMobile ? 'none' : '';
+  if (cajasCierreCards) cajasCierreCards.style.display = isMobile ? 'grid' : '';
   updatePedidoCardsVisibility();
   if (
     !isMobile &&
@@ -8126,9 +8912,11 @@ const permissionGroups = [
         { key: 'panel-control', label: 'Panel de Control' },
         { key: 'cargar-ticket', label: 'CargarTicket' },
         { key: 'empleados', label: 'Empleados' },
-        { key: 'clientes', label: 'Clientes' },
-        { key: 'ia', label: 'IA' },
-        { key: 'salon', label: 'Salon' },
+      { key: 'clientes', label: 'Clientes' },
+      { key: 'ia', label: 'IA' },
+      { key: 'salon', label: 'Salon' },
+      { key: 'cajas', label: 'Cajas' },
+      { key: 'cajas-cierre', label: 'Cajas - Cierre' },
       { key: 'pedidos-menu', label: 'Menu Pedidos' },
       { key: 'pedidos', label: 'Pedidos - Informe' },
       { key: 'pedidos-todos', label: 'Pedidos - Todos' },
@@ -8228,6 +9016,7 @@ function renderPermissions() {
   });
   const submenuMap = {
     'pedidos-menu': ['pedidos', 'pedidos-todos'],
+    cajas: ['cajas-cierre'],
   };
   const submenuKeys = new Set(Object.values(submenuMap).flat());
 
@@ -9408,6 +10197,8 @@ function switchView(target) {
       viewMercaderia,
       viewAbm,
       viewControlOrdenes,
+      viewCajas,
+      viewCajasCierre,
       viewConfiguracion,
       viewFacturas,
       viewComisiones,
@@ -9436,6 +10227,8 @@ function switchView(target) {
     viewMercaderia,
     viewAbm,
     viewControlOrdenes,
+    viewCajas,
+    viewCajasCierre,
     viewConfiguracion,
     viewFacturas,
     viewComisiones,
@@ -9469,6 +10262,11 @@ function switchView(target) {
   } else if (target === 'control-ordenes') {
     viewControlOrdenes.classList.remove('hidden');
     loadControlOrdenes();
+  } else if (target === 'cajas') {
+    viewCajas.classList.remove('hidden');
+  } else if (target === 'cajas-cierre') {
+    viewCajasCierre.classList.remove('hidden');
+    loadCajasCierre();
   } else if (target === 'panel-control') {
     viewPanelControl.classList.remove('hidden');
   } else if (target === 'cargar-ticket') {
@@ -9511,6 +10309,7 @@ initPedidosResumen();
 initMercaderia();
 initAbm();
 initControlOrdenes();
+initCajasCierre();
 initFacturas();
 initComisiones();
 initRolesModule();
@@ -9542,5 +10341,7 @@ loadPedidosControl();
 loadOperativos();
 startPanelControlAutoRefresh();
 loadPedidosClientes();
+
+
 
 

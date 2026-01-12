@@ -80,11 +80,11 @@ test('resolveCompraValores usa gastos/ganancia manual cuando es manual', () => {
   assert.equal(manual.compraGanancia, 3);
 });
 
-test('validateBatchItems detecta duplicados y vacios', () => {
+test('validateBatchItems detecta vacios y permite duplicados', () => {
   assert.equal(validateBatchItems([]).ok, false);
   assert.equal(validateBatchItems([{ articulo: '' }]).ok, false);
   const dup = validateBatchItems([{ articulo: 'A1' }, { articulo: 'A1' }]);
-  assert.equal(dup.ok, false);
+  assert.equal(dup.ok, true);
   const ok = validateBatchItems([{ articulo: 'A1' }, { articulo: 'A2' }]);
   assert.equal(ok.ok, true);
 });
