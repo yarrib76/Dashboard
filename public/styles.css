@@ -3627,6 +3627,47 @@ body.theme-light select:focus {
   background: #991b1b;
 }
 
+.caja-control-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+}
+
+.caja-control-cantidad {
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.floating-modal {
+  background: transparent;
+  pointer-events: none;
+}
+
+.floating-modal.open {
+  display: block;
+}
+
+.floating-modal .modal {
+  pointer-events: auto;
+  position: fixed;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  max-height: 85vh;
+  resize: both;
+  overflow: auto;
+}
+
+.floating-modal .modal-header {
+  cursor: move;
+}
+
 .gastos-form {
   gap: 8px;
   flex-wrap: wrap;

@@ -437,6 +437,26 @@ const cajasFacturaItemsExport = document.getElementById('cajas-factura-items-exp
 const cajasFacturaItemsPrev = document.getElementById('cajas-factura-items-prev');
 const cajasFacturaItemsNext = document.getElementById('cajas-factura-items-next');
 const cajasFacturaItemsPageInfo = document.getElementById('cajas-factura-items-page-info');
+const cajasControlOverlay = document.getElementById('cajas-control-overlay');
+const cajasControlClose = document.getElementById('cajas-control-close');
+const cajasControlTitle = document.getElementById('cajas-control-title');
+const cajasControlTableBody = document.querySelector('#cajas-control-table tbody');
+const cajasControlStatus = document.getElementById('cajas-control-status');
+const cajasControlSearch = document.getElementById('cajas-control-search');
+const cajasControlExport = document.getElementById('cajas-control-export');
+const cajasControlPrev = document.getElementById('cajas-control-prev');
+const cajasControlNext = document.getElementById('cajas-control-next');
+const cajasControlPageInfo = document.getElementById('cajas-control-page-info');
+const cajasControlFacturasOverlay = document.getElementById('cajas-control-facturas-overlay');
+const cajasControlFacturasClose = document.getElementById('cajas-control-facturas-close');
+const cajasControlFacturasTitle = document.getElementById('cajas-control-facturas-title');
+const cajasControlFacturasTableBody = document.querySelector('#cajas-control-facturas-table tbody');
+const cajasControlFacturasStatus = document.getElementById('cajas-control-facturas-status');
+const cajasControlFacturasSearch = document.getElementById('cajas-control-facturas-search');
+const cajasControlFacturasExport = document.getElementById('cajas-control-facturas-export');
+const cajasControlFacturasPrev = document.getElementById('cajas-control-facturas-prev');
+const cajasControlFacturasNext = document.getElementById('cajas-control-facturas-next');
+const cajasControlFacturasPageInfo = document.getElementById('cajas-control-facturas-page-info');
 const pedidoIaInput = document.getElementById('pedido-ia-input');
 const pedidoIaSend = document.getElementById('pedido-ia-send');
 const pedidoIaStatus = document.getElementById('pedido-ia-status');
@@ -7246,6 +7266,8 @@ const cajasCierreState = { rows: [], query: '', page: 1, pageSize: 10 };
 const cajasGastosState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
 const cajasFacturasState = { rows: [], query: '', page: 1, pageSize: 10 };
 const cajasFacturaItemsState = { rows: [], query: '', page: 1, pageSize: 10 };
+const cajasControlState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
+const cajasControlFacturasState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '', tipo: 0 };
 
 function filterRows(rows, query, keys) {
   if (!query) return rows;
@@ -7278,6 +7300,7 @@ function renderCajasCierreTable(rows) {
       <td>${escapeAttr(row.estado)}</td>
       <td>
         <button type="button" class="caja-ver-btn" data-fecha="${escapeAttr(row.fecha)}">Ver</button>
+        <button type="button" class="caja-control-btn" data-fecha="${escapeAttr(row.fecha)}">Control</button>
         <button type="button" class="caja-gastos-btn" data-fecha="${escapeAttr(row.fecha)}">Gastos</button>
         ${
           isAbierta
@@ -7313,6 +7336,7 @@ function renderCajasCierreCards(rows) {
       </div>
       <div class="caja-card-actions">
         <button type="button" class="caja-ver-btn" data-fecha="${escapeAttr(row.fecha)}">Ver</button>
+        <button type="button" class="caja-control-btn" data-fecha="${escapeAttr(row.fecha)}">Control</button>
         <button type="button" class="caja-gastos-btn" data-fecha="${escapeAttr(row.fecha)}">Gastos</button>
         ${
           isAbierta
@@ -7441,6 +7465,69 @@ function renderCajasFacturaItemsTable() {
   if (cajasFacturaItemsNext) cajasFacturaItemsNext.disabled = page >= totalPages;
   if (cajasFacturaItemsStatus)
     cajasFacturaItemsStatus.textContent = filtered.length ? `${filtered.length} items` : 'Sin items.';
+}
+
+function renderCajasControlTable() {
+  if (!cajasControlTableBody) return;
+  const filtered = filterRows(cajasControlState.rows, cajasControlState.query, [
+    'tipoPago',
+    'cantidad',
+    'total',
+  ]);
+  cajasControlState.filtered = filtered;
+  const { page, totalPages, slice } = paginateRows(filtered, cajasControlState.page, cajasControlState.pageSize);
+  cajasControlState.page = page;
+  cajasControlTableBody.innerHTML = '';
+  slice.forEach((row, idx) => {
+    const absoluteIndex = (page - 1) * cajasControlState.pageSize + idx;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><img class="caja-control-img" src="/refresh/${escapeAttr(row.icono)}" alt="${escapeAttr(row.tipoPago)}" /></td>
+      <td><button type="button" class="caja-control-cantidad" data-index="${absoluteIndex}">${row.cantidad}</button></td>
+      <td>${formatMoney(row.total)}</td>
+    `;
+    cajasControlTableBody.appendChild(tr);
+  });
+  if (cajasControlPageInfo) cajasControlPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasControlPrev) cajasControlPrev.disabled = page <= 1;
+  if (cajasControlNext) cajasControlNext.disabled = page >= totalPages;
+  if (cajasControlStatus) cajasControlStatus.textContent = filtered.length ? `${filtered.length} pagos` : 'Sin pagos.';
+}
+
+function renderCajasControlFacturasTable() {
+  if (!cajasControlFacturasTableBody) return;
+  const filtered = filterRows(cajasControlFacturasState.rows, cajasControlFacturasState.query, [
+    'nroFactura',
+    'cliente',
+    'total',
+    'porcentaje',
+    'descuento',
+  ]);
+  cajasControlFacturasState.filtered = filtered;
+  const { page, totalPages, slice } = paginateRows(
+    filtered,
+    cajasControlFacturasState.page,
+    cajasControlFacturasState.pageSize
+  );
+  cajasControlFacturasState.page = page;
+  cajasControlFacturasTableBody.innerHTML = '';
+  slice.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.nroFactura)}</td>
+      <td>${formatMoney(row.total)}</td>
+      <td>${row.porcentaje ?? ''}</td>
+      <td>${row.descuento ?? ''}</td>
+      <td>${escapeAttr(row.cliente)}</td>
+    `;
+    cajasControlFacturasTableBody.appendChild(tr);
+  });
+  if (cajasControlFacturasPageInfo)
+    cajasControlFacturasPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
+  if (cajasControlFacturasPrev) cajasControlFacturasPrev.disabled = page <= 1;
+  if (cajasControlFacturasNext) cajasControlFacturasNext.disabled = page >= totalPages;
+  if (cajasControlFacturasStatus)
+    cajasControlFacturasStatus.textContent = filtered.length ? `${filtered.length} facturas` : 'Sin facturas.';
 }
 
 async function loadCajasCierre() {
@@ -7605,6 +7692,82 @@ function openCajasFacturaItems(nroFactura) {
   loadCajasFacturaItems(nroFactura);
 }
 
+async function loadCajasControl(fecha) {
+  if (!fecha) return;
+  if (cajasControlStatus) cajasControlStatus.textContent = 'Cargando...';
+  if (cajasControlTitle) cajasControlTitle.textContent = `Control de Caja - ${fecha}`;
+  if (cajasControlTableBody) cajasControlTableBody.innerHTML = '';
+  try {
+    const res = await fetch(`/api/cajas/control?fecha=${encodeURIComponent(fecha)}`, {
+      credentials: 'include',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los pagos');
+    cajasControlState.fecha = fecha;
+    cajasControlState.rows = (data.data || []).map((row) => ({
+      tipoPago: row.tipo_pago || row.tipoPago || '',
+      icono: row.tipo_pago_imagen || row.icono || '',
+      idTipoPago: row.id_tipo_pago || row.idTipoPago || 0,
+      cantidad: Number(row.cantidad || 0),
+      total: Number(row.Total || row.total || 0),
+    }));
+    cajasControlState.page = 1;
+    renderCajasControlTable();
+  } catch (error) {
+    if (cajasControlStatus) cajasControlStatus.textContent = error.message || 'Error al cargar pagos.';
+  }
+}
+
+function openCajasControl(fecha) {
+  if (!cajasControlOverlay) return;
+  if (cajasControlSearch) cajasControlSearch.value = '';
+  cajasControlState.query = '';
+  cajasControlState.page = 1;
+  cajasControlOverlay.classList.add('open');
+  loadCajasControl(fecha);
+}
+
+async function loadCajasControlFacturas(fecha, tipoPago) {
+  if (!fecha || !tipoPago) return;
+  if (cajasControlFacturasStatus) cajasControlFacturasStatus.textContent = 'Cargando...';
+  if (cajasControlFacturasTitle)
+    cajasControlFacturasTitle.textContent = `Facturas - ${fecha}`;
+  if (cajasControlFacturasTableBody) cajasControlFacturasTableBody.innerHTML = '';
+  try {
+    const res = await fetch(
+      `/api/cajas/control-facturas?fecha=${encodeURIComponent(fecha)}&id_tipo_pago=${encodeURIComponent(
+        tipoPago
+      )}`,
+      { credentials: 'include' }
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'No se pudieron cargar las facturas');
+    cajasControlFacturasState.fecha = fecha;
+    cajasControlFacturasState.tipo = tipoPago;
+    cajasControlFacturasState.rows = (data.data || []).map((row) => ({
+      nroFactura: row.NroFactura || row.nroFactura || '',
+      total: Number(row.Total || row.total || 0),
+      porcentaje: row.Porcentaje ?? row.porcentaje ?? '',
+      descuento: row.Descuento ?? row.descuento ?? '',
+      cliente: row.Cliente || row.cliente || '',
+    }));
+    cajasControlFacturasState.page = 1;
+    renderCajasControlFacturasTable();
+  } catch (error) {
+    if (cajasControlFacturasStatus)
+      cajasControlFacturasStatus.textContent = error.message || 'Error al cargar facturas.';
+  }
+}
+
+function openCajasControlFacturas(fecha, tipoPago) {
+  if (!cajasControlFacturasOverlay) return;
+  if (cajasControlFacturasSearch) cajasControlFacturasSearch.value = '';
+  cajasControlFacturasState.query = '';
+  cajasControlFacturasState.page = 1;
+  cajasControlFacturasOverlay.classList.add('open');
+  loadCajasControlFacturas(fecha, tipoPago);
+}
+
 async function saveCajasGasto() {
   if (!cajasGastoNombre || !cajasGastoImporte) return;
   const id = Number(cajasGastoId?.value || cajasGastoSave?.dataset?.id || 0);
@@ -7695,6 +7858,11 @@ function initCajasCierre() {
         cerrarCaja(cerrarBtn.dataset.fecha || '');
         return;
       }
+      const controlBtn = e.target.closest('.caja-control-btn');
+      if (controlBtn) {
+        openCajasControl(controlBtn.dataset.fecha || '');
+        return;
+      }
       const abrirBtn = e.target.closest('.caja-abrir-btn');
       if (abrirBtn) {
         abrirCaja(abrirBtn.dataset.fecha || '');
@@ -7717,6 +7885,11 @@ function initCajasCierre() {
       const cerrarBtn = e.target.closest('.caja-cerrar-btn');
       if (cerrarBtn) {
         cerrarCaja(cerrarBtn.dataset.fecha || '');
+        return;
+      }
+      const controlBtn = e.target.closest('.caja-control-btn');
+      if (controlBtn) {
+        openCajasControl(controlBtn.dataset.fecha || '');
         return;
       }
       const abrirBtn = e.target.closest('.caja-abrir-btn');
@@ -7770,6 +7943,81 @@ function initCajasCierre() {
       if (e.target === cajasFacturasOverlay) cajasFacturasOverlay.classList.remove('open');
     });
   }
+  if (cajasControlTableBody) {
+    cajasControlTableBody.addEventListener('click', (e) => {
+      const qtyBtn = e.target.closest('.caja-control-cantidad');
+      if (!qtyBtn) return;
+      const idx = Number(qtyBtn.dataset.index || -1);
+      const row = cajasControlState.filtered ? cajasControlState.filtered[idx] : null;
+      if (row) openCajasControlFacturas(cajasControlState.fecha, row.idTipoPago);
+    });
+  }
+  if (cajasControlSearch) {
+    cajasControlSearch.addEventListener('input', () => {
+      cajasControlState.query = cajasControlSearch.value.trim();
+      cajasControlState.page = 1;
+      renderCajasControlTable();
+    });
+  }
+  if (cajasControlPrev) {
+    cajasControlPrev.addEventListener('click', () => {
+      cajasControlState.page = Math.max(1, cajasControlState.page - 1);
+      renderCajasControlTable();
+    });
+  }
+  if (cajasControlNext) {
+    cajasControlNext.addEventListener('click', () => {
+      cajasControlState.page += 1;
+      renderCajasControlTable();
+    });
+  }
+  if (cajasControlExport) {
+    cajasControlExport.addEventListener('click', () => {
+      exportCajasControlXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasControlClose) cajasControlClose.addEventListener('click', () => cajasControlOverlay?.classList.remove('open'));
+  if (cajasControlOverlay) {
+    cajasControlOverlay.addEventListener('click', (e) => {
+      if (e.target === cajasControlOverlay) cajasControlOverlay.classList.remove('open');
+    });
+  }
+  if (cajasControlFacturasSearch) {
+    cajasControlFacturasSearch.addEventListener('input', () => {
+      cajasControlFacturasState.query = cajasControlFacturasSearch.value.trim();
+      cajasControlFacturasState.page = 1;
+      renderCajasControlFacturasTable();
+    });
+  }
+  if (cajasControlFacturasPrev) {
+    cajasControlFacturasPrev.addEventListener('click', () => {
+      cajasControlFacturasState.page = Math.max(1, cajasControlFacturasState.page - 1);
+      renderCajasControlFacturasTable();
+    });
+  }
+  if (cajasControlFacturasNext) {
+    cajasControlFacturasNext.addEventListener('click', () => {
+      cajasControlFacturasState.page += 1;
+      renderCajasControlFacturasTable();
+    });
+  }
+  if (cajasControlFacturasExport) {
+    cajasControlFacturasExport.addEventListener('click', () => {
+      exportCajasControlFacturasXlsx().catch((err) => alert(err.message || 'No se pudo exportar.'));
+    });
+  }
+  if (cajasControlFacturasClose)
+    cajasControlFacturasClose.addEventListener('click', () => cajasControlFacturasOverlay?.classList.remove('open'));
+  if (cajasControlFacturasOverlay) {
+    cajasControlFacturasOverlay.addEventListener('click', (e) => {
+      if (e.target === cajasControlFacturasOverlay) cajasControlFacturasOverlay.classList.remove('open');
+    });
+  }
+  attachFloatingModalDrag(cajasGastosOverlay);
+  attachFloatingModalDrag(cajasFacturasOverlay);
+  attachFloatingModalDrag(cajasFacturaItemsOverlay);
+  attachFloatingModalDrag(cajasControlOverlay);
+  attachFloatingModalDrag(cajasControlFacturasOverlay);
   if (cajasGastosSearch) {
     cajasGastosSearch.addEventListener('input', () => {
       cajasGastosState.query = cajasGastosSearch.value.trim();
@@ -7951,8 +8199,96 @@ async function exportCajasFacturaItemsXlsx() {
   XLSX.writeFile(workbook, 'cajas_factura_items.xlsx');
 }
 
+async function exportCajasControlXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const filtered = filterRows(cajasControlState.rows, cajasControlState.query, [
+    'tipoPago',
+    'cantidad',
+    'total',
+  ]);
+  const headers = ['Tipo Pago', 'Cantidad', 'Total'];
+  const rows = filtered.map((row) => [row.tipoPago, row.cantidad, row.total]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Control');
+  XLSX.writeFile(workbook, 'cajas_control.xlsx');
+}
+
+async function exportCajasControlFacturasXlsx() {
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const filtered = filterRows(cajasControlFacturasState.rows, cajasControlFacturasState.query, [
+    'nroFactura',
+    'cliente',
+    'total',
+    'porcentaje',
+    'descuento',
+  ]);
+  const headers = ['Factura', 'Total', 'Porcentaje', 'Descuento', 'Cliente'];
+  const rows = filtered.map((row) => [
+    row.nroFactura,
+    row.total,
+    row.porcentaje,
+    row.descuento,
+    row.cliente,
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Control');
+  XLSX.writeFile(workbook, 'cajas_control_facturas.xlsx');
+}
+
 function resolvePermissionKey(target) {
   return target;
+}
+
+function attachFloatingModalDrag(overlay) {
+  if (!overlay) return;
+  const modal = overlay.querySelector('.modal');
+  const header = overlay.querySelector('.modal-header');
+  if (!modal || !header) return;
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+  let originLeft = 0;
+  let originTop = 0;
+
+  const onMove = (event) => {
+    if (!isDragging) return;
+    const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+    const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+    const nextLeft = originLeft + (clientX - startX);
+    const nextTop = originTop + (clientY - startY);
+    modal.style.left = `${nextLeft}px`;
+    modal.style.top = `${nextTop}px`;
+    modal.style.transform = 'none';
+  };
+
+  const stopDrag = () => {
+    isDragging = false;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', stopDrag);
+  };
+
+  const startDrag = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    isDragging = true;
+    const rect = modal.getBoundingClientRect();
+    originLeft = rect.left;
+    originTop = rect.top;
+    startX = event.touches ? event.touches[0].clientX : event.clientX;
+    startY = event.touches ? event.touches[0].clientY : event.clientY;
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', stopDrag);
+    document.addEventListener('touchmove', onMove, { passive: true });
+    document.addEventListener('touchend', stopDrag);
+  };
+
+  header.addEventListener('mousedown', startDrag);
+  header.addEventListener('touchstart', startDrag, { passive: true });
 }
 
 function applyMenuPermissions(perms = {}) {

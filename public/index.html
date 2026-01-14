@@ -2197,7 +2197,7 @@
       </div>
     </div>
   </div>
-  <div class="modal-overlay" id="cajas-gastos-overlay">
+  <div class="modal-overlay floating-modal" id="cajas-gastos-overlay">
     <div class="modal">
       <div class="modal-header">
         <h3 id="cajas-gastos-title">Gastos</h3>
@@ -2240,7 +2240,7 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="cajas-facturas-overlay">
+  <div class="modal-overlay floating-modal" id="cajas-facturas-overlay">
     <div class="modal">
       <div class="modal-header">
         <h3 id="cajas-facturas-title">Cierre de Caja</h3>
@@ -2276,7 +2276,7 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="cajas-factura-items-overlay">
+  <div class="modal-overlay floating-modal" id="cajas-factura-items-overlay">
     <div class="modal">
       <div class="modal-header">
         <h3 id="cajas-factura-items-title">Factura</h3>
@@ -2307,6 +2307,74 @@
           </table>
         </div>
         <p class="status" id="cajas-factura-items-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay floating-modal" id="cajas-control-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="cajas-control-title">Control de Caja</h3>
+        <button id="cajas-control-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-controls">
+          <input type="search" id="cajas-control-search" placeholder="Buscar..." />
+          <button id="cajas-control-export" class="btn-excel" type="button">XLSX</button>
+          <div class="pagination" id="cajas-control-pagination">
+            <button id="cajas-control-prev" type="button">Anterior</button>
+            <span id="cajas-control-page-info">Pagina 1</span>
+            <button id="cajas-control-next" type="button">Siguiente</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="cajas-control-table">
+            <thead>
+              <tr>
+                <th>Tipo Pago</th>
+                <th>Cantidad</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="cajas-control-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay floating-modal" id="cajas-control-facturas-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="cajas-control-facturas-title">Facturas</h3>
+        <button id="cajas-control-facturas-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-controls">
+          <input type="search" id="cajas-control-facturas-search" placeholder="Buscar..." />
+          <button id="cajas-control-facturas-export" class="btn-excel" type="button">XLSX</button>
+          <div class="pagination" id="cajas-control-facturas-pagination">
+            <button id="cajas-control-facturas-prev" type="button">Anterior</button>
+            <span id="cajas-control-facturas-page-info">Pagina 1</span>
+            <button id="cajas-control-facturas-next" type="button">Siguiente</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="cajas-control-facturas-table">
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>Total</th>
+                <th>Porcentaje</th>
+                <th>Descuento</th>
+                <th>Cliente</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="cajas-control-facturas-status"></p>
       </div>
     </div>
   </div>
