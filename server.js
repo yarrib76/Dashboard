@@ -3158,6 +3158,70 @@ app.patch('/api/cajas/abrir', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/cajas/control', requireAuth, async (req, res) => {
+  try {
+    const fecha = String(req.query.fecha || '').trim();
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    const [rows] = await pool.query(
+      `SELECT
+         CASE
+           WHEN tp.tipo_pago = "Efectivo" THEN "billete.jpeg"
+           WHEN tp.tipo_pago = "TransferenciaBco" THEN "bancos.jpeg"
+           WHEN tp.tipo_pago = "MercadoPago" THEN "mercadopago.png"
+           WHEN tp.tipo_pago = "Prestigio" THEN "financiera.png"
+           WHEN tp.tipo_pago = "CobroSur" THEN "cobrosur.png"
+           WHEN tp.tipo_pago = "Mixto" THEN "pagomixto.png"
+         END AS tipo_pago_imagen,
+         tp.id_tipo_pagos AS id_tipo_pago,
+         tp.tipo_pago,
+         COUNT(*) AS cantidad,
+         IF(
+           tp.tipo_pago <> "Mixto",
+           ROUND(SUM(CASE WHEN f.Descuento <> "null" OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END), 2),
+           ROUND(SUM(f.pagomixto), 2)
+         ) AS Total
+       FROM facturah f
+       INNER JOIN tipo_pagos tp ON tp.id_tipo_pagos = f.id_tipo_pago
+       WHERE DATE(f.Fecha) = ?
+         AND tp.id_tipo_pagos > 1
+       GROUP BY tp.id_tipo_pagos, tp.tipo_pago
+       ORDER BY tp.id_tipo_pagos`,
+      [fecha]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar control de caja', error: error.message });
+  }
+});
+
+app.get('/api/cajas/control-facturas', requireAuth, async (req, res) => {
+  try {
+    const fecha = String(req.query.fecha || '').trim();
+    const tipoPago = Number(req.query.id_tipo_pago || 0);
+    if (!fecha) return res.status(400).json({ message: 'fecha requerida' });
+    if (!tipoPago) return res.status(400).json({ message: 'id_tipo_pago requerido' });
+    const [rows] = await pool.query(
+      `SELECT f.NroFactura,
+              f.Total,
+              f.Porcentaje,
+              f.Descuento,
+              tp.tipo_pago,
+              CONCAT(cli.nombre, ",", cli.apellido) AS Cliente,
+              f.pagomixto AS PagoMixto
+         FROM facturah f
+         INNER JOIN tipo_pagos tp ON tp.id_tipo_pagos = f.id_tipo_pago
+         INNER JOIN clientes cli ON cli.id_clientes = f.id_clientes
+        WHERE DATE(f.Fecha) = ?
+          AND tp.id_tipo_pagos = ?
+        ORDER BY f.NroFactura ASC`,
+      [fecha, tipoPago]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar facturas', error: error.message });
+  }
+});
+
 app.put('/api/control-ordenes/notas/:id', requireAuth, async (req, res) => {
   try {
     const notaId = Number(req.params.id);
