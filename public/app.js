@@ -2696,6 +2696,7 @@ async function openAbmEdit(articulo) {
     if (abmGananciaInput) abmGananciaInput.value = row.Ganancia ?? row.ganancia ?? '';
     if (abmObservacionesInput) abmObservacionesInput.value = '';
     if (abmOrdenInput) abmOrdenInput.value = ordenRes.numeroOrden ?? ordenRes.NumeroOrden ?? '';
+    if (abmRestaInput) abmRestaInput.checked = false;
 
     const moneda = row.Moneda || row.moneda || '';
     if (moneda === 'uSs') {
@@ -2783,11 +2784,9 @@ function closeAbmBatch() {
     if (!abmPickOverlay) return;
     if (abmPickStatus) abmPickStatus.textContent = '';
     if (abmPickOverlay) abmPickOverlay.classList.add('open');
-    if (!abmPickLoaded) {
-      if (abmPickLoading) abmPickLoading.style.display = 'flex';
-      await loadAbmPickTable();
-      if (abmPickLoading) abmPickLoading.style.display = 'none';
-    } else if (abmPickTable) {
+    if (abmPickLoading) abmPickLoading.style.display = 'flex';
+    await loadAbmPickTable();
+    if (abmPickTable) {
       abmPickTable.search('').draw();
       const searchInput = getAbmPickSearchInput();
       if (searchInput) searchInput.value = '';
@@ -2986,7 +2985,14 @@ function renderBatchTable() {
       columns: [
         { data: 'articulo' },
         { data: 'detalle' },
-        { data: 'cantidadDelta' },
+        {
+          data: 'cantidadDelta',
+          render: (_data, _type, row) => {
+            const value = row.cantidadDelta ?? 0;
+            const cls = row.resta ? 'abm-cantidad-resta' : 'abm-cantidad-suma';
+            return `<span class="${cls}">${value}</span>`;
+          },
+        },
         { data: 'precioOrigen' },
         { data: 'precioDisplay' },
         { data: 'proveedor' },
