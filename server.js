@@ -3364,6 +3364,17 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
         ganancia,
       });
 
+    const [[obsRow]] = await conn.query(
+      `SELECT CHARACTER_MAXIMUM_LENGTH AS maxLen
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'articulos'
+         AND column_name = 'Observaciones'
+       LIMIT 1`
+    );
+    const maxObservaciones = Number(obsRow?.maxLen) || 255;
+    const observacionesFinal = (observaciones || '').toString().slice(0, maxObservaciones);
+
     await conn.query(
       `UPDATE articulos
        SET Detalle = ?,
@@ -3388,7 +3399,7 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
         gastosFinal,
         gananciaFinal,
         proveedor || '',
-        observaciones || '',
+        observacionesFinal,
         articulo,
       ]
     );
@@ -3433,7 +3444,7 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
       paisProveedor || '',
       fechaCompra,
       tipoOrden,
-      observaciones || '',
+      observacionesFinal,
     ];
 
     try {
