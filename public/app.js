@@ -407,6 +407,7 @@ const cajasGastosClose = document.getElementById('cajas-gastos-close');
 const cajasGastosTitle = document.getElementById('cajas-gastos-title');
 const cajasGastosTableBody = document.querySelector('#cajas-gastos-table tbody');
 const cajasGastosStatus = document.getElementById('cajas-gastos-status');
+const cajasGastosTotal = document.getElementById('cajas-gastos-total');
 const cajasGastosSearch = document.getElementById('cajas-gastos-search');
 const cajasGastosExport = document.getElementById('cajas-gastos-export');
 const cajasGastosPrev = document.getElementById('cajas-gastos-prev');
@@ -7431,6 +7432,10 @@ function renderCajasGastosTable() {
   if (cajasGastosPageInfo) cajasGastosPageInfo.textContent = `Pagina ${page} de ${totalPages}`;
   if (cajasGastosPrev) cajasGastosPrev.disabled = page <= 1;
   if (cajasGastosNext) cajasGastosNext.disabled = page >= totalPages;
+  if (cajasGastosTotal) {
+    const total = filtered.reduce((acc, row) => acc + (Number(row.importe) || 0), 0);
+    cajasGastosTotal.textContent = `Total gastos: ${formatMoney(total)}`;
+  }
   if (cajasGastosStatus) cajasGastosStatus.textContent = filtered.length ? `${filtered.length} gastos` : 'Sin gastos.';
 }
 
