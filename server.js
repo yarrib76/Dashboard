@@ -1,4 +1,4 @@
-﻿require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const express = require('express');
 const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
@@ -1130,6 +1130,30 @@ app.get('/api/pedidos/ia/historial', requireAuth, async (req, res) => {
        ORDER BY c.fecha ASC`,
       [controlId]
     );
+    if (rows && rows.length) {
+      return res.json({ data: rows });
+    }
+    const [fallbackRows] = await pool.query(
+      `SELECT u.name AS nombre, c.chat, c.fecha, c.id_users
+       FROM chatclientesia c
+       LEFT JOIN users u ON u.id = c.id_users
+       WHERE c.id_cliente = (
+         SELECT id_cliente FROM controlpedidos WHERE id = ? LIMIT 1
+       )
+       ORDER BY c.fecha ASC`,
+      [controlId]
+    );
+    res.json({ data: fallbackRows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar historial IA', error: error.message });
+  }
+});
+
+app.get('/api/clientes/ia/historial', requireAuth, async (req, res) => {
+  try {
+    const clienteId = Number(req.query.clienteId);
+    if (!clienteId) return res.status(400).json({ message: 'clienteId requerido' });
+    const [rows] = await pool.query(`SELECT u.name AS nombre, c.chat, c.fecha, c.id_users FROM chatclientesia c LEFT JOIN users u ON u.id = c.id_users WHERE c.id_cliente = ? ORDER BY c.fecha ASC`, [clienteId]);
     res.json({ data: rows || [] });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar historial IA', error: error.message });
@@ -1479,8 +1503,7 @@ app.post('/api/pedidos/ia/ask', requireAuth, express.json({ limit: '1mb' }), asy
       new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
     );
     await pool.query(
-      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha) VALUES (?, ?, ?, ?)`,
       [controlId, userId, message, ahora]
     );
 
@@ -1580,11 +1603,110 @@ ${rowsJson}`,
 
     const miaId = (await getMiaUserId()) || null;
     await pool.query(
-      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO chatpedidosia (id_controlpedidos, id_users, chat, fecha) VALUES (?, ?, ?, ?)`,
       [controlId, miaId, reply, ahora]
     );
 
+    res.json({ reply });
+  } catch (error) {
+    res.status(500).json({ message: 'Error en IA', error: error.message });
+  }
+});
+
+app.post('/api/clientes/ia/ask', requireAuth, express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const { clienteId, message } = req.body || {};
+    if (!clienteId) return res.status(400).json({ message: 'clienteId requerido' });
+    if (!message || typeof message !== 'string') return res.status(400).json({ message: 'Mensaje requerido' });
+    if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+    if (!secondaryPool) {
+      return res.status(400).json({
+        message: 'DB secundaria no configurada. Configura DB_SECONDARY_* para usar IA.',
+      });
+    }
+
+    const userId = req.user?.id;
+    const ahora = formatDateTimeLocal(
+      new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }))
+    );
+    const safeMessage = String(message || '').slice(0, 450);
+    await pool.query(
+      `INSERT INTO chatclientesia (id_cliente, id_users, chat, fecha) VALUES (?, ?, ?, ?)`,
+      [clienteId, userId, safeMessage, ahora]
+    );
+
+    const schemaMeta = getCustomSchemaSummary();
+    if (!schemaMeta.text) {
+      return res.status(400).json({ message: 'No hay informaci▒ para su consulta' });
+    }
+
+    const question = `${message} para la clienta con id ${clienteId}. La salida debe ser solo la consulta sql.`;
+
+    const sqlSystemPrompt =
+      'Genera SOLO una consulta SELECT de lectura usando exclusivamente las tablas/columnas del esquema. ' +
+      'Evita GROUP BY si no es imprescindible. Si usas GROUP BY, TODAS las columnas seleccionadas deben ' +
+      'estar en el GROUP BY o ser agregadas (compatible con ONLY_FULL_GROUP_BY). ' +
+      'Usa COALESCE para nulos en agregaciones. Responde en JSON con claves: sql (string) y explanation (string).';
+
+    async function generateSql(extraContext = '') {
+      const completionSql = await withRetry(() =>
+        openai.chat.completions.create({
+          model: OPENAI_MODEL || 'gpt-4o-mini',
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: sqlSystemPrompt },
+            {
+              role: 'user',
+              content: `${schemaMeta.text}\n\n${extraContext}\n\nPregunta: ${question}`,
+            },
+          ],
+        })
+      );
+      const raw = completionSql.choices?.[0]?.message?.content || '';
+      try {
+        return JSON.parse(raw);
+      } catch (_err) {
+        return { sql: raw.replace(/```/g, '').replace(/sql/gi, '').trim(), explanation: '' };
+      }
+    }
+
+    const sqlPayload = await generateSql();
+    const sqlQuery = (sqlPayload.sql || '').trim();
+    if (!sqlQuery.toLowerCase().startsWith('select')) {
+      return res.json({ reply: 'Perdon, no entendi la pregunta, volver a consultar!' });
+    }
+
+    let rows = [];
+    try {
+      const [dbRows] = await secondaryPool.query(sqlQuery);
+      rows = dbRows || [];
+    } catch (_err) {
+      return res.json({ reply: 'Perdon, no entendi la pregunta, volver a consultar!' });
+    }
+
+    const responsePrompt =
+      'Tu nombre es Mia y eres una asistente de ventas. Responde en español, claro y breve. ' +
+      'Puedes brindar datos de contacto del cliente (telefono, mail, direccion) si existen en la base. ' +
+      'No menciones id_clientes ni ganancias. Finaliza con: ¿Te puedo ayudar en alguna otra cosa?';
+
+    const replyCompletion = await withRetry(() =>
+      openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: responsePrompt },
+          { role: 'user', content: `Datos: ${JSON.stringify(rows)}\n\nPregunta: ${message}` },
+        ],
+      })
+    );
+    const reply = replyCompletion.choices?.[0]?.message?.content || '';
+    const safeReply = String(reply || '').slice(0, 450);
+    const miaId = (await getMiaUserId()) || null;
+    await pool.query(
+      `INSERT INTO chatclientesia (id_cliente, id_users, chat, fecha) VALUES (?, ?, ?, ?)`,
+      [clienteId, miaId, safeReply, ahora]
+    );
     res.json({ reply });
   } catch (error) {
     res.status(500).json({ message: 'Error en IA', error: error.message });
@@ -4643,6 +4765,7 @@ app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
 });
 // cerrar último bloque
+
 
 
 

@@ -247,6 +247,7 @@ let pedidoCheckoutLocalTable = null;
 let pedidoCheckoutDiffTable = null;
 let pedidoIaControlId = null;
 let pedidoIaClienteId = null;
+let pedidoIaMode = 'pedido';
 let pedidoIaMessages = [];
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
@@ -3912,6 +3913,7 @@ function initAbm() {
       }
       const iaBtn = e.target.closest('.pedido-ia-btn');
       if (iaBtn) {
+        pedidoIaMode = 'pedido';
         const pedido = iaBtn.dataset.pedido;
         const vendedora = iaBtn.dataset.vendedora || '';
         const cliente = iaBtn.dataset.cliente || '';
@@ -5231,6 +5233,7 @@ function renderClientes(rows) {
   tablaClientesBody.innerHTML = '';
   rows.forEach((row) => {
     const tr = document.createElement('tr');
+    const clienteLabel = `${row.nombre || ''} ${row.apellido || ''}`.trim();
     tr.innerHTML = `
       <td>${row.nombre || ''}</td>
       <td>${row.apellido || ''}</td>
@@ -5240,6 +5243,7 @@ function renderClientes(rows) {
       <td>${formatDate(row.ultimaCompra)}</td>
       <td>${row.cantFacturas ?? 0}</td>
       <td>${Number(row.ticketPromedio ?? 0).toFixed(2)}</td>
+      <td><button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(clienteLabel)}" title="IA cliente">🤖</button></td>
     `;
     tablaClientesBody.appendChild(tr);
   });
@@ -6014,6 +6018,26 @@ function renderPedidoIaMessages(messages) {
 }
 
 async function loadPedidoIaHistory(controlId) {
+  if (pedidoIaMode === 'cliente') {
+    if (!pedidoIaClienteId) return;
+    try {
+      if (pedidoIaStatus) pedidoIaStatus.textContent = 'Cargando...';
+      const res = await fetchJSON(`/api/clientes/ia/historial?clienteId=${encodeURIComponent(pedidoIaClienteId)}`);
+      const rows = Array.isArray(res.data) ? res.data : [];
+      pedidoIaMessages = rows.map((row) => ({
+        from: row.nombre === 'Mia' ? 'ia' : 'user',
+        name: row.nombre || '',
+        text: row.chat || '',
+        fecha: row.fecha || '',
+      }));
+      renderPedidoIaMessages(pedidoIaMessages);
+      if (pedidoIaStatus) pedidoIaStatus.textContent = '';
+    } catch (error) {
+      if (pedidoIaStatus) pedidoIaStatus.textContent = error.message || 'Error cargando historial.';
+      console.error(error);
+    }
+    return;
+  }
   if (!controlId) return;
   try {
     if (pedidoIaStatus) pedidoIaStatus.textContent = 'Cargando...';
@@ -6035,22 +6059,23 @@ async function loadPedidoIaHistory(controlId) {
 
 async function sendPedidoIaMessage() {
   const text = pedidoIaInput?.value?.trim();
-  if (!text || !pedidoIaControlId) return;
+  if (!text) return;
   const name = userNameEl?.textContent?.trim() || 'Usuario';
   pedidoIaMessages.push({ from: 'user', name, text, fecha: '' });
   renderPedidoIaMessages(pedidoIaMessages);
   if (pedidoIaInput) pedidoIaInput.value = '';
   if (pedidoIaStatus) pedidoIaStatus.textContent = 'Enviando...';
   try {
-    const res = await fetch('/api/pedidos/ia/ask', {
+    const url = pedidoIaMode === 'cliente' ? '/api/clientes/ia/ask' : '/api/pedidos/ia/ask';
+    const payload =
+      pedidoIaMode === 'cliente'
+        ? { clienteId: pedidoIaClienteId, message: text }
+        : { controlId: pedidoIaControlId, clienteId: pedidoIaClienteId, message: text };
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({
-        controlId: pedidoIaControlId,
-        clienteId: pedidoIaClienteId,
-        message: text,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -8715,8 +8740,10 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-ia-btn');
       if (!btn) return;
+      pedidoIaMode = 'pedido';
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
+      pedidoIaMode = 'pedido';
       const pedido = rowData?.pedido || btn.dataset.pedido;
       const vendedora = rowData?.vendedora || btn.dataset.vendedora || '';
       const cliente = rowData?.cliente || btn.dataset.cliente || '';
@@ -9012,6 +9039,36 @@ function initClientes() {
   if (clientesPrev) {
     clientesPrev.addEventListener('click', () => {
       if (clientesPage > 1) loadClientes(clientesPage - 1);
+    });
+  }
+  if (tablaClientesBody) {
+    tablaClientesBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cliente-ia-btn');
+      if (!btn) return;
+      pedidoIaMode = 'cliente';
+      pedidoIaControlId = null;
+      pedidoIaClienteId = Number(btn.dataset.id) || null;
+      if (pedidoIaTitle) {
+        const label = btn.dataset.cliente || 'Cliente';
+        pedidoIaTitle.textContent = `Cliente ${label}`;
+      }
+      pedidoIaOverlay?.classList.add('open');
+      loadPedidoIaHistory(null);
+    });
+  }
+  if (tablaClientesBody) {
+    tablaClientesBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cliente-ia-btn');
+      if (!btn) return;
+      pedidoIaMode = 'cliente';
+      pedidoIaControlId = null;
+      pedidoIaClienteId = Number(btn.dataset.id) || null;
+      if (pedidoIaTitle) {
+        const label = btn.dataset.cliente || 'Cliente';
+        pedidoIaTitle.textContent = `Cliente ${label}`;
+      }
+      pedidoIaOverlay?.classList.add('open');
+      loadPedidoIaHistory(null);
     });
   }
   if (clientesNext) {
