@@ -249,6 +249,7 @@ let pedidoIaControlId = null;
 let pedidoIaClienteId = null;
 let pedidoIaMode = 'pedido';
 let pedidoIaMessages = [];
+let clienteEncuestaCurrentId = null;
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -462,6 +463,13 @@ const cajasControlFacturasPageInfo = document.getElementById('cajas-control-fact
 const pedidoIaInput = document.getElementById('pedido-ia-input');
 const pedidoIaSend = document.getElementById('pedido-ia-send');
 const pedidoIaStatus = document.getElementById('pedido-ia-status');
+const clienteEncuestaOverlay = document.getElementById('cliente-encuesta-overlay');
+const clienteEncuestaTitle = document.getElementById('cliente-encuesta-title');
+const clienteEncuestaClose = document.getElementById('cliente-encuesta-close');
+const clienteEncuestaName = document.getElementById('cliente-encuesta-name');
+const clienteEncuestaSelect = document.getElementById('cliente-encuesta-select');
+const clienteEncuestaSave = document.getElementById('cliente-encuesta-save');
+const clienteEncuestaStatus = document.getElementById('cliente-encuesta-status');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3203,6 +3211,15 @@ function closeAbmCardMenus(except) {
   });
 }
 
+function buildClienteEncuestaButton(cliente, idCliente) {
+  const label = String(cliente || '').trim();
+  if (!idCliente) return `<span>${escapeAttr(label)}</span>`;
+  const text = label || 'Cliente';
+  return `<button type="button" class="pedido-encuesta-btn" data-cliente-id="${escapeAttr(
+    idCliente
+  )}" data-cliente="${escapeAttr(label)}">${escapeAttr(text)}</button>`;
+}
+
 function buildPedidoCard(row) {
   const pedido = row.pedido || '';
   const cliente = row.cliente || '';
@@ -3274,7 +3291,7 @@ function buildPedidoCard(row) {
     <div class="pedido-card-header">
       <div>
         <p class="pedido-card-title">Pedido ${escapeAttr(pedido)}</p>
-        <p class="pedido-card-sub">${escapeAttr(cliente)}</p>
+        <p class="pedido-card-sub">${buildClienteEncuestaButton(cliente, row.id_cliente)}</p>
       </div>
       <div class="pedido-card-actions">
         <button type="button" class="pedido-card-menu-toggle" aria-label="Acciones">...</button>
@@ -3777,6 +3794,14 @@ function initAbm() {
           closePedidoCardMenus(menu);
           menu.classList.toggle('open', !isOpen);
         }
+        return;
+      }
+      const encuestaBtn = e.target.closest('.pedido-encuesta-btn');
+      if (encuestaBtn) {
+        const idCliente = encuestaBtn.dataset.clienteId;
+        const cliente = encuestaBtn.dataset.cliente || '';
+        openClienteEncuestaModal(idCliente, cliente);
+        closePedidoCardMenus();
         return;
       }
       const itemsBtn = e.target.closest('.pedido-items-btn');
@@ -5848,7 +5873,10 @@ function renderPedidosVendedoraLista(rows) {
     order: [[0, 'desc']],
     columns: [
       { data: 'pedido' },
-      { data: 'cliente' },
+      {
+        data: 'cliente',
+        render: (_val, _type, row) => buildClienteEncuestaButton(row.cliente, row.id_cliente),
+      },
       {
         data: 'fecha',
         render: (val) => escapeAttr(formatDateLong(val)),
@@ -6214,6 +6242,85 @@ function openPedidoNotas(controlId, pedido, vendedora) {
   loadPedidoNotas(pedidoNotasCurrentId);
 }
 
+function setClienteEncuestaSelect(value) {
+  if (!clienteEncuestaSelect) return;
+  const target = String(value || '').trim();
+  const options = Array.from(clienteEncuestaSelect.options || []);
+  const match = options.find((opt) => opt.value === target);
+  if (match) {
+    clienteEncuestaSelect.value = match.value;
+  } else {
+    clienteEncuestaSelect.value = 'Ninguna';
+  }
+}
+
+async function loadClienteEncuesta(idCliente) {
+  if (!idCliente) return;
+  try {
+    if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = 'Cargando...';
+    const res = await fetchJSON(`/api/clientes/encuesta?id_cliente=${encodeURIComponent(idCliente)}`);
+    const nombre = `${res.nombre || ''} ${res.apellido || ''}`.trim();
+    if (clienteEncuestaName) clienteEncuestaName.textContent = nombre || 'Cliente';
+    setClienteEncuestaSelect(res.encuesta || 'Ninguna');
+    if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = '';
+  } catch (error) {
+    if (clienteEncuestaStatus) {
+      clienteEncuestaStatus.textContent = error.message || 'Error al cargar encuesta.';
+    }
+  } finally {
+    if (clienteEncuestaSelect) clienteEncuestaSelect.disabled = false;
+    if (clienteEncuestaSave) clienteEncuestaSave.disabled = false;
+  }
+}
+
+function openClienteEncuestaModal(idCliente, clienteLabel) {
+  const parsedId = Number(idCliente);
+  if (!parsedId || !clienteEncuestaOverlay) return;
+  clienteEncuestaCurrentId = parsedId;
+  if (clienteEncuestaTitle) clienteEncuestaTitle.textContent = 'Encuesta cliente';
+  if (clienteEncuestaName) clienteEncuestaName.textContent = clienteLabel || '';
+  if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = 'Cargando...';
+  if (clienteEncuestaSelect) {
+    clienteEncuestaSelect.disabled = true;
+    setClienteEncuestaSelect('Ninguna');
+  }
+  if (clienteEncuestaSave) clienteEncuestaSave.disabled = true;
+  clienteEncuestaOverlay.classList.add('open');
+  loadClienteEncuesta(parsedId);
+}
+
+function closeClienteEncuestaModal() {
+  if (clienteEncuestaOverlay) clienteEncuestaOverlay.classList.remove('open');
+  clienteEncuestaCurrentId = null;
+  if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = '';
+}
+
+async function saveClienteEncuesta() {
+  if (!clienteEncuestaCurrentId || !clienteEncuestaSelect) return;
+  const encuesta = String(clienteEncuestaSelect.value || '').trim();
+  try {
+    if (clienteEncuestaSave) clienteEncuestaSave.disabled = true;
+    if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = 'Guardando...';
+    const res = await fetch('/api/clientes/encuesta', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id_cliente: clienteEncuestaCurrentId, encuesta }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'No se pudo guardar encuesta.');
+    }
+    if (clienteEncuestaStatus) clienteEncuestaStatus.textContent = 'Encuesta guardada.';
+  } catch (error) {
+    if (clienteEncuestaStatus) {
+      clienteEncuestaStatus.textContent = error.message || 'Error al guardar encuesta.';
+    }
+  } finally {
+    if (clienteEncuestaSave) clienteEncuestaSave.disabled = false;
+  }
+}
+
 async function savePedidoNota() {
   if (!pedidoNotasCurrentId) return;
   const comentario = pedidoNotasInput?.value?.trim() || '';
@@ -6364,7 +6471,10 @@ async function loadPedidosTodosLista(tipo) {
       },
       columns: [
         { data: 'pedido' },
-        { data: 'cliente' },
+        {
+          data: 'cliente',
+          render: (_val, _type, row) => buildClienteEncuestaButton(row.cliente, row.id_cliente),
+        },
         {
           data: 'fecha',
           render: (val) => escapeAttr(formatDateLong(val)),
@@ -6525,7 +6635,10 @@ async function loadPedidosEmpaquetadosLista() {
       },
       columns: [
         { data: 'pedido' },
-        { data: 'cliente' },
+        {
+          data: 'cliente',
+          render: (_val, _type, row) => buildClienteEncuestaButton(row.cliente, row.id_cliente),
+        },
         {
           data: 'fecha',
           render: (val) => escapeAttr(formatDateLong(val)),
@@ -8608,6 +8721,15 @@ if (pedidosTodosGrid) {
       }
     });
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pedido-encuesta-btn');
+      if (!btn) return;
+      const tr = btn.closest('tr');
+      const rowData = pedidosVendedoraListaTable?.row(tr).data();
+      const idCliente = rowData?.id_cliente || btn.dataset.clienteId;
+      const cliente = rowData?.cliente || btn.dataset.cliente || '';
+      openClienteEncuestaModal(idCliente, cliente);
+    });
+    pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-items-btn');
       if (!btn) return;
       const tr = btn.closest('tr');
@@ -8806,6 +8928,15 @@ if (pedidosTodosGrid) {
       if (e.target === pedidoIaOverlay) pedidoIaOverlay.classList.remove('open');
     });
   }
+  if (clienteEncuestaClose) {
+    clienteEncuestaClose.addEventListener('click', closeClienteEncuestaModal);
+  }
+  if (clienteEncuestaOverlay) {
+    clienteEncuestaOverlay.addEventListener('click', (e) => {
+      if (e.target === clienteEncuestaOverlay) closeClienteEncuestaModal();
+    });
+  }
+  if (clienteEncuestaSave) clienteEncuestaSave.addEventListener('click', saveClienteEncuesta);
   if (pedidoIaSend) pedidoIaSend.addEventListener('click', sendPedidoIaMessage);
   if (pedidoIaInput) {
     pedidoIaInput.addEventListener('keyup', (e) => {

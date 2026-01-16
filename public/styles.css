@@ -975,6 +975,48 @@ input[type='month'] {
   margin-bottom: 10px;
 }
 
+.pedido-encuesta-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.pedido-encuesta-btn:focus {
+  outline: 2px solid rgba(123, 215, 255, 0.6);
+  outline-offset: 2px;
+}
+
+.cliente-encuesta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.cliente-encuesta-select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+.cliente-encuesta-select:focus {
+  border-color: rgba(123, 215, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(123, 215, 255, 0.18);
+}
+
+body.theme-light .cliente-encuesta-select {
+  background: #fff;
+  color: #1a1a1a;
+}
+
 .modal-controls input[type='search'] {
   flex: 1;
   padding: 10px 12px;

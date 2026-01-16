@@ -2230,6 +2230,49 @@ app.get('/api/clientes', async (req, res) => {
   }
 });
 
+app.get('/api/clientes/encuesta', requireAuth, async (req, res) => {
+  try {
+    const idCliente = Number.parseInt(req.query.id_cliente, 10);
+    if (!idCliente) return res.status(400).json({ message: 'id_cliente requerido' });
+    const [rows] = await pool.query(
+      `SELECT
+         nombre,
+         apellido,
+         COALESCE(NULLIF(TRIM(encuesta), ''), 'Ninguna') AS encuesta
+       FROM clientes
+       WHERE id_clientes = ?
+       LIMIT 1`,
+      [idCliente]
+    );
+    const row = rows?.[0];
+    if (!row) return res.status(404).json({ message: 'Cliente no encontrado' });
+    res.json({
+      id_cliente: idCliente,
+      nombre: row.nombre || '',
+      apellido: row.apellido || '',
+      encuesta: row.encuesta || 'Ninguna',
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar encuesta', error: error.message });
+  }
+});
+
+app.patch('/api/clientes/encuesta', requireAuth, async (req, res) => {
+  try {
+    const { id_cliente, encuesta } = req.body || {};
+    const idCliente = Number.parseInt(id_cliente, 10);
+    if (!idCliente) return res.status(400).json({ message: 'id_cliente requerido' });
+    const encuestaValue = String(encuesta || '').trim();
+    await pool.query(
+      'UPDATE clientes SET encuesta = ? WHERE id_clientes = ? LIMIT 1',
+      [encuestaValue, idCliente]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar encuesta', error: error.message });
+  }
+});
+
 app.get('/api/empleados/tardes', async (req, res) => {
   try {
     const userId = Number.parseInt(req.query.userId, 10);
