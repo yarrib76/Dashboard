@@ -119,6 +119,7 @@ const menuBackdrop = document.getElementById('menu-backdrop');
 const themeToggle = document.getElementById('theme-toggle');
 const themeLabel = document.getElementById('theme-label');
 const userRoleEl = document.getElementById('user-role');
+const tagLogo = document.querySelector('.tag-logo');
 const rolesList = document.getElementById('roles-list');
 const rolesPermsGroups = document.getElementById('roles-perms-groups');
 const rolesTitle = document.getElementById('roles-title');
@@ -255,6 +256,7 @@ let pedidoTicketCurrentPedido = '';
 let pedidoTicketCurrentCliente = '';
 let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
+let ecommerceImageDataUrl = '';
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -287,6 +289,7 @@ const viewPedidosTodos = document.getElementById('view-pedidos-todos');
 const viewMercaderia = document.getElementById('view-mercaderia');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
+const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
 const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
@@ -489,6 +492,13 @@ const pedidoTicketSummary = document.getElementById('pedido-ticket-summary');
 const pedidoTicketStatus = document.getElementById('pedido-ticket-status');
 const pedidoTicketPrint = document.getElementById('pedido-ticket-print');
 const pedidoTicketVerificacion = document.getElementById('pedido-ticket-verificacion');
+const ecommerceImageFile = document.getElementById('ecommerce-image-file');
+const ecommerceImagePrompt = document.getElementById('ecommerce-image-prompt');
+const ecommerceImageSend = document.getElementById('ecommerce-image-send');
+const ecommerceImageStatus = document.getElementById('ecommerce-image-status');
+const ecommerceImageOriginal = document.getElementById('ecommerce-image-original');
+const ecommerceImageResult = document.getElementById('ecommerce-image-result');
+const ecommerceImageDownload = document.getElementById('ecommerce-image-download');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3490,6 +3500,68 @@ async function printPedidoTicketPdf() {
   }
 }
 
+function initEcommerceImagenweb() {
+  if (!viewEcommerceImagenweb) return;
+  if (ecommerceImageFile) {
+    ecommerceImageFile.addEventListener('change', () => {
+      const file = ecommerceImageFile.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Selecciona una imagen valida.';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        ecommerceImageDataUrl = reader.result || '';
+        if (ecommerceImageOriginal) ecommerceImageOriginal.src = ecommerceImageDataUrl;
+        if (ecommerceImageResult) ecommerceImageResult.src = '';
+        if (ecommerceImageDownload) ecommerceImageDownload.hidden = true;
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = '';
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  if (ecommerceImageSend) {
+    ecommerceImageSend.addEventListener('click', async () => {
+      const prompt = (ecommerceImagePrompt?.value || '').trim();
+      if (!ecommerceImageDataUrl) {
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Selecciona una imagen.';
+        return;
+      }
+      if (!prompt) {
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Escribe una instruccion.';
+        return;
+      }
+      try {
+        ecommerceImageSend.disabled = true;
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Enviando a OpenAI...';
+        const res = await fetch('/api/ecommerce/imagenweb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ imageDataUrl: ecommerceImageDataUrl, prompt }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || 'No se pudo generar la imagen.');
+        if (data.imageDataUrl && ecommerceImageResult) {
+          ecommerceImageResult.src = data.imageDataUrl;
+          if (ecommerceImageDownload) {
+            ecommerceImageDownload.href = data.imageDataUrl;
+            ecommerceImageDownload.hidden = false;
+          }
+          if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Imagen generada.';
+        } else {
+          throw new Error('Respuesta sin imagen.');
+        }
+      } catch (error) {
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = error.message || 'Error al generar.';
+      } finally {
+        ecommerceImageSend.disabled = false;
+      }
+    });
+  }
+}
+
 function buildPedidoCard(row) {
   const pedido = row.pedido || '';
   const cliente = row.cliente || '';
@@ -4752,6 +4824,13 @@ function setStatus(el, text, isError = false) {
   if (!el) return;
   el.textContent = text;
   el.style.color = isError ? '#f87171' : 'var(--muted)';
+}
+
+function getLogoPathByLocal(local) {
+  const value = String(local || '').trim().toLowerCase();
+  if (value === 'viamore') return '/logoviamore.png';
+  if (value === 'samira') return '/logosamira.png';
+  return '/logo.png';
 }
 
 async function fetchJSON(url) {
@@ -8742,6 +8821,7 @@ async function exportCajasControlFacturasXlsx() {
 }
 
 function resolvePermissionKey(target) {
+  if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
 
@@ -8825,6 +8905,7 @@ function getFirstAllowedView(perms = {}) {
     'mercaderia',
     'abm',
     'control-ordenes',
+    'ecommerce-imagenweb',
     'cajas',
     'cajas-cierre',
     'facturas',
@@ -8854,6 +8935,10 @@ async function loadCurrentUser() {
     }
     if (userRoleEl) {
       userRoleEl.textContent = data?.user?.role || 'Equipo';
+    }
+    if (tagLogo) {
+      const logoPath = getLogoPathByLocal(data?.local);
+      if (logoPath) tagLogo.src = logoPath;
     }
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
     applyMenuPermissions(currentPermissions);
@@ -9878,6 +9963,10 @@ const permissionGroups = [
       { key: 'abm', label: 'ABM Articulos' },
       { key: 'control-ordenes', label: 'Control Ordenes' },
     ],
+  },
+  {
+    title: 'E-Comerce',
+    items: [{ key: 'ecommerce', label: 'E-Comerce' }],
   },
   {
     title: 'Configuracion',
@@ -11139,6 +11228,7 @@ function switchView(target) {
       viewMercaderia,
       viewAbm,
       viewControlOrdenes,
+      viewEcommerceImagenweb,
       viewCajas,
       viewCajasCierre,
       viewConfiguracion,
@@ -11166,11 +11256,12 @@ function switchView(target) {
     viewSalon,
     viewPedidos,
     viewPedidosTodos,
-    viewMercaderia,
-    viewAbm,
-    viewControlOrdenes,
-    viewCajas,
-    viewCajasCierre,
+      viewMercaderia,
+      viewAbm,
+      viewControlOrdenes,
+      viewEcommerceImagenweb,
+      viewCajas,
+      viewCajasCierre,
     viewConfiguracion,
     viewFacturas,
     viewComisiones,
@@ -11204,6 +11295,8 @@ function switchView(target) {
   } else if (target === 'control-ordenes') {
     viewControlOrdenes.classList.remove('hidden');
     loadControlOrdenes();
+  } else if (target === 'ecommerce-imagenweb') {
+    viewEcommerceImagenweb.classList.remove('hidden');
   } else if (target === 'cajas') {
     viewCajas.classList.remove('hidden');
   } else if (target === 'cajas-cierre') {
@@ -11251,6 +11344,7 @@ initPedidosResumen();
 initMercaderia();
 initAbm();
 initControlOrdenes();
+initEcommerceImagenweb();
 initCajasCierre();
 initFacturas();
 initComisiones();

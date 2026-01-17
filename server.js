@@ -14,6 +14,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { log } = require('console');
 const OpenAI = require('openai');
+const { toFile } = require('openai');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
@@ -252,6 +253,7 @@ const ROLE_PERMISSIONS = [
   'mercaderia',
   'abm',
   'control-ordenes',
+  'ecommerce',
   'cajas',
   'cajas-cierre',
   'configuracion',
@@ -2535,6 +2537,7 @@ app.get('/api/me', (req, res) => {
   if (!payload) {
     return res.status(401).json({ message: 'No autorizado' });
   }
+  const local = String(process.env.LOCAL || '').trim().toLowerCase();
   (async () => {
     let role = payload.role || '';
     if (!role) {
@@ -2559,6 +2562,7 @@ app.get('/api/me', (req, res) => {
     res.json({
       user: { id: payload.id, name: payload.name, email: payload.email, role },
       permissions,
+      local,
       sessionIdleMinutes: SESSION_MAX_IDLE_MINUTES,
     });
   })();
@@ -4778,6 +4782,71 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     });
   } catch (error) {
     return res.status(500).json({ message: 'Error en OpenAI', error: error.message });
+  }
+});
+
+app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  let tmpDir = null;
+  try {
+    const { imageDataUrl, prompt } = req.body || {};
+    if (!imageDataUrl || !prompt) {
+      return res.status(400).json({ message: 'Falta imageDataUrl o prompt.' });
+    }
+    if (!openai) {
+      return res.status(500).json({ message: 'OPENAI_API_KEY no configurada en el servidor' });
+    }
+
+    const match = String(imageDataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ message: 'Formato de imagen inválido.' });
+    }
+    const mime = match[1].toLowerCase();
+    const base64 = match[2];
+    const extMap = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/webp': '.webp',
+    };
+    const ext = extMap[mime];
+    if (!ext) {
+      return res.status(400).json({ message: 'Formato de imagen no soportado.' });
+    }
+
+    tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ecommerce-'));
+    const inputPath = path.join(tmpDir, `input${ext}`);
+    await fsp.writeFile(inputPath, Buffer.from(base64, 'base64'));
+
+    const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
+    const imageFile = await toFile(Buffer.from(base64, 'base64'), `input${ext}`, { type: mime });
+    const response = await withRetry(() =>
+      openai.images.edit({
+        model,
+        prompt,
+        image: imageFile,
+        size: '1024x1024',
+      })
+    );
+
+    const b64 = response?.data?.[0]?.b64_json;
+    const url = response?.data?.[0]?.url;
+    if (b64) {
+      return res.json({ imageDataUrl: `data:image/png;base64,${b64}` });
+    }
+    if (url) {
+      return res.json({ imageUrl: url });
+    }
+    throw new Error('OpenAI no devolvio imagen.');
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al generar imagen', error: error.message });
+  } finally {
+    if (tmpDir) {
+      try {
+        await fsp.rm(tmpDir, { recursive: true, force: true });
+      } catch (_err) {
+        // ignore cleanup errors
+      }
+    }
   }
 });
 

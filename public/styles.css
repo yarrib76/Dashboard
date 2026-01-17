@@ -1105,6 +1105,44 @@ body.theme-light .abm-actions-menu {
   max-width: 560px;
 }
 
+.ecommerce-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.ecommerce-image-preview {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 8px;
+}
+
+#ecommerce-image-prompt {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+#ecommerce-image-prompt:focus {
+  border-color: rgba(123, 215, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(123, 215, 255, 0.18);
+}
+
+body.theme-light #ecommerce-image-prompt {
+  background: #fff;
+  color: #1a1a1a;
+}
+
 .modal-controls input[type='search'] {
   flex: 1;
   padding: 10px 12px;
