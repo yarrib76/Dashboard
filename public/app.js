@@ -250,6 +250,10 @@ let pedidoIaClienteId = null;
 let pedidoIaMode = 'pedido';
 let pedidoIaMessages = [];
 let clienteEncuestaCurrentId = null;
+let pedidoTicketCurrentTotal = 0;
+let pedidoTicketCurrentPedido = '';
+let pedidoTicketCurrentCliente = '';
+let pedidoTicketCurrentFecha = '';
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -470,6 +474,19 @@ const clienteEncuestaName = document.getElementById('cliente-encuesta-name');
 const clienteEncuestaSelect = document.getElementById('cliente-encuesta-select');
 const clienteEncuestaSave = document.getElementById('cliente-encuesta-save');
 const clienteEncuestaStatus = document.getElementById('cliente-encuesta-status');
+const pedidoTicketOverlay = document.getElementById('pedido-ticket-overlay');
+const pedidoTicketTitle = document.getElementById('pedido-ticket-title');
+const pedidoTicketClose = document.getElementById('pedido-ticket-close');
+const pedidoTicketDescuentoCheck = document.getElementById('pedido-ticket-descuento-check');
+const pedidoTicketDescuentoSelect = document.getElementById('pedido-ticket-descuento-select');
+const pedidoTicketRecargoSelect = document.getElementById('pedido-ticket-recargo-select');
+const pedidoTicketTotal = document.getElementById('pedido-ticket-total');
+const pedidoTicketDescuentoTotal = document.getElementById('pedido-ticket-descuento-total');
+const pedidoTicketRecargoTotal = document.getElementById('pedido-ticket-recargo-total');
+const pedidoTicketCorreo = document.getElementById('pedido-ticket-correo');
+const pedidoTicketSummary = document.getElementById('pedido-ticket-summary');
+const pedidoTicketStatus = document.getElementById('pedido-ticket-status');
+const pedidoTicketPrint = document.getElementById('pedido-ticket-print');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -1028,7 +1045,7 @@ function renderMercaderiaTable() {
       <td class="${stockClass}">${row.totalStock ?? 0}</td>
       <td>${formatMoney(row.precioVenta || 0)}</td>
       <td><span class="merc-img" data-articulo="${row.articulo}">${imgHtml}</span></td>
-      <td><button class="icon-button merc-ia-btn" data-idx="${start + idx}" title="Predicción IA">🤖</button></td>
+      <td><button class="icon-button merc-ia-btn" data-idx="${start + idx}" title="Predicción IA">&#129302;</button></td>
     `;
     mercTableBody.appendChild(tr);
   });
@@ -3220,6 +3237,215 @@ function buildClienteEncuestaButton(cliente, idCliente) {
   )}" data-cliente="${escapeAttr(label)}">${escapeAttr(text)}</button>`;
 }
 
+function parsePedidoTotal(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const cleaned = raw.replace(/[^0-9,.-]/g, '').replace(',', '.');
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function updatePedidoTicketUI() {
+  const total = Number.isFinite(pedidoTicketCurrentTotal) ? pedidoTicketCurrentTotal : 0;
+  const hasDescuento = Boolean(pedidoTicketDescuentoCheck?.checked);
+  if (pedidoTicketDescuentoSelect) {
+    pedidoTicketDescuentoSelect.disabled = !hasDescuento;
+  }
+  if (pedidoTicketRecargoSelect) {
+    pedidoTicketRecargoSelect.disabled = hasDescuento;
+  }
+  const descuentoPct = hasDescuento ? Number(pedidoTicketDescuentoSelect?.value || 0) : 0;
+  const recargoPct = hasDescuento ? 0 : Number(pedidoTicketRecargoSelect?.value || 0);
+  const aplicaDescuento = hasDescuento && descuentoPct > 0;
+  const aplicaRecargo = !hasDescuento && recargoPct > 0;
+  const totalConDescuento = total * (1 - descuentoPct / 100);
+  const totalConRecargo = total * (1 + recargoPct / 100);
+  if (pedidoTicketTotal) pedidoTicketTotal.textContent = formatMoney(total);
+  if (pedidoTicketDescuentoTotal) {
+    pedidoTicketDescuentoTotal.textContent = aplicaDescuento ? formatMoney(totalConDescuento) : formatMoney(0);
+  }
+  if (pedidoTicketRecargoTotal) {
+    pedidoTicketRecargoTotal.textContent = aplicaRecargo ? formatMoney(totalConRecargo) : formatMoney(0);
+  }
+  if (pedidoTicketSummary) {
+    const correoRaw = (pedidoTicketCorreo?.value || '').trim();
+    const correoValue = parsePedidoTotal(correoRaw);
+    const base = aplicaDescuento ? totalConDescuento : aplicaRecargo ? totalConRecargo : total;
+    const totalConCorreo = base + correoValue;
+    pedidoTicketSummary.textContent = formatMoney(totalConCorreo);
+  }
+}
+
+function openPedidoTicketModal({ pedido, cliente, total, fecha }) {
+  if (!pedidoTicketOverlay) return;
+  pedidoTicketCurrentPedido = pedido || '';
+  pedidoTicketCurrentCliente = cliente || '';
+  pedidoTicketCurrentTotal = parsePedidoTotal(total);
+  pedidoTicketCurrentFecha = fecha || '';
+  if (pedidoTicketTitle) {
+    const parts = ['Ticket'];
+    if (pedidoTicketCurrentPedido) parts.push(`Pedido ${pedidoTicketCurrentPedido}`);
+    if (pedidoTicketCurrentCliente) parts.push(pedidoTicketCurrentCliente);
+    pedidoTicketTitle.textContent = parts.join(' - ');
+  }
+  if (pedidoTicketCorreo) pedidoTicketCorreo.value = '';
+  if (pedidoTicketDescuentoCheck) pedidoTicketDescuentoCheck.checked = false;
+  if (pedidoTicketDescuentoSelect) pedidoTicketDescuentoSelect.value = '0';
+  if (pedidoTicketRecargoSelect) pedidoTicketRecargoSelect.value = '0';
+  if (pedidoTicketStatus) pedidoTicketStatus.textContent = '';
+  updatePedidoTicketUI();
+  pedidoTicketOverlay.classList.add('open');
+}
+
+function closePedidoTicketModal() {
+  if (pedidoTicketOverlay) pedidoTicketOverlay.classList.remove('open');
+  pedidoTicketCurrentTotal = 0;
+  pedidoTicketCurrentPedido = '';
+  pedidoTicketCurrentCliente = '';
+  pedidoTicketCurrentFecha = '';
+  if (pedidoTicketStatus) pedidoTicketStatus.textContent = '';
+}
+
+function getPedidoTicketFechaLabel() {
+  if (pedidoTicketCurrentFecha) return formatDateLong(pedidoTicketCurrentFecha);
+  const now = new Date();
+  const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate()
+  ).padStart(2, '0')}`;
+  return formatDateLong(iso);
+}
+
+async function printPedidoTicketPdf() {
+  if (!pedidoTicketCurrentPedido) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    if (pedidoTicketStatus) pedidoTicketStatus.textContent = 'PDF no disponible.';
+    return;
+  }
+  try {
+    if (pedidoTicketStatus) pedidoTicketStatus.textContent = 'Generando PDF...';
+    const res = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(pedidoTicketCurrentPedido)}`);
+    const items = Array.isArray(res.data) ? res.data : res || [];
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 40;
+    let y = margin;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Pedido ${pedidoTicketCurrentPedido}`, margin, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`Fecha: ${getPedidoTicketFechaLabel()}`, margin, y + 16);
+    if (pedidoTicketCurrentCliente) {
+      doc.text(`Cliente: ${pedidoTicketCurrentCliente}`, margin, y + 30);
+    }
+    y += 52;
+    const colCant = margin;
+    const colDetalle = margin + 50;
+    const colUnit = pageWidth - margin - 120;
+    const colTotal = pageWidth - margin;
+    const headerHeight = 18;
+    doc.setFillColor(30, 45, 90);
+    doc.rect(margin, y - 12, pageWidth - margin * 2, headerHeight, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Cant', colCant, y);
+    doc.text('Detalle', colDetalle, y);
+    doc.text('Unitario', colUnit, y, { align: 'right' });
+    doc.text('Total', colTotal, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(20, 20, 20);
+    y += 14;
+    const lineHeight = 12;
+    const detailWidth = colUnit - colDetalle - 10;
+    items.forEach((item, index) => {
+      const cantidad = Number(item.cantidad) || 0;
+      const detalle = String(item.detalle || '').trim();
+      const unitario = parsePedidoTotal(item.precio_unitario ?? item.PrecioUnitario ?? item.PrecioVenta ?? 0);
+      const totalLinea = cantidad * unitario;
+      const detalleLines = doc.splitTextToSize(detalle || '-', detailWidth);
+      const rowHeight = Math.max(1, detalleLines.length) * lineHeight;
+      if (y + rowHeight > pageHeight - 120) {
+        doc.addPage();
+        y = margin;
+        doc.setFillColor(30, 45, 90);
+        doc.rect(margin, y - 12, pageWidth - margin * 2, headerHeight, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Cant', colCant, y);
+        doc.text('Detalle', colDetalle, y);
+        doc.text('Unitario', colUnit, y, { align: 'right' });
+        doc.text('Total', colTotal, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(20, 20, 20);
+        y += 14;
+      }
+      if (index % 2 === 0) {
+        doc.setFillColor(242, 244, 248);
+        doc.rect(margin, y - 10, pageWidth - margin * 2, rowHeight + 6, 'F');
+      }
+      doc.text(String(cantidad), colCant, y);
+      doc.text(detalleLines, colDetalle, y);
+      doc.text(formatMoney(unitario), colUnit, y, { align: 'right' });
+      doc.text(formatMoney(totalLinea), colTotal, y, { align: 'right' });
+      y += rowHeight + 2;
+    });
+    const total = Number.isFinite(pedidoTicketCurrentTotal) ? pedidoTicketCurrentTotal : 0;
+    const hasDescuento = Boolean(pedidoTicketDescuentoCheck?.checked);
+    const descuentoPct = hasDescuento ? Number(pedidoTicketDescuentoSelect?.value || 0) : 0;
+    const recargoPct = hasDescuento ? 0 : Number(pedidoTicketRecargoSelect?.value || 0);
+    const aplicaDescuento = hasDescuento && descuentoPct > 0;
+    const aplicaRecargo = !hasDescuento && recargoPct > 0;
+    const correoValue = parsePedidoTotal((pedidoTicketCorreo?.value || '').trim());
+    const totalConDescuento = total * (1 - descuentoPct / 100);
+    const totalConEnvio = total + correoValue;
+    const totalConEnvioConDescuento = totalConDescuento + correoValue;
+    const totalConRecargo = totalConEnvio * (1 + recargoPct / 100);
+    const footerLines = [];
+    if (aplicaDescuento) {
+      footerLines.push(
+        `Total: ${formatMoney(total)}  ${descuentoPct}% de Descuento = ${formatMoney(totalConDescuento)}`
+      );
+      if (correoValue > 0) {
+        footerLines.push(
+          `Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvioConDescuento)}`
+        );
+      }
+    } else if (aplicaRecargo) {
+      footerLines.push(`Total: ${formatMoney(total)}`);
+      if (correoValue > 0) {
+        footerLines.push(`Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvio)}`);
+      }
+      footerLines.push(
+        `Recargo: ${recargoPct}%  Total Con Recargo Mercado Pago: ${formatMoney(totalConRecargo)}`
+      );
+    } else {
+      footerLines.push(`Total: ${formatMoney(total)}`);
+      if (correoValue > 0) {
+        footerLines.push(`Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvio)}`);
+      }
+    }
+    y += 12;
+    if (y > pageHeight - 80) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.setFont('helvetica', 'bold');
+    footerLines.forEach((line) => {
+      const wrapped = doc.splitTextToSize(line, pageWidth - margin * 2);
+      doc.text(wrapped, margin, y);
+      y += wrapped.length * 14;
+    });
+    doc.setFont('helvetica', 'normal');
+    doc.save(`ticket-${pedidoTicketCurrentPedido}.pdf`);
+    if (pedidoTicketStatus) pedidoTicketStatus.textContent = '';
+  } catch (error) {
+    if (pedidoTicketStatus) pedidoTicketStatus.textContent = 'No se pudo generar el PDF.';
+  }
+}
+
 function buildPedidoCard(row) {
   const pedido = row.pedido || '';
   const cliente = row.cliente || '';
@@ -3243,45 +3469,54 @@ function buildPedidoCard(row) {
     <option value="2"${Number(instancia) === 2 ? ' selected' : ''}>Finalizado</option>
   `;
   const isTodosEmpaquetados = currentPedidosScope === 'todos' && currentPedidosTipo === 'empaquetados';
+  const showTicketBtn = currentPedidosScope === 'vendedora' && currentPedidosTipo === 'paraFacturar';
+  const ticketButton = showTicketBtn
+    ? `<button type="button" class="abm-link-btn pedido-ticket-btn" title="Ticket" data-pedido="${escapeAttr(
+        pedido
+      )}" data-total="${escapeAttr(total)}" data-cliente="${escapeAttr(
+        cliente
+      )}" data-fecha="${escapeAttr(row.fecha || '')}">&#127903;</button>`
+    : '';
   const actionsHtml = isTodosEmpaquetados
     ? `
         <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
           pedido
-        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">&#128065;&#65039;</button>
         <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
           row.id
         )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
           cliente
-        )}">📘<span class="nota-count">${notaCount}</span></button>
+        )}">&#128216;<span class="nota-count">${notaCount}</span></button>
         <button type="button" class="abm-link-btn pedido-entregado-btn" title="Entregado" data-id="${escapeAttr(
           row.id
-        )}" data-pedido="${escapeAttr(pedido)}">✅</button>
+        )}" data-pedido="${escapeAttr(pedido)}">&#9989;</button>
       `
     : `
         <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${escapeAttr(
           pedido
-        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">👁️</button>
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">&#128065;&#65039;</button>
         <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${escapeAttr(
           row.id
         )}" data-pedido="${escapeAttr(pedido)}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(
           cliente
-        )}">📘<span class="nota-count">${notaCount}</span></button>
+        )}">&#128216;<span class="nota-count">${notaCount}</span></button>
         <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${escapeAttr(
           pedido
-        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">✅</button>
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">&#9989;</button>
+        ${ticketButton}
         <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
           Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
         }" data-id="${escapeAttr(row.id)}" data-pagado="${Number(row.pagado)}">${
-          Number(row.pagado) === 1 ? '😊' : '😟'
+          Number(row.pagado) === 1 ? '&#128522;' : '&#128543;'
         }</button>
         <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${escapeAttr(
           row.id
-        )}">🚫</button>
+        )}">&#128683;</button>
         <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${escapeAttr(
           row.id
         )}" data-cliente-id="${escapeAttr(row.id_cliente || '')}" data-pedido="${escapeAttr(
           pedido
-        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">🤖</button>
+        )}" data-vendedora="${escapeAttr(vendedora)}" data-cliente="${escapeAttr(cliente)}">&#129302;</button>
       `;
   const card = document.createElement('article');
   card.className = `pedido-card${Number(row.vencido) > 0 ? ' pedido-card--alert' : ''}`;
@@ -3846,6 +4081,17 @@ function initAbm() {
         closePedidoCardMenus();
         return;
       }
+      const ticketBtn = e.target.closest('.pedido-ticket-btn');
+      if (ticketBtn) {
+        openPedidoTicketModal({
+          pedido: ticketBtn.dataset.pedido || '',
+          cliente: ticketBtn.dataset.cliente || '',
+          total: ticketBtn.dataset.total || 0,
+          fecha: ticketBtn.dataset.fecha || '',
+        });
+        closePedidoCardMenus();
+        return;
+      }
       const pagoBtn = e.target.closest('.pedido-pago-btn');
       if (pagoBtn) {
         const id = Number(pagoBtn.dataset.id);
@@ -3864,7 +4110,7 @@ function initAbm() {
             throw new Error(data.message || 'No se pudo actualizar pago.');
           }
           pagoBtn.dataset.pagado = String(next);
-          pagoBtn.textContent = next === 1 ? '😊' : '😟';
+          pagoBtn.innerHTML = next === 1 ? '&#128522;' : '&#128543;';
           pagoBtn.classList.toggle('pago-ok', next === 1);
           pagoBtn.classList.toggle('pago-pendiente', next === 0);
           if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pago actualizado.';
@@ -4833,13 +5079,13 @@ function renderCarritosTable(rows) {
         data: 'notas',
         orderable: false,
         render: (_val, _type, row) =>
-          `<button type="button" class="abm-link-btn carritos-notas-btn" data-id="${row.id}">📖 ${row.notas}</button>`,
+          `<button type="button" class="abm-link-btn carritos-notas-btn" data-id="${row.id}">&#128214; ${row.notas}</button>`,
       },
       {
         data: 'id',
         orderable: false,
         render: (val) =>
-          `<button type="button" class="abm-link-btn carritos-cerrar-btn" data-id="${val}">✔</button>`,
+          `<button type="button" class="abm-link-btn carritos-cerrar-btn" data-id="${val}">&#10004;</button>`,
       },
     ],
     language: {
@@ -5269,7 +5515,7 @@ function renderClientes(rows) {
       <td>${formatDate(row.ultimaCompra)}</td>
       <td>${row.cantFacturas ?? 0}</td>
       <td>${Number(row.ticketPromedio ?? 0).toFixed(2)}</td>
-      <td><button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(clienteLabel)}" title="IA cliente">🤖</button></td>
+      <td><button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(clienteLabel)}" title="IA cliente">&#129302;</button></td>
     `;
     tablaClientesBody.appendChild(tr);
   });
@@ -5919,27 +6165,37 @@ function renderPedidosVendedoraLista(rows) {
         data: null,
         orderable: false,
         searchable: false,
-        render: (_val, _type, row) =>
-          `<div class="abm-actions">
+        render: (_val, _type, row) => {
+          const showTicketBtn = currentPedidosScope === 'vendedora' && currentPedidosTipo === 'paraFacturar';
+          const ticketBtn = showTicketBtn
+            ? `<button type="button" class="abm-link-btn pedido-ticket-btn" title="Ticket" data-pedido="${row.pedido}" data-total="${escapeAttr(
+                row.total ?? ''
+              )}" data-cliente="${escapeAttr(row.cliente)}" data-fecha="${escapeAttr(
+                row.fecha || ''
+              )}">&#127903;</button>`
+            : '';
+          return `<div class="abm-actions">
             <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
-          )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
+          )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
             <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
-          )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
+          )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
             <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
-          )}" data-cliente="${escapeAttr(row.cliente)}">✔</button>
+          )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;</button>
+            ${ticketBtn}
             <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
               Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
             }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
-              Number(row.pagado) === 1 ? '😊' : '😞'
+              Number(row.pagado) === 1 ? '&#128522;' : '&#128542;'
             }</button>
-            <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">🧽</button>
+            <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#129533;</button>
             <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
-          )}" data-cliente="${escapeAttr(row.cliente)}">🤖</button>
-          </div>`,
+          )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+          </div>`;
+        },
       },
     ],
     rowCallback: (row, rowData) => {
@@ -6522,27 +6778,37 @@ async function loadPedidosTodosLista(tipo) {
         {
           data: null,
           orderable: false,
-          render: (_val, _type, row) =>
-            `<div class="abm-actions">
+          render: (_val, _type, row) => {
+            const showTicketBtn = currentPedidosScope === 'vendedora' && currentPedidosTipo === 'paraFacturar';
+            const ticketBtn = showTicketBtn
+              ? `<button type="button" class="abm-link-btn pedido-ticket-btn" title="Ticket" data-pedido="${row.pedido}" data-total="${escapeAttr(
+                  row.total ?? ''
+                )}" data-cliente="${escapeAttr(row.cliente)}" data-fecha="${escapeAttr(
+                  row.fecha || ''
+                )}">&#127903;</button>`
+              : '';
+            return `<div class="abm-actions">
               <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
               <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
               <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">✔️</button>
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;&#65039;</button>
+              ${ticketBtn}
               <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
                 Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
               }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
-                Number(row.pagado) === 1 ? '🙂' : '☹️'
+                Number(row.pagado) === 1 ? '&#128578;' : '&#9785;&#65039;'
               }</button>
-              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">🚫</button>
+              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
               <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">🤖</button>
-            </div>`,
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+            </div>`;
+          },
         },
       ],
       rowCallback: (row, rowData) => {
@@ -6677,16 +6943,37 @@ async function loadPedidosEmpaquetadosLista() {
         {
           data: null,
           orderable: false,
-          render: (_val, _type, row) =>
-            `<div class="abm-actions">
+          render: (_val, _type, row) => {
+            const showTicketBtn = currentPedidosScope === 'vendedora' && currentPedidosTipo === 'paraFacturar';
+            const ticketBtn = showTicketBtn
+              ? `<button type="button" class="abm-link-btn pedido-ticket-btn" title="Ticket" data-pedido="${row.pedido}" data-total="${escapeAttr(
+                  row.total ?? ''
+                )}" data-cliente="${escapeAttr(row.cliente)}" data-fecha="${escapeAttr(
+                  row.fecha || ''
+                )}">&#127903;</button>`
+              : '';
+            return `<div class="abm-actions">
               <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">👁️</button>
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
               <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
-            )}" data-cliente="${escapeAttr(row.cliente)}">📖<span class="nota-count">${row.notasCount}</span></button>
-              <button type="button" class="abm-link-btn pedido-entregado-btn" title="Entregado" data-id="${row.id}" data-pedido="${row.pedido}">✅</button>
-            </div>`,
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
+              <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;&#65039;</button>
+              ${ticketBtn}
+              <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+                Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
+              }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
+                Number(row.pagado) === 1 ? '&#128578;' : '&#9785;&#65039;'
+              }</button>
+              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
+              <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              row.vendedora
+            )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+            </div>`;
+          },
         },
       ],
       rowCallback: (row, rowData) => {
@@ -6932,7 +7219,7 @@ function renderControlOrdenesTable(rows) {
         <button type="button" class="co-notas-btn" data-id="${row.id}" data-orden="${escapeAttr(
       row.orden
     )}" title="Notas">
-          <span class="badge">${row.cantNotas ?? 0}</span>📘
+          <span class="badge">${row.cantNotas ?? 0}</span>&#128216;
         </button>
       </td>
       <td>
@@ -8730,6 +9017,18 @@ if (pedidosTodosGrid) {
       openClienteEncuestaModal(idCliente, cliente);
     });
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.pedido-ticket-btn');
+      if (!btn) return;
+      const tr = btn.closest('tr');
+      const rowData = pedidosVendedoraListaTable?.row(tr).data();
+      openPedidoTicketModal({
+        pedido: rowData?.pedido || btn.dataset.pedido || '',
+        cliente: rowData?.cliente || btn.dataset.cliente || '',
+        total: rowData?.total ?? btn.dataset.total ?? 0,
+        fecha: rowData?.fecha || btn.dataset.fecha || '',
+      });
+    });
+    pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-items-btn');
       if (!btn) return;
       const tr = btn.closest('tr');
@@ -8824,7 +9123,7 @@ if (pedidosTodosGrid) {
           throw new Error(data.message || 'No se pudo actualizar pago.');
         }
         btn.dataset.pagado = String(next);
-        btn.textContent = next === 1 ? '😊' : '😞';
+        btn.innerHTML = next === 1 ? '&#128578;' : '&#9785;&#65039;';
         btn.classList.toggle('pago-ok', next === 1);
         btn.classList.toggle('pago-pendiente', next === 0);
         if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Pago actualizado.';
@@ -8937,6 +9236,29 @@ if (pedidosTodosGrid) {
     });
   }
   if (clienteEncuestaSave) clienteEncuestaSave.addEventListener('click', saveClienteEncuesta);
+  if (pedidoTicketClose) {
+    pedidoTicketClose.addEventListener('click', closePedidoTicketModal);
+  }
+  if (pedidoTicketOverlay) {
+    pedidoTicketOverlay.addEventListener('click', (e) => {
+      if (e.target === pedidoTicketOverlay) closePedidoTicketModal();
+    });
+  }
+  if (pedidoTicketDescuentoCheck) {
+    pedidoTicketDescuentoCheck.addEventListener('change', updatePedidoTicketUI);
+  }
+  if (pedidoTicketDescuentoSelect) {
+    pedidoTicketDescuentoSelect.addEventListener('change', updatePedidoTicketUI);
+  }
+  if (pedidoTicketRecargoSelect) {
+    pedidoTicketRecargoSelect.addEventListener('change', updatePedidoTicketUI);
+  }
+  if (pedidoTicketCorreo) {
+    pedidoTicketCorreo.addEventListener('input', updatePedidoTicketUI);
+  }
+  if (pedidoTicketPrint) {
+    pedidoTicketPrint.addEventListener('click', printPedidoTicketPdf);
+  }
   if (pedidoIaSend) pedidoIaSend.addEventListener('click', sendPedidoIaMessage);
   if (pedidoIaInput) {
     pedidoIaInput.addEventListener('keyup', (e) => {
@@ -10876,6 +11198,7 @@ loadPedidosControl();
 loadOperativos();
 startPanelControlAutoRefresh();
 loadPedidosClientes();
+
 
 
 

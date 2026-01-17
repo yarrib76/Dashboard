@@ -2094,6 +2094,81 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="pedido-ticket-overlay">
+    <div class="modal ticket-modal">
+      <div class="modal-header">
+        <h3 id="pedido-ticket-title">Ticket</h3>
+        <button id="pedido-ticket-close" class="close-btn" type="button">z</button>
+      </div>
+      <div class="modal-body">
+        <div class="ticket-row">
+          <label class="ticket-check">
+            <input type="checkbox" id="pedido-ticket-descuento-check" />
+            <span>Descuento</span>
+          </label>
+          <label class="ticket-field">
+            <span>Descuento</span>
+            <select id="pedido-ticket-descuento-select">
+              <option value="0">0</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+              <option value="35">35</option>
+              <option value="40">40</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <label class="ticket-field">
+            <span>Recargo</span>
+            <select id="pedido-ticket-recargo-select">
+              <option value="0">0</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+              <option value="35">35</option>
+              <option value="40">40</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+        </div>
+        <div class="ticket-totals">
+          <div class="ticket-total">
+            <span>Total</span>
+            <strong id="pedido-ticket-total">$0</strong>
+          </div>
+          <div class="ticket-total">
+            <span>Descuento</span>
+            <strong id="pedido-ticket-descuento-total">$0</strong>
+          </div>
+          <div class="ticket-total">
+            <span>Recargo</span>
+            <strong id="pedido-ticket-recargo-total">$0</strong>
+          </div>
+        </div>
+        <div class="ticket-row">
+          <label class="ticket-field grow">
+            <span>Correo</span>
+            <input id="pedido-ticket-correo" type="text" inputmode="numeric" maxlength="10" placeholder="0" />
+          </label>
+          <div class="ticket-summary">
+            <span>Total + correo</span>
+            <strong id="pedido-ticket-summary">-</strong>
+          </div>
+        </div>
+        <div class="actions inline">
+          <button id="pedido-ticket-print" type="button" title="Imprimir">&#128424;</button>
+        </div>
+        <p class="status" id="pedido-ticket-status"></p>
+      </div>
+    </div>
+  </div>
+
     <div class="modal-overlay" id="modal-overlay">
       <div class="modal">
         <div class="modal-header">
@@ -2192,6 +2267,7 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
     
   

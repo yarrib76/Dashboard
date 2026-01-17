@@ -1017,6 +1017,90 @@ body.theme-light .cliente-encuesta-select {
   color: #1a1a1a;
 }
 
+.ticket-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.ticket-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.ticket-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+
+.ticket-field select,
+.ticket-field input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+.ticket-field select:focus,
+.ticket-field input:focus {
+  border-color: rgba(123, 215, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(123, 215, 255, 0.18);
+}
+
+.ticket-field.grow {
+  flex: 1;
+  min-width: 240px;
+}
+
+#pedido-ticket-correo {
+  width: 12ch;
+  max-width: 12ch;
+}
+
+.ticket-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 16px;
+}
+
+.ticket-total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+body.theme-light .ticket-field select,
+body.theme-light .ticket-field input {
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.ticket-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ticket-modal {
+  max-width: 560px;
+}
+
 .modal-controls input[type='search'] {
   flex: 1;
   padding: 10px 12px;

@@ -1021,7 +1021,11 @@ app.get('/api/pedidos/items', requireAuth, async (req, res) => {
     const nropedido = req.query.nropedido;
     if (!nropedido) return res.status(400).json({ message: 'NroPedido requerido' });
     const [rows] = await pool.query(
-      `SELECT Articulo AS articulo, Detalle AS detalle, Cantidad AS cantidad
+      `SELECT
+         Articulo AS articulo,
+         Detalle AS detalle,
+         Cantidad AS cantidad,
+         ROUND(COALESCE(PrecioUnitario, PrecioVenta, 0), 2) AS precio_unitario
        FROM pedidotemp
        WHERE NroPedido = ?
        ORDER BY Articulo`,
