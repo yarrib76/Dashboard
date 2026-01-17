@@ -254,6 +254,7 @@ let pedidoTicketCurrentTotal = 0;
 let pedidoTicketCurrentPedido = '';
 let pedidoTicketCurrentCliente = '';
 let pedidoTicketCurrentFecha = '';
+let pedidoTicketItemsCache = [];
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -487,6 +488,7 @@ const pedidoTicketCorreo = document.getElementById('pedido-ticket-correo');
 const pedidoTicketSummary = document.getElementById('pedido-ticket-summary');
 const pedidoTicketStatus = document.getElementById('pedido-ticket-status');
 const pedidoTicketPrint = document.getElementById('pedido-ticket-print');
+const pedidoTicketVerificacion = document.getElementById('pedido-ticket-verificacion');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3283,6 +3285,7 @@ function openPedidoTicketModal({ pedido, cliente, total, fecha }) {
   pedidoTicketCurrentCliente = cliente || '';
   pedidoTicketCurrentTotal = parsePedidoTotal(total);
   pedidoTicketCurrentFecha = fecha || '';
+  pedidoTicketItemsCache = [];
   if (pedidoTicketTitle) {
     const parts = ['Ticket'];
     if (pedidoTicketCurrentPedido) parts.push(`Pedido ${pedidoTicketCurrentPedido}`);
@@ -3294,8 +3297,11 @@ function openPedidoTicketModal({ pedido, cliente, total, fecha }) {
   if (pedidoTicketDescuentoSelect) pedidoTicketDescuentoSelect.value = '0';
   if (pedidoTicketRecargoSelect) pedidoTicketRecargoSelect.value = '0';
   if (pedidoTicketStatus) pedidoTicketStatus.textContent = '';
+  if (pedidoTicketVerificacion) pedidoTicketVerificacion.textContent = '';
+  if (pedidoTicketPrint) pedidoTicketPrint.disabled = true;
   updatePedidoTicketUI();
   pedidoTicketOverlay.classList.add('open');
+  checkPedidoTicketItems();
 }
 
 function closePedidoTicketModal() {
@@ -3304,6 +3310,8 @@ function closePedidoTicketModal() {
   pedidoTicketCurrentPedido = '';
   pedidoTicketCurrentCliente = '';
   pedidoTicketCurrentFecha = '';
+  pedidoTicketItemsCache = [];
+  if (pedidoTicketVerificacion) pedidoTicketVerificacion.textContent = '';
   if (pedidoTicketStatus) pedidoTicketStatus.textContent = '';
 }
 
@@ -3316,6 +3324,38 @@ function getPedidoTicketFechaLabel() {
   return formatDateLong(iso);
 }
 
+async function checkPedidoTicketItems() {
+  if (!pedidoTicketCurrentPedido) return;
+  if (pedidoTicketVerificacion) {
+    pedidoTicketVerificacion.textContent = 'Verificando...';
+    pedidoTicketVerificacion.style.color = 'var(--muted)';
+  }
+  if (pedidoTicketPrint) pedidoTicketPrint.disabled = true;
+  try {
+    const res = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(pedidoTicketCurrentPedido)}`);
+    const items = Array.isArray(res.data) ? res.data : res || [];
+    pedidoTicketItemsCache = items;
+    const sum = items.reduce((acc, item) => {
+      const cantidad = Number(item.cantidad) || 0;
+      const unitario = parsePedidoTotal(item.precio_unitario ?? item.PrecioUnitario ?? item.PrecioVenta ?? 0);
+      return acc + cantidad * unitario;
+    }, 0);
+    const total = Number.isFinite(pedidoTicketCurrentTotal) ? pedidoTicketCurrentTotal : 0;
+    const isOk = Math.abs(sum - total) < 0.01;
+    if (pedidoTicketVerificacion) {
+      pedidoTicketVerificacion.textContent = isOk ? 'Verificado' : 'Incorrecto';
+      pedidoTicketVerificacion.style.color = isOk ? '#22c55e' : '#f87171';
+    }
+    if (pedidoTicketPrint) pedidoTicketPrint.disabled = !isOk;
+  } catch (error) {
+    if (pedidoTicketVerificacion) {
+      pedidoTicketVerificacion.textContent = 'Error al verificar';
+      pedidoTicketVerificacion.style.color = '#f87171';
+    }
+    if (pedidoTicketPrint) pedidoTicketPrint.disabled = true;
+  }
+}
+
 async function printPedidoTicketPdf() {
   if (!pedidoTicketCurrentPedido) return;
   if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -3324,8 +3364,12 @@ async function printPedidoTicketPdf() {
   }
   try {
     if (pedidoTicketStatus) pedidoTicketStatus.textContent = 'Generando PDF...';
-    const res = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(pedidoTicketCurrentPedido)}`);
-    const items = Array.isArray(res.data) ? res.data : res || [];
+    let items = pedidoTicketItemsCache;
+    if (!items.length) {
+      const res = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(pedidoTicketCurrentPedido)}`);
+      items = Array.isArray(res.data) ? res.data : res || [];
+      pedidoTicketItemsCache = items;
+    }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -3631,6 +3675,13 @@ function appendPedidoCards() {
 function closePedidoCardMenus(except) {
   if (!pedidoCardsEl) return;
   pedidoCardsEl.querySelectorAll('.pedido-card-menu.open').forEach((menu) => {
+    if (menu !== except) menu.classList.remove('open');
+  });
+}
+
+function closePedidoTableMenus(except) {
+  if (!pedidosVendedoraListaTableEl) return;
+  pedidosVendedoraListaTableEl.querySelectorAll('.abm-actions-menu.open').forEach((menu) => {
     if (menu !== except) menu.classList.remove('open');
   });
 }
@@ -4269,6 +4320,9 @@ function initAbm() {
       if (!e.target.closest('.pedido-card')) closePedidoCardMenus();
     });
   }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.abm-actions--menu')) closePedidoTableMenus();
+  });
   if (abmBarcodeClose) abmBarcodeClose.addEventListener('click', closeAbmBarcode);
   if (abmBarcodeOverlay)
     abmBarcodeOverlay.addEventListener('click', (e) => {
@@ -6174,26 +6228,30 @@ function renderPedidosVendedoraLista(rows) {
                 row.fecha || ''
               )}">&#127903;</button>`
             : '';
-          return `<div class="abm-actions">
-            <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+          const hasNotas = Number(row.notasCount) > 0;
+          return `<div class="abm-actions abm-actions--menu">
+            <button type="button" class="abm-actions-toggle${hasNotas ? ' has-notes' : ''}" aria-label="Acciones">...</button>
+            <div class="abm-actions-menu">
+              <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
           )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
-            <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
           )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
-            <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
           )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;</button>
-            ${ticketBtn}
-            <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+              ${ticketBtn}
+              <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
               Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
             }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
               Number(row.pagado) === 1 ? '&#128522;' : '&#128542;'
             }</button>
-            <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#129533;</button>
-            <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#129533;</button>
+              <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
             row.vendedora
           )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+            </div>
           </div>`;
         },
       },
@@ -6787,26 +6845,30 @@ async function loadPedidosTodosLista(tipo) {
                   row.fecha || ''
                 )}">&#127903;</button>`
               : '';
-            return `<div class="abm-actions">
-              <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+            const hasNotas = Number(row.notasCount) > 0;
+            return `<div class="abm-actions abm-actions--menu">
+              <button type="button" class="abm-actions-toggle${hasNotas ? ' has-notes' : ''}" aria-label="Acciones">...</button>
+              <div class="abm-actions-menu">
+                <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
-              <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
-              <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;&#65039;</button>
-              ${ticketBtn}
-              <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+                ${ticketBtn}
+                <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
                 Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
               }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
                 Number(row.pagado) === 1 ? '&#128578;' : '&#9785;&#65039;'
               }</button>
-              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
-              <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
+                <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+              </div>
             </div>`;
           },
         },
@@ -6952,26 +7014,30 @@ async function loadPedidosEmpaquetadosLista() {
                   row.fecha || ''
                 )}">&#127903;</button>`
               : '';
-            return `<div class="abm-actions">
-              <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+            const hasNotas = Number(row.notasCount) > 0;
+            return `<div class="abm-actions abm-actions--menu">
+              <button type="button" class="abm-actions-toggle${hasNotas ? ' has-notes' : ''}" aria-label="Acciones">...</button>
+              <div class="abm-actions-menu">
+                <button type="button" class="abm-link-btn pedido-items-btn" title="Ver mercaderia" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#128065;&#65039;</button>
-              <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-notas-btn" title="Notas" data-id="${row.id}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#128214;<span class="nota-count">${row.notasCount}</span></button>
-              <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-checkout-btn" title="Check Out" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#10004;&#65039;</button>
-              ${ticketBtn}
-              <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
+                ${ticketBtn}
+                <button type="button" class="abm-link-btn pedido-pago-btn ${Number(row.pagado) === 1 ? 'pago-ok' : 'pago-pendiente'}" title="${
                 Number(row.pagado) === 1 ? 'Marcar como no pagado' : 'Marcar como pagado'
               }" data-id="${row.id}" data-pagado="${Number(row.pagado)}">${
                 Number(row.pagado) === 1 ? '&#128578;' : '&#9785;&#65039;'
               }</button>
-              <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
-              <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
+                <button type="button" class="abm-link-btn pedido-cancel-btn" title="Cancelar pedido" data-id="${row.id}">&#128683;</button>
+                <button type="button" class="abm-link-btn pedido-ia-btn" title="IA cliente" data-id="${row.id}" data-cliente-id="${row.id_cliente || ''}" data-pedido="${row.pedido}" data-vendedora="${escapeAttr(
               row.vendedora
             )}" data-cliente="${escapeAttr(row.cliente)}">&#129302;</button>
+              </div>
             </div>`;
           },
         },
@@ -8944,6 +9010,16 @@ if (pedidosTodosGrid) {
     });
   }
   if (pedidosVendedoraListaTableEl) {
+    pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
+      const toggle = e.target.closest('.abm-actions-toggle');
+      if (!toggle) return;
+      const menu = toggle.closest('.abm-actions--menu')?.querySelector('.abm-actions-menu');
+      if (menu) {
+        const isOpen = menu.classList.contains('open');
+        closePedidoTableMenus(menu);
+        menu.classList.toggle('open', !isOpen);
+      }
+    });
     pedidosVendedoraListaTableEl.addEventListener('change', async (e) => {
       const select = e.target.closest('.pedido-transporte-select');
       const instanciaSelect = e.target.closest('.pedido-instancia-select');
@@ -9010,6 +9086,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-encuesta-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const idCliente = rowData?.id_cliente || btn.dataset.clienteId;
@@ -9019,6 +9096,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-ticket-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       openPedidoTicketModal({
@@ -9031,6 +9109,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-items-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const nropedido = rowData?.pedido || btn.dataset.pedido;
@@ -9048,6 +9127,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-notas-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const controlId = rowData?.id || btn.dataset.id;
@@ -9059,6 +9139,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pedido-entregado-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const pedido = rowData?.pedido || btn.dataset.pedido;
@@ -9090,6 +9171,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-checkout-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const pedido = rowData?.pedido || btn.dataset.pedido;
@@ -9107,6 +9189,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pedido-pago-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const id = Number(btn.dataset.id);
       const current = Number(btn.dataset.pagado) || 0;
       const next = current === 1 ? 0 : 1;
@@ -9136,6 +9219,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pedido-cancel-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
       const id = Number(rowData?.id || btn.dataset.id);
@@ -9166,6 +9250,7 @@ if (pedidosTodosGrid) {
     pedidosVendedoraListaTableEl.addEventListener('click', (e) => {
       const btn = e.target.closest('.pedido-ia-btn');
       if (!btn) return;
+      closePedidoTableMenus();
       pedidoIaMode = 'pedido';
       const tr = btn.closest('tr');
       const rowData = pedidosVendedoraListaTable?.row(tr).data();
