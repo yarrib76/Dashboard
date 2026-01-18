@@ -257,6 +257,9 @@ let pedidoTicketCurrentCliente = '';
 let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
 let ecommerceImageDataUrl = '';
+let ecommerceImageBaseResult = '';
+let ecommerceWatermarkTarget = 'result';
+let ecommerceWatermarkLogoUrl = '/aguaviamore.png';
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -501,6 +504,11 @@ const ecommerceImageCredits = document.getElementById('ecommerce-image-credits')
 const ecommerceImageOriginal = document.getElementById('ecommerce-image-original');
 const ecommerceImageResult = document.getElementById('ecommerce-image-result');
 const ecommerceImageDownload = document.getElementById('ecommerce-image-download');
+const ecommerceWatermarkPosition = document.getElementById('ecommerce-watermark-position');
+const ecommerceWatermarkSize = document.getElementById('ecommerce-watermark-size');
+const ecommerceWatermarkOpacity = document.getElementById('ecommerce-watermark-opacity');
+const ecommerceWatermarkSizeValue = document.getElementById('ecommerce-watermark-size-value');
+const ecommerceWatermarkOpacityValue = document.getElementById('ecommerce-watermark-opacity-value');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3504,6 +3512,26 @@ async function printPedidoTicketPdf() {
 
 function initEcommerceImagenweb() {
   if (!viewEcommerceImagenweb) return;
+  if (ecommerceWatermarkSize && ecommerceWatermarkSizeValue) {
+    const syncSize = () => {
+      ecommerceWatermarkSizeValue.textContent = String(ecommerceWatermarkSize.value || '');
+    };
+    ecommerceWatermarkSize.addEventListener('input', () => {
+      syncSize();
+      if (ecommerceImageBaseResult) renderEcommerceWatermark();
+    });
+    syncSize();
+  }
+  if (ecommerceWatermarkOpacity && ecommerceWatermarkOpacityValue) {
+    const syncOpacity = () => {
+      ecommerceWatermarkOpacityValue.textContent = String(ecommerceWatermarkOpacity.value || '');
+    };
+    ecommerceWatermarkOpacity.addEventListener('input', () => {
+      syncOpacity();
+      if (ecommerceImageBaseResult) renderEcommerceWatermark();
+    });
+    syncOpacity();
+  }
   if (ecommerceImageFile) {
     ecommerceImageFile.addEventListener('change', () => {
       const file = ecommerceImageFile.files?.[0];
@@ -3517,8 +3545,10 @@ function initEcommerceImagenweb() {
         ecommerceImageDataUrl = reader.result || '';
         if (ecommerceImageOriginal) ecommerceImageOriginal.src = ecommerceImageDataUrl;
         if (ecommerceImageResult) ecommerceImageResult.src = '';
+        ecommerceImageBaseResult = '';
         if (ecommerceImageDownload) ecommerceImageDownload.hidden = true;
         if (ecommerceImageStatus) ecommerceImageStatus.textContent = '';
+        if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
       };
       reader.readAsDataURL(file);
     });
@@ -3551,11 +3581,8 @@ function initEcommerceImagenweb() {
         const img = new Image();
         img.onload = () => {
           const squareUrl = buildSquareWhiteFromImage(img);
-          if (ecommerceImageResult) ecommerceImageResult.src = squareUrl;
-          if (ecommerceImageDownload) {
-            ecommerceImageDownload.href = squareUrl;
-            ecommerceImageDownload.hidden = false;
-          }
+          ecommerceImageBaseResult = squareUrl;
+          renderEcommerceWatermark();
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Imagen generada.';
           if (ecommerceImageCredits) {
             const remainingRaw = data.remainingCredits;
@@ -3579,6 +3606,7 @@ function initEcommerceImagenweb() {
         img.onerror = () => {
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'No se pudo generar la imagen.';
           if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
+          ecommerceImageBaseResult = '';
         };
         img.src = data.imageDataUrl;
       } catch (error) {
@@ -3605,6 +3633,96 @@ function buildSquareWhiteFromImage(img) {
   ctx.fillRect(0, 0, size, size);
   ctx.drawImage(img, offsetX, offsetY);
   return canvas.toDataURL('image/png');
+}
+
+function getWatermarkConfig() {
+  return {
+    position: (ecommerceWatermarkPosition?.value || 'bottom-right').toLowerCase(),
+    sizePct: Number(ecommerceWatermarkSize?.value || 18),
+    opacityPct: Number(ecommerceWatermarkOpacity?.value || 35),
+  };
+}
+
+function applyWatermark(baseUrl) {
+  return new Promise((resolve, reject) => {
+    const cfg = getWatermarkConfig();
+    if (!ecommerceWatermarkLogoUrl) {
+      resolve(baseUrl);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      const size = Math.max(12, Math.round((cfg.sizePct / 100) * width));
+      const opacity = Math.min(1, Math.max(0.05, cfg.opacityPct / 100));
+      const padding = Math.max(12, Math.round(size * 0.6));
+
+      const drawLogo = () => {
+        if (!ecommerceWatermarkLogoUrl) return Promise.resolve();
+        return new Promise((resolveLogo) => {
+          const logo = new Image();
+          logo.onload = () => {
+            const logoWidth = Math.max(40, Math.round((cfg.sizePct / 100) * width));
+            const ratio = logo.height / logo.width || 1;
+            const logoHeight = Math.round(logoWidth * ratio);
+            const logoCanvas = document.createElement('canvas');
+            logoCanvas.width = logoWidth;
+            logoCanvas.height = logoHeight;
+            const logoCtx = logoCanvas.getContext('2d');
+            logoCtx.drawImage(logo, 0, 0, logoWidth, logoHeight);
+            logoCtx.globalCompositeOperation = 'source-in';
+            logoCtx.fillStyle = '#bfbfbf';
+            logoCtx.fillRect(0, 0, logoWidth, logoHeight);
+            let x = padding;
+            let y = padding;
+            if (cfg.position.includes('right')) x = width - logoWidth - padding;
+            if (cfg.position.includes('bottom')) y = height - logoHeight - padding;
+            if (cfg.position === 'center') {
+              x = (width - logoWidth) / 2;
+              y = (height - logoHeight) / 2;
+            }
+            ctx.save();
+            ctx.globalAlpha = opacity;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+            ctx.shadowBlur = Math.max(2, Math.round(logoWidth * 0.02));
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            ctx.drawImage(logoCanvas, x, y, logoWidth, logoHeight);
+            ctx.restore();
+            resolveLogo();
+          };
+          logo.onerror = () => resolveLogo();
+          logo.src = ecommerceWatermarkLogoUrl;
+        });
+      };
+
+      drawLogo().then(() => resolve(canvas.toDataURL('image/png')));
+    };
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen.'));
+    img.src = baseUrl;
+  });
+}
+
+async function renderEcommerceWatermark() {
+  if (!ecommerceImageBaseResult) return;
+  try {
+    const finalUrl = await applyWatermark(ecommerceImageBaseResult);
+    const targetEl = ecommerceWatermarkTarget === 'original' ? ecommerceImageOriginal : ecommerceImageResult;
+    if (targetEl) targetEl.src = finalUrl;
+    if (ecommerceImageDownload) {
+      ecommerceImageDownload.href = finalUrl;
+      ecommerceImageDownload.hidden = false;
+    }
+  } catch (_err) {
+    if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'No se pudo aplicar la marca de agua.';
+  }
 }
 
 
@@ -4877,6 +4995,12 @@ function getLogoPathByLocal(local) {
   if (value === 'viamore') return '/logoviamore.png';
   if (value === 'samira') return '/logosamira.png';
   return '/logo.png';
+}
+
+function getWatermarkLogoByLocal(local) {
+  const value = String(local || '').trim().toLowerCase();
+  if (value === 'samira') return '/aguasamira.png';
+  return '/aguaviamore.png';
 }
 
 async function fetchJSON(url) {
@@ -8986,6 +9110,7 @@ async function loadCurrentUser() {
       const logoPath = getLogoPathByLocal(data?.local);
       if (logoPath) tagLogo.src = logoPath;
     }
+    ecommerceWatermarkLogoUrl = getWatermarkLogoByLocal(data?.local);
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
     applyMenuPermissions(currentPermissions);
     const firstAllowed = getFirstAllowedView(currentPermissions);
