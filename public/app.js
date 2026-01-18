@@ -493,6 +493,7 @@ const pedidoTicketStatus = document.getElementById('pedido-ticket-status');
 const pedidoTicketPrint = document.getElementById('pedido-ticket-print');
 const pedidoTicketVerificacion = document.getElementById('pedido-ticket-verificacion');
 const ecommerceImageFile = document.getElementById('ecommerce-image-file');
+const ecommerceImageProvider = document.getElementById('ecommerce-image-provider');
 const ecommerceImagePrompt = document.getElementById('ecommerce-image-prompt');
 const ecommerceImageSend = document.getElementById('ecommerce-image-send');
 const ecommerceImageStatus = document.getElementById('ecommerce-image-status');
@@ -3530,9 +3531,15 @@ function initEcommerceImagenweb() {
       }
       try {
         ecommerceImageSend.disabled = true;
-        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Enviando a Clipdrop...';
+        const provider = (ecommerceImageProvider?.value || 'clipdrop').toLowerCase();
+        if (ecommerceImageStatus) {
+          ecommerceImageStatus.textContent =
+            provider === 'photoroom' ? 'Enviando a PhotoRoom...' : 'Enviando a Clipdrop...';
+        }
         if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
-        const res = await fetch('/api/ecommerce/imagenweb/clipdrop', {
+        const endpoint =
+          provider === 'photoroom' ? '/api/ecommerce/imagenweb/photoroom' : '/api/ecommerce/imagenweb/clipdrop';
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -3571,6 +3578,7 @@ function initEcommerceImagenweb() {
         };
         img.onerror = () => {
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'No se pudo generar la imagen.';
+          if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
         };
         img.src = data.imageDataUrl;
       } catch (error) {

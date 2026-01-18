@@ -4931,6 +4931,62 @@ app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit:
   }
 });
 
+app.post('/api/ecommerce/imagenweb/photoroom', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  try {
+    const { imageDataUrl } = req.body || {};
+    if (!imageDataUrl) {
+      return res.status(400).json({ message: 'Falta imageDataUrl.' });
+    }
+    const apiKey = (process.env.PHOTOROOM_API_KEY || '').trim();
+    if (!apiKey) {
+      return res.status(500).json({ message: 'PHOTOROOM_API_KEY no configurada en el servidor' });
+    }
+
+    const match = String(imageDataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ message: 'Formato de imagen invalido.' });
+    }
+    const mime = match[1].toLowerCase();
+    const base64 = match[2];
+    const extMap = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/webp': '.webp',
+    };
+    const ext = extMap[mime];
+    if (!ext) {
+      return res.status(400).json({ message: 'Formato de imagen no soportado.' });
+    }
+
+    const buffer = Buffer.from(base64, 'base64');
+    const form = new FormData();
+    form.append('image_file', new Blob([buffer], { type: mime }), `input${ext}`);
+
+    const response = await withRetry(() =>
+      fetch('https://sdk.photoroom.com/v1/segment', {
+        method: 'POST',
+        headers: {
+          Accept: 'image/png, application/json',
+          'x-api-key': apiKey,
+        },
+        body: form,
+      })
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `PhotoRoom error ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const outputBase64 = Buffer.from(arrayBuffer).toString('base64');
+    return res.json({ imageDataUrl: `data:image/png;base64,${outputBase64}` });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en PhotoRoom', error: error.message });
+  }
+});
+
 app.get('/login', (req, res) => {
   const token = parseCookies(req).auth_token;
   const payload = token && verifyToken(token);
