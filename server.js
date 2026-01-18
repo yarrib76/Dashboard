@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { log } = require('console');
 const OpenAI = require('openai');
 const { toFile } = require('openai');
+const { Blob } = require('buffer');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 
@@ -4788,7 +4789,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
   let tmpDir = null;
   try {
-    const { imageDataUrl, prompt } = req.body || {};
+    const { imageDataUrl, prompt, maskDataUrl } = req.body || {};
     if (!imageDataUrl || !prompt) {
       return res.status(400).json({ message: 'Falta imageDataUrl o prompt.' });
     }
@@ -4819,11 +4820,32 @@ app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }
 
     const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
     const imageFile = await toFile(Buffer.from(base64, 'base64'), `input${ext}`, { type: mime });
+    let maskFile = null;
+    if (maskDataUrl) {
+      const maskMatch = String(maskDataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (!maskMatch) {
+        return res.status(400).json({ message: 'Formato de mascara invalido.' });
+      }
+      const maskMime = maskMatch[1].toLowerCase();
+      const maskBase64 = maskMatch[2];
+      const maskExt = extMap[maskMime];
+      if (!maskExt) {
+        return res.status(400).json({ message: 'Formato de mascara no soportado.' });
+      }
+      maskFile = await toFile(Buffer.from(maskBase64, 'base64'), `mask${maskExt}`, { type: maskMime });
+    }
+    const promptPrefix =
+      'Conserva exactamente el articulo original con todos sus detalles y texturas. ' +
+      'No modifiques forma, relieve, grabados ni materiales. ' +
+      'No inventes ni suavices detalles. Solo aplica los cambios solicitados. ';
+    const finalPrompt = `${promptPrefix}${prompt}`.trim();
+
     const response = await withRetry(() =>
       openai.images.edit({
         model,
-        prompt,
+        prompt: finalPrompt,
         image: imageFile,
+        ...(maskFile ? { mask: maskFile } : {}),
         size: '1024x1024',
       })
     );
@@ -4847,6 +4869,59 @@ app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }
         // ignore cleanup errors
       }
     }
+  }
+});
+
+app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  try {
+    const { imageDataUrl } = req.body || {};
+    if (!imageDataUrl) {
+      return res.status(400).json({ message: 'Falta imageDataUrl.' });
+    }
+    const apiKey = (process.env.CLIPDROP_API_KEY || '').trim();
+    if (!apiKey) {
+      return res.status(500).json({ message: 'CLIPDROP_API_KEY no configurada en el servidor' });
+    }
+
+    const match = String(imageDataUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ message: 'Formato de imagen invalido.' });
+    }
+    const mime = match[1].toLowerCase();
+    const base64 = match[2];
+    const extMap = {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/webp': '.webp',
+    };
+    const ext = extMap[mime];
+    if (!ext) {
+      return res.status(400).json({ message: 'Formato de imagen no soportado.' });
+    }
+
+    const buffer = Buffer.from(base64, 'base64');
+    const form = new FormData();
+    form.append('image_file', new Blob([buffer], { type: mime }), `input${ext}`);
+
+    const response = await withRetry(() =>
+      fetch('https://clipdrop-api.co/remove-background/v1', {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey },
+        body: form,
+      })
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Clipdrop error ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const outputBase64 = Buffer.from(arrayBuffer).toString('base64');
+    return res.json({ imageDataUrl: `data:image/png;base64,${outputBase64}` });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en Clipdrop', error: error.message });
   }
 });
 

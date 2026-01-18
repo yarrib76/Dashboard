@@ -3523,36 +3523,36 @@ function initEcommerceImagenweb() {
   }
   if (ecommerceImageSend) {
     ecommerceImageSend.addEventListener('click', async () => {
-      const prompt = (ecommerceImagePrompt?.value || '').trim();
       if (!ecommerceImageDataUrl) {
         if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Selecciona una imagen.';
         return;
       }
-      if (!prompt) {
-        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Escribe una instruccion.';
-        return;
-      }
       try {
         ecommerceImageSend.disabled = true;
-        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Enviando a OpenAI...';
-        const res = await fetch('/api/ecommerce/imagenweb', {
+        if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Enviando a Clipdrop...';
+        const res = await fetch('/api/ecommerce/imagenweb/clipdrop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ imageDataUrl: ecommerceImageDataUrl, prompt }),
+          body: JSON.stringify({ imageDataUrl: ecommerceImageDataUrl }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.message || 'No se pudo generar la imagen.');
-        if (data.imageDataUrl && ecommerceImageResult) {
-          ecommerceImageResult.src = data.imageDataUrl;
+        if (!data.imageDataUrl) throw new Error('Respuesta sin imagen.');
+        const img = new Image();
+        img.onload = () => {
+          const squareUrl = buildSquareWhiteFromImage(img);
+          if (ecommerceImageResult) ecommerceImageResult.src = squareUrl;
           if (ecommerceImageDownload) {
-            ecommerceImageDownload.href = data.imageDataUrl;
+            ecommerceImageDownload.href = squareUrl;
             ecommerceImageDownload.hidden = false;
           }
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Imagen generada.';
-        } else {
-          throw new Error('Respuesta sin imagen.');
-        }
+        };
+        img.onerror = () => {
+          if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'No se pudo generar la imagen.';
+        };
+        img.src = data.imageDataUrl;
       } catch (error) {
         if (ecommerceImageStatus) ecommerceImageStatus.textContent = error.message || 'Error al generar.';
       } finally {
@@ -3561,6 +3561,24 @@ function initEcommerceImagenweb() {
     });
   }
 }
+
+
+function buildSquareWhiteFromImage(img) {
+  const width = img.naturalWidth || img.width;
+  const height = img.naturalHeight || img.height;
+  const size = Math.max(width, height);
+  const offsetX = Math.floor((size - width) / 2);
+  const offsetY = Math.floor((size - height) / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(img, offsetX, offsetY);
+  return canvas.toDataURL('image/png');
+}
+
 
 function buildPedidoCard(row) {
   const pedido = row.pedido || '';
