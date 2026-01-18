@@ -4919,7 +4919,13 @@ app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit:
 
     const arrayBuffer = await response.arrayBuffer();
     const outputBase64 = Buffer.from(arrayBuffer).toString('base64');
-    return res.json({ imageDataUrl: `data:image/png;base64,${outputBase64}` });
+    const remainingCredits = response.headers.get('x-remaining-credits');
+    const consumedCredits = response.headers.get('x-credits-consumed');
+    return res.json({
+      imageDataUrl: `data:image/png;base64,${outputBase64}`,
+      remainingCredits: remainingCredits ?? '',
+      consumedCredits: consumedCredits ?? '',
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Error en Clipdrop', error: error.message });
   }

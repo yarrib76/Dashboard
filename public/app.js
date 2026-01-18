@@ -496,6 +496,7 @@ const ecommerceImageFile = document.getElementById('ecommerce-image-file');
 const ecommerceImagePrompt = document.getElementById('ecommerce-image-prompt');
 const ecommerceImageSend = document.getElementById('ecommerce-image-send');
 const ecommerceImageStatus = document.getElementById('ecommerce-image-status');
+const ecommerceImageCredits = document.getElementById('ecommerce-image-credits');
 const ecommerceImageOriginal = document.getElementById('ecommerce-image-original');
 const ecommerceImageResult = document.getElementById('ecommerce-image-result');
 const ecommerceImageDownload = document.getElementById('ecommerce-image-download');
@@ -3530,6 +3531,7 @@ function initEcommerceImagenweb() {
       try {
         ecommerceImageSend.disabled = true;
         if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Enviando a Clipdrop...';
+        if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
         const res = await fetch('/api/ecommerce/imagenweb/clipdrop', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3548,6 +3550,24 @@ function initEcommerceImagenweb() {
             ecommerceImageDownload.hidden = false;
           }
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Imagen generada.';
+          if (ecommerceImageCredits) {
+            const remainingRaw = data.remainingCredits;
+            const consumedRaw = data.consumedCredits;
+            const remainingNum = Number(remainingRaw);
+            const consumedNum = Number(consumedRaw);
+            const hasRemaining = remainingRaw !== undefined && remainingRaw !== '';
+            const hasConsumed = consumedRaw !== undefined && consumedRaw !== '';
+            if (hasRemaining || hasConsumed) {
+              const total =
+                Number.isFinite(remainingNum) && Number.isFinite(consumedNum)
+                  ? String(remainingNum + consumedNum)
+                  : '-';
+              const remainingText = hasRemaining ? String(remainingRaw) : '-';
+              ecommerceImageCredits.textContent = `Creditos restantes: ${remainingText} / ${total}`;
+            } else {
+              ecommerceImageCredits.textContent = '';
+            }
+          }
         };
         img.onerror = () => {
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'No se pudo generar la imagen.';
