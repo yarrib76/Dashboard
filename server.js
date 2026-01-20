@@ -67,6 +67,7 @@ const DB_CONNECT_TIMEOUT_MS = Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000)
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
+const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -110,6 +111,113 @@ function formatDateTimeLocal(dateObj) {
   const mi = String(dateObj.getMinutes()).padStart(2, '0');
   const ss = String(dateObj.getSeconds()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function getTnubeConnection(storeId) {
+  const id = String(storeId || '').trim();
+  const connections = {
+    '972788': {
+      accessToken: process.env.TNUBE_TOKEN_972788 || '',
+      appName: process.env.TNUBE_APPNAME_972788 || 'SincroDemo',
+      tienda: 'Nacha',
+    },
+    '938857': {
+      accessToken: process.env.TNUBE_TOKEN_938857 || '',
+      appName: process.env.TNUBE_APPNAME_938857 || 'SincroApps',
+      tienda: 'Samira',
+    },
+    '963000': {
+      accessToken: process.env.TNUBE_TOKEN_963000 || '',
+      appName: process.env.TNUBE_APPNAME_963000 || 'SincoAppsDonatella',
+      tienda: 'Donatella',
+    },
+    '1043936': {
+      accessToken: process.env.TNUBE_TOKEN_1043936 || '',
+      appName: process.env.TNUBE_APPNAME_1043936 || 'SincoAppsViamore',
+      tienda: 'Viamore',
+    },
+    '1379491': {
+      accessToken: process.env.TNUBE_TOKEN_1379491 || '',
+      appName: process.env.TNUBE_APPNAME_1379491 || 'SincroDemo',
+      tienda: 'LabLocales',
+    },
+    '4999055': {
+      accessToken: process.env.TNUBE_TOKEN_4999055 || '',
+      appName: process.env.TNUBE_APPNAME_4999055 || 'SincroDemo',
+      tienda: 'MegaNay',
+    },
+  };
+  const connection = connections[id];
+  if (!connection || !connection.accessToken) {
+    throw new Error('Conexion TiendaNube no configurada para el store_id');
+  }
+  return connection;
+}
+
+async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
+  const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Authentication: `bearer ${token}`,
+    'User-Agent': appName || 'Dashboard',
+    Accept: 'application/json',
+  };
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `TiendaNube error ${response.status}`);
+  }
+  if (response.status === 204) return null;
+  return response.json().catch(() => null);
+}
+
+function redondeoDecimal(precioVenta) {
+  let precio = Number(precioVenta) || 0;
+  precio = Math.round(precio * 100) / 100;
+  let result = Math.round((precio / 0.05) * 100) / 100 - Math.trunc(Math.round((precio / 0.05) * 100) / 100);
+  while (result !== 0) {
+    precio = precio - 0.01;
+    precio = Number(precio.toFixed(2));
+    const x = Number((precio / 0.05).toFixed(2));
+    const f = Math.trunc(x);
+    result = Number((x - f).toFixed(2));
+  }
+  return precio;
+}
+
+async function computePrecioVenta(conn, articuloRow) {
+  const precioManual = Number(articuloRow.PrecioManual) || 0;
+  const precioConvertido = Number(articuloRow.PrecioConvertido) || 0;
+  if (!precioManual && !precioConvertido) return null;
+  if (precioManual !== 0) {
+    const gastos = Number(articuloRow.Gastos) || 0;
+    const ganancia = Number(articuloRow.Ganancia) || 0;
+    return redondeoDecimal(precioManual * gastos * ganancia);
+  }
+  const [provRows] = await conn.query(
+    `SELECT Gastos, Ganancia FROM ${DB_NAME}.proveedores WHERE Nombre = ? LIMIT 1`,
+    [articuloRow.Proveedor]
+  );
+  const proveedor = provRows[0];
+  if (!proveedor) return null;
+  const gastos = Number(proveedor.Gastos) || 0;
+  const ganancia = Number(proveedor.Ganancia) || 0;
+  const moneda = String(articuloRow.Moneda || '').toUpperCase();
+  if (moneda === 'ARG') {
+    return redondeoDecimal(precioConvertido * gastos * ganancia);
+  }
+  const [dolarRows] = await conn.query(`SELECT PrecioDolar FROM ${DB_NAME}.dolar LIMIT 1`);
+  const dolar = dolarRows[0] || {};
+  const precioEnPesos = precioConvertido * (Number(dolar.PrecioDolar) || 0);
+  return redondeoDecimal(precioEnPesos * gastos * ganancia);
+}
+
+function verificoStock(cantidad, artiCant) {
+  return Number(cantidad) >= Number(artiCant) ? 1000 : 0;
 }
 
 
@@ -255,6 +363,8 @@ const ROLE_PERMISSIONS = [
   'abm',
   'control-ordenes',
   'ecommerce',
+  'ecommerce-imagenweb',
+  'ecommerce-panel',
   'cajas',
   'cajas-cierre',
   'configuracion',
@@ -1104,18 +1214,18 @@ app.get('/api/ordencheckoutInDiff', requireAuth, async (req, res) => {
       `SELECT
          ctrl.nropedido,
          oa.articulo,
-         oa.detalle,
+         MAX(oa.detalle) AS detalle,
          SUM(oa.cantidad) AS TNCantidad,
-         oa.precio AS TNPrecio,
-         ptemp.cantidad AS CantidadLocal,
-         ptemp.PrecioUnitario AS PrecioLocal
+         MAX(oa.precio) AS TNPrecio,
+         SUM(ptemp.cantidad) AS CantidadLocal,
+         MAX(ptemp.PrecioUnitario) AS PrecioLocal
        FROM controlpedidos ctrl
        INNER JOIN pedidotemp ptemp ON ptemp.nropedido = ctrl.nropedido
        INNER JOIN ordenesarticulos oa
          ON oa.articulo = ptemp.articulo
         AND oa.id_controlPedidos = ctrl.id
        WHERE ctrl.nropedido = ?
-       GROUP BY ctrl.nropedido, oa.articulo, oa.detalle, oa.precio, ptemp.cantidad, ptemp.PrecioUnitario
+       GROUP BY ctrl.nropedido, oa.articulo
        HAVING TNCantidad <> CantidadLocal OR TNPrecio <> PrecioLocal`,
       [nropedido]
     );
@@ -4984,6 +5094,278 @@ app.post('/api/ecommerce/imagenweb/photoroom', requireAuth, express.json({ limit
     return res.json({ imageDataUrl: `data:image/png;base64,${outputBase64}` });
   } catch (error) {
     return res.status(500).json({ message: 'Error en PhotoRoom', error: error.message });
+  }
+});
+
+app.get('/api/ecommerce/panel', requireAuth, async (req, res) => {
+  try {
+    const sql = `
+      SELECT
+        ecomerce.id AS corrida,
+        ecomerce.proveedor,
+        usuario.name AS nombre,
+        ecomerce.id_cliente,
+        ecomerce.tienda,
+        DATE_FORMAT(ecomerce.fecha, '%Y-%m-%d %H:%i:%s') AS fecha,
+        resumen.total,
+        resumen.ok,
+        resumen.errores,
+        resumen.excluidos,
+        resumen.pendientes
+      FROM ${DB_NAME}.provecomerce AS ecomerce
+      INNER JOIN ${DB_NAME}.users AS usuario ON usuario.id = ecomerce.id_users
+      INNER JOIN (
+        SELECT
+          id_provecomerce,
+          COUNT(*) AS total,
+          SUM(status = 'OK') AS ok,
+          SUM(status = 'Pending') AS pendientes,
+          SUM(status = 'Excluido') AS excluidos,
+          SUM(status <> 'OK' AND status <> 'Pending' AND status <> 'Excluido') AS errores
+        FROM ${DB_NAME}.statusecomercesincro
+        GROUP BY id_provecomerce
+      ) AS resumen ON resumen.id_provecomerce = ecomerce.id
+      ORDER BY ecomerce.id DESC
+    `;
+    const [rows] = await pool.query(sql);
+    return res.json({
+      data: rows.map((row) => ({
+        corrida: row.corrida,
+        proveedor: row.proveedor || '',
+        nombre: row.nombre || '',
+        idCliente: row.id_cliente,
+        tienda: row.tienda || '',
+        fecha: row.fecha || '',
+        total: Number(row.total) || 0,
+        ok: Number(row.ok) || 0,
+        errores: Number(row.errores) || 0,
+        pendientes: Number(row.pendientes) || 0,
+        exclusiones: Number(row.excluidos) || 0,
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al cargar panel e-comerce', error: error.message });
+  }
+});
+
+app.get('/api/ecommerce/panel/detail', requireAuth, async (req, res) => {
+  try {
+    const idCorrida = req.query.id_corrida;
+    if (!idCorrida) {
+      return res.status(400).json({ message: 'id_corrida requerido' });
+    }
+    const sql = `
+      SELECT
+        statusecomerce.id AS e_id,
+        provecomerce.id AS corrida,
+        provecomerce.proveedor,
+        usuario.name AS nombre,
+        statusecomerce.articulo,
+        statusecomerce.status,
+        DATE_FORMAT(statusecomerce.fecha, '%Y-%m-%d %H:%i:%s') AS fecha,
+        statusecomerce.product_id,
+        statusecomerce.articulo_id,
+        statusecomerce.visible,
+        provecomerce.tienda,
+        provecomerce.id_cliente
+      FROM ${DB_NAME}.statusecomercesincro AS statusecomerce
+      INNER JOIN ${DB_NAME}.provecomerce AS provecomerce ON provecomerce.id = statusecomerce.id_provecomerce
+      INNER JOIN ${DB_NAME}.users AS usuario ON usuario.id = provecomerce.id_users
+      WHERE statusecomerce.id_provecomerce = ?
+      ORDER BY statusecomerce.fecha DESC
+    `;
+    const [rows] = await pool.query(sql, [idCorrida]);
+    const header = rows[0] || {};
+    return res.json({
+      meta: {
+        corrida: header.corrida || idCorrida,
+        proveedor: header.proveedor || '',
+        nombre: header.nombre || '',
+        tienda: header.tienda || '',
+        idCliente: header.id_cliente || '',
+      },
+      data: rows.map((row) => ({
+        productId: row.product_id || '',
+        articuloId: row.articulo_id || '',
+        articulo: row.articulo || '',
+        status: row.status || '',
+        fecha: row.fecha || '',
+        visible: row.visible ?? '',
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al cargar detalle e-comerce', error: error.message });
+  }
+});
+
+app.get('/api/tiendanubesincroArticulos', requireAuth, async (req, res) => {
+  let conn;
+  try {
+    const idCorrida = String(req.query.id_corrida || '').trim();
+    const storeId = String(req.query.store_id || '').trim();
+    const conOrden = req.query.conOrden === '1' || req.query.conOrden === 1 || req.query.conOrden === true;
+    const ordenCant = Math.max(1, Number(req.query.ordenCant) || 5);
+    const artiCant = Math.max(1, Number(req.query.artiCant) || 10);
+    const dryRun = req.query.dryRun === '1' || req.query.dryRun === 1 || req.query.dryRun === true;
+    if (!idCorrida || !storeId) {
+      return res.status(400).json({ message: 'id_corrida y store_id requeridos' });
+    }
+
+    const tnubeConnection = getTnubeConnection(storeId);
+    conn = await pool.getConnection();
+    const statusOk = 'OK';
+    let rows = [];
+
+    if (conOrden) {
+      const sql = `
+        SELECT
+          OrdenCompras.OrdenCompra,
+          StatusEComerce.id AS e_id,
+          StatusEComerce.id_provecomerce,
+          OrdenCompras.articulo,
+          StatusEComerce.product_id,
+          StatusEComerce.articulo_id,
+          StatusEComerce.visible,
+          StatusEComerce.images
+        FROM ${DB_NAME}.compras AS OrdenCompras
+        INNER JOIN ${DB_NAME}.statusecomercesincro AS StatusEComerce
+          ON OrdenCompras.Articulo = StatusEComerce.Articulo
+        WHERE OrdenCompras.OrdenCompra IN (
+          SELECT OrdenCompra
+          FROM (
+            SELECT OrdenCompra
+            FROM ${DB_NAME}.compras
+            GROUP BY OrdenCompra
+            ORDER BY OrdenCompra DESC
+            LIMIT ?
+          ) AS subquery
+        )
+          AND OrdenCompras.Cantidad <> 0
+          AND StatusEComerce.id_provecomerce = ?
+          AND StatusEComerce.status <> ?
+      `;
+      const [result] = await conn.query(sql, [ordenCant, idCorrida, statusOk]);
+      rows = result;
+    } else {
+      const sql = `
+        SELECT
+          statusecomerce.id AS e_id,
+          statusecomerce.articulo,
+          statusecomerce.status,
+          statusecomerce.fecha,
+          statusecomerce.product_id,
+          statusecomerce.articulo_id,
+          statusecomerce.images
+        FROM ${DB_NAME}.statusecomercesincro AS statusecomerce
+        WHERE statusecomerce.id_provecomerce = ?
+          AND statusecomerce.status <> ?
+      `;
+      const [result] = await conn.query(sql, [idCorrida, statusOk]);
+      rows = result;
+    }
+
+    if (dryRun) {
+      return res.json([{ OK: 0, Error: 0, 'No Requiere': 0, dryRun: true, total: rows.length }]);
+    }
+
+    let countOk = 0;
+    let countError = 0;
+    let countCheck = 0;
+
+    const updateStatus = async (id, status) => {
+      const fecha = formatDateTimeLocal(new Date());
+      await conn.query(
+        `UPDATE ${DB_NAME}.statusecomercesincro SET status = ?, fecha = ? WHERE id = ?`,
+        [status, fecha, id]
+      );
+    };
+
+    for (const row of rows) {
+      try {
+        const [statusRows] = await conn.query(
+          `SELECT status FROM ${DB_NAME}.statusecomercesincro WHERE id = ? LIMIT 1`,
+          [row.e_id]
+        );
+        const currentStatus = statusRows[0]?.status || '';
+        if (currentStatus === statusOk) {
+          countCheck += 1;
+          continue;
+        }
+
+        const [artRows] = await conn.query(
+          `SELECT Articulo, PrecioManual, PrecioConvertido, Gastos, Ganancia, Moneda, Proveedor, Cantidad, Web
+           FROM ${DB_NAME}.articulos
+           WHERE Articulo = ?
+           LIMIT 1`,
+          [row.articulo]
+        );
+        if (!artRows.length) {
+          if (currentStatus === 'Pending') {
+            countCheck += 1;
+          }
+          continue;
+        }
+        const articuloLocal = artRows[0];
+
+        const [pedidoRows] = await conn.query(
+          `SELECT pedtemp.Articulo AS Articulo, SUM(pedtemp.cantidad) AS Cantidad
+           FROM ${DB_NAME}.pedidotemp AS pedtemp
+           INNER JOIN ${DB_NAME}.controlpedidos AS control ON pedtemp.NroPedido = control.nropedido
+           WHERE pedtemp.articulo = ?
+             AND control.estado = 1`,
+          [row.articulo]
+        );
+        let cantidad = Number(articuloLocal.Cantidad) || 0;
+        const pedidoCantidad = Number(pedidoRows[0]?.Cantidad) || 0;
+        if (pedidoCantidad) {
+          cantidad = cantidad - pedidoCantidad;
+        }
+
+        if (conOrden && Number(row.images) === 1 && cantidad >= artiCant) {
+          await tnubeRequest(
+            storeId,
+            tnubeConnection.accessToken,
+            tnubeConnection.appName,
+            'PUT',
+            `products/${row.product_id}`,
+            { published: true }
+          );
+        }
+
+        if (Number(articuloLocal.Web) === 1) {
+          const precioVenta = await computePrecioVenta(conn, articuloLocal);
+          await tnubeRequest(
+            storeId,
+            tnubeConnection.accessToken,
+            tnubeConnection.appName,
+            'PUT',
+            `products/${row.product_id}/variants/${row.articulo_id}`,
+            {
+              price: precioVenta ?? 0,
+              stock: verificoStock(cantidad, artiCant),
+            }
+          );
+          await updateStatus(row.e_id, 'OK');
+          countOk += 1;
+        } else {
+          await updateStatus(row.e_id, 'Excluido');
+          countOk += 1;
+        }
+      } catch (_err) {
+        try {
+          await updateStatus(row.e_id, 'ErrorAPI');
+        } catch (_updateErr) {
+          /* ignore */
+        }
+        countError += 1;
+      }
+    }
+
+    return res.json([{ OK: countOk, Error: countError, 'No Requiere': countCheck }]);
+  } catch (error) {
+    return res.status(500).json({ message: 'Error en sincro TiendaNube', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 

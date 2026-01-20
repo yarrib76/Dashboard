@@ -260,6 +260,10 @@ let ecommerceImageDataUrl = '';
 let ecommerceImageBaseResult = '';
 let ecommerceWatermarkTarget = 'result';
 let ecommerceWatermarkLogoUrl = '/aguaviamore.png';
+let ecommercePanelTable = null;
+let ecommercePanelLoaded = false;
+let ecommercePanelDetailTable = null;
+let ecommercePanelDetailContext = null;
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -293,6 +297,8 @@ const viewMercaderia = document.getElementById('view-mercaderia');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
+const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
+const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
 const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
@@ -509,6 +515,26 @@ const ecommerceWatermarkSize = document.getElementById('ecommerce-watermark-size
 const ecommerceWatermarkOpacity = document.getElementById('ecommerce-watermark-opacity');
 const ecommerceWatermarkSizeValue = document.getElementById('ecommerce-watermark-size-value');
 const ecommerceWatermarkOpacityValue = document.getElementById('ecommerce-watermark-opacity-value');
+const ecommercePanelRefresh = document.getElementById('ecommerce-panel-refresh');
+const ecommercePanelStatus = document.getElementById('ecommerce-panel-status');
+const ecommercePanelTableEl = document.getElementById('ecommerce-panel-table');
+const ecommercePanelDetailTitle = document.getElementById('ecommerce-panel-detail-title');
+const ecommercePanelDetailSubtitle = document.getElementById('ecommerce-panel-detail-subtitle');
+const ecommercePanelDetailStatus = document.getElementById('ecommerce-panel-detail-status');
+const ecommercePanelDetailTableEl = document.getElementById('ecommerce-panel-detail-table');
+const ecommercePanelDetailBack = document.getElementById('ecommerce-panel-detail-back');
+const ecommercePanelDetailSync = document.getElementById('ecommerce-panel-detail-sync');
+const ecommercePanelDetailOrdenCheck = document.getElementById('ecommerce-panel-detail-orden-check');
+const ecommercePanelDetailOrdenCant = document.getElementById('ecommerce-panel-detail-orden-cant');
+const ecommercePanelDetailArtiCant = document.getElementById('ecommerce-panel-detail-arti-cant');
+const ecommerceSyncLoading = document.getElementById('ecommerce-sync-loading');
+const ecommerceSyncFinish = document.getElementById('ecommerce-sync-finish');
+const ecommerceSyncErrorModal = document.getElementById('ecommerce-sync-error-modal');
+const ecommerceSyncFinishClose = document.getElementById('ecommerce-sync-finish-close');
+const ecommerceSyncErrorClose = document.getElementById('ecommerce-sync-error-close');
+const ecommerceSyncOk = document.getElementById('ecommerce-sync-ok');
+const ecommerceSyncError = document.getElementById('ecommerce-sync-error');
+const ecommerceSyncNoReq = document.getElementById('ecommerce-sync-noreq');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -3725,6 +3751,236 @@ async function renderEcommerceWatermark() {
   }
 }
 
+async function loadEcommercePanel(force = false) {
+  if (!ecommercePanelTableEl) return;
+  if (ecommercePanelLoaded && !force) return;
+  try {
+    if (ecommercePanelStatus) ecommercePanelStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/ecommerce/panel');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (ecommercePanelTable) {
+      ecommercePanelTable.clear();
+      ecommercePanelTable.rows.add(rows);
+      ecommercePanelTable.draw();
+    } else if (window.DataTable) {
+      ecommercePanelTable = new DataTable('#ecommerce-panel-table', {
+        data: rows,
+        columns: [
+          { data: 'corrida' },
+          { data: 'proveedor' },
+          { data: 'nombre' },
+          { data: 'tienda' },
+          { data: 'fecha' },
+          {
+            data: 'total',
+            render: (data) => `<span class="badge green">${Number(data) || 0}</span>`,
+          },
+          {
+            data: 'ok',
+            render: (data) => `<span class="badge green">${Number(data) || 0}</span>`,
+          },
+          {
+            data: 'errores',
+            render: (data) => `<span class="badge red">${Number(data) || 0}</span>`,
+          },
+          {
+            data: 'exclusiones',
+            render: (data) => `<span class="badge gray">${Number(data) || 0}</span>`,
+          },
+          {
+            data: 'pendientes',
+            render: (data) => `<span class="badge yellow">${Number(data) || 0}</span>`,
+          },
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) =>
+              `<a class="abm-link-btn" href="${buildEcommercePanelDetailUrl(row)}">Detalle</a>`,
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[0, 'desc']],
+        autoWidth: false,
+      });
+    } else {
+      const tbody = ecommercePanelTableEl.querySelector('tbody');
+      if (tbody) {
+        tbody.innerHTML = rows
+          .map((row) => {
+            const detailUrl = buildEcommercePanelDetailUrl(row);
+            return `
+              <tr>
+                <td>${row.corrida ?? ''}</td>
+                <td>${row.proveedor || ''}</td>
+                <td>${row.nombre || ''}</td>
+                <td>${row.tienda || ''}</td>
+                <td>${row.fecha || ''}</td>
+                <td>${Number(row.total) || 0}</td>
+                <td>${Number(row.ok) || 0}</td>
+                <td>${Number(row.errores) || 0}</td>
+                <td>${Number(row.exclusiones) || 0}</td>
+                <td>${Number(row.pendientes) || 0}</td>
+                <td><a class="abm-link-btn" href="${detailUrl}">Detalle</a></td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+    }
+    ecommercePanelLoaded = true;
+    if (ecommercePanelStatus) ecommercePanelStatus.textContent = '';
+  } catch (error) {
+    if (ecommercePanelStatus) ecommercePanelStatus.textContent = error.message || 'Error al cargar panel.';
+  }
+}
+
+function initEcommercePanel() {
+  if (ecommercePanelRefresh) {
+    ecommercePanelRefresh.addEventListener('click', () => {
+      ecommercePanelLoaded = false;
+      loadEcommercePanel(true);
+    });
+  }
+}
+
+function initEcommercePanelDetail() {
+  if (ecommercePanelDetailBack) {
+    ecommercePanelDetailBack.addEventListener('click', () => {
+      window.history.pushState({}, '', '/');
+      switchView('ecommerce-panel');
+    });
+  }
+  if (ecommercePanelDetailSync) {
+    ecommercePanelDetailSync.addEventListener('click', async () => {
+      const ctx = ecommercePanelDetailContext || getEcommerceDetailParams();
+      if (!ctx.idCorrida || !ctx.idCliente) {
+        if (ecommercePanelDetailStatus) {
+          ecommercePanelDetailStatus.textContent = 'Faltan datos de corrida o tienda.';
+        }
+        return;
+      }
+      const conOrden = ecommercePanelDetailOrdenCheck?.checked ? 1 : 0;
+      const ordenCant = ecommercePanelDetailOrdenCant?.value || '5';
+      const artiCant = ecommercePanelDetailArtiCant?.value || '10';
+      try {
+        openOverlay(ecommerceSyncLoading);
+        const params = new URLSearchParams({
+          id_corrida: ctx.idCorrida,
+          store_id: ctx.idCliente,
+          conOrden: String(conOrden),
+          ordenCant: String(ordenCant),
+          artiCant: String(artiCant),
+          dryRun: '0',
+        });
+        const res = await fetch(`/api/tiendanubesincroArticulos?${params.toString()}`, {
+          credentials: 'include',
+        });
+        const data = await res.json().catch(() => null);
+        closeOverlay(ecommerceSyncLoading);
+        if (!res.ok) throw new Error(data?.message || 'Error en sincro.');
+        const result = Array.isArray(data) ? data[0] : data || {};
+        if (ecommerceSyncOk) ecommerceSyncOk.textContent = `Procesados OK: ${result.OK || 0}`;
+        if (ecommerceSyncError) ecommerceSyncError.textContent = `Procesados Con Error: ${result.Error || 0}`;
+        if (ecommerceSyncNoReq) ecommerceSyncNoReq.textContent = `Sin Cambios: ${result['No Requiere'] || 0}`;
+        openOverlay(ecommerceSyncFinish);
+      } catch (error) {
+        closeOverlay(ecommerceSyncLoading);
+        openOverlay(ecommerceSyncErrorModal);
+      }
+    });
+  }
+  if (ecommerceSyncFinishClose) {
+    ecommerceSyncFinishClose.addEventListener('click', () => {
+      closeOverlay(ecommerceSyncFinish);
+      if (ecommercePanelDetailContext?.idCorrida) {
+        loadEcommercePanelDetail(ecommercePanelDetailContext);
+      }
+    });
+  }
+  if (ecommerceSyncErrorClose) {
+    ecommerceSyncErrorClose.addEventListener('click', () => {
+      closeOverlay(ecommerceSyncErrorModal);
+    });
+  }
+}
+
+async function loadEcommercePanelDetail(params) {
+  if (!ecommercePanelDetailTableEl) return;
+  const idCorrida = params?.idCorrida || '';
+  if (!idCorrida) {
+    if (ecommercePanelDetailStatus) ecommercePanelDetailStatus.textContent = 'Falta id_corrida.';
+    return;
+  }
+  try {
+    if (ecommercePanelDetailStatus) ecommercePanelDetailStatus.textContent = 'Cargando...';
+    const res = await fetchJSON(`/api/ecommerce/panel/detail?id_corrida=${encodeURIComponent(idCorrida)}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const header = res.meta || {};
+    ecommercePanelDetailContext = {
+      idCorrida: header.corrida || idCorrida,
+      proveedor: header.proveedor || '',
+      nombre: header.nombre || '',
+      tienda: header.tienda || '',
+      idCliente: header.idCliente || '',
+    };
+    if (ecommercePanelDetailTitle) {
+      ecommercePanelDetailTitle.textContent = `Corrida E-Comerce Nº ${header.corrida || idCorrida}`;
+    }
+    if (ecommercePanelDetailSubtitle) {
+      ecommercePanelDetailSubtitle.textContent = `Proveedor: ${header.proveedor || ''} | Nombre: ${
+        header.nombre || ''
+      } | Tienda: ${header.tienda || ''}`;
+    }
+    if (ecommercePanelDetailTable) {
+      ecommercePanelDetailTable.clear();
+      ecommercePanelDetailTable.rows.add(rows);
+      ecommercePanelDetailTable.draw();
+    } else if (window.DataTable) {
+      ecommercePanelDetailTable = new DataTable('#ecommerce-panel-detail-table', {
+        data: rows,
+        columns: [
+          { data: 'productId' },
+          { data: 'articuloId' },
+          { data: 'articulo' },
+          { data: 'status' },
+          { data: 'fecha' },
+          { data: 'visible' },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[4, 'desc']],
+        autoWidth: false,
+      });
+    } else {
+      const tbody = ecommercePanelDetailTableEl.querySelector('tbody');
+      if (tbody) {
+        tbody.innerHTML = rows
+          .map(
+            (row) => `
+              <tr>
+                <td>${row.productId || ''}</td>
+                <td>${row.articuloId || ''}</td>
+                <td>${row.articulo || ''}</td>
+                <td>${row.status || ''}</td>
+                <td>${row.fecha || ''}</td>
+                <td>${row.visible ?? ''}</td>
+              </tr>
+            `
+          )
+          .join('');
+      }
+    }
+    if (ecommercePanelDetailStatus) ecommercePanelDetailStatus.textContent = '';
+  } catch (error) {
+    if (ecommercePanelDetailStatus) {
+      ecommercePanelDetailStatus.textContent = error.message || 'Error al cargar detalle.';
+    }
+  }
+}
+
 
 function buildPedidoCard(row) {
   const pedido = row.pedido || '';
@@ -5001,6 +5257,38 @@ function getWatermarkLogoByLocal(local) {
   const value = String(local || '').trim().toLowerCase();
   if (value === 'samira') return '/aguasamira.png';
   return '/aguaviamore.png';
+}
+
+function buildEcommercePanelDetailUrl(row) {
+  const params = new URLSearchParams({
+    id_corrida: row.corrida || '',
+    nombre: row.nombre || '',
+    proveedor: row.proveedor || '',
+    tienda: row.tienda || '',
+    id_cliente: row.idCliente || '',
+  });
+  return `/consultadetalladaecomerce/?${params.toString()}`;
+}
+
+function getEcommerceDetailParams() {
+  const params = new URLSearchParams(window.location.search || '');
+  return {
+    idCorrida: params.get('id_corrida') || '',
+    proveedor: params.get('proveedor') || '',
+    nombre: params.get('nombre') || '',
+    tienda: params.get('tienda') || '',
+    idCliente: params.get('id_cliente') || '',
+  };
+}
+
+function openOverlay(el) {
+  if (!el) return;
+  el.classList.add('open');
+}
+
+function closeOverlay(el) {
+  if (!el) return;
+  el.classList.remove('open');
 }
 
 async function fetchJSON(url) {
@@ -8991,6 +9279,8 @@ async function exportCajasControlFacturasXlsx() {
 }
 
 function resolvePermissionKey(target) {
+  if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
+  if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
@@ -9076,6 +9366,7 @@ function getFirstAllowedView(perms = {}) {
     'abm',
     'control-ordenes',
     'ecommerce-imagenweb',
+    'ecommerce-panel',
     'cajas',
     'cajas-cierre',
     'facturas',
@@ -9112,12 +9403,26 @@ async function loadCurrentUser() {
     }
     ecommerceWatermarkLogoUrl = getWatermarkLogoByLocal(data?.local);
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
+    const hasEcommerceSubPerms =
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel');
+    normalizeEcommercePermissions(currentPermissions, hasEcommerceSubPerms);
     applyMenuPermissions(currentPermissions);
-    const firstAllowed = getFirstAllowedView(currentPermissions);
-    if (!firstAllowed && viewNoPermission) {
-      switchView('no-permission');
+    const path = window.location.pathname || '';
+    const viewParam = new URLSearchParams(window.location.search || '').get('view');
+    if (path.startsWith('/consultadetalladaecomerce')) {
+      switchView('ecommerce-panel-detail');
+      ecommercePanelDetailContext = getEcommerceDetailParams();
+      await loadEcommercePanelDetail(ecommercePanelDetailContext);
+    } else if (viewParam) {
+      switchView(viewParam);
     } else {
-      switchView(firstAllowed);
+      const firstAllowed = getFirstAllowedView(currentPermissions);
+      if (!firstAllowed && viewNoPermission) {
+        switchView('no-permission');
+      } else {
+        switchView(firstAllowed);
+      }
     }
     if (Number.isFinite(Number(data.sessionIdleMinutes))) {
       sessionIdleMinutes = Number(data.sessionIdleMinutes) || sessionIdleMinutes;
@@ -10137,7 +10442,11 @@ const permissionGroups = [
   },
   {
     title: 'E-Comerce',
-    items: [{ key: 'ecommerce', label: 'E-Comerce' }],
+    items: [
+      { key: 'ecommerce', label: 'E-Comerce' },
+      { key: 'ecommerce-imagenweb', label: 'ImagenWeb' },
+      { key: 'ecommerce-panel', label: 'Panel' },
+    ],
   },
   {
     title: 'Configuracion',
@@ -10160,6 +10469,16 @@ function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
 }
 
+function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
+  if (!perms.ecommerce) return perms;
+  if (hasSubPerms) return perms;
+  if (!perms['ecommerce-imagenweb'] && !perms['ecommerce-panel']) {
+    perms['ecommerce-imagenweb'] = true;
+    perms['ecommerce-panel'] = true;
+  }
+  return perms;
+}
+
 async function loadRoles() {
   if (rolesStatus) rolesStatus.textContent = 'Cargando roles...';
   const res = await fetchJSON('/api/roles');
@@ -10177,11 +10496,16 @@ async function loadRolePermissions(roleId) {
   if (rolesStatus) rolesStatus.textContent = 'Cargando permisos...';
   const res = await fetchJSON(`/api/roles/${encodeURIComponent(roleId)}/permissions`);
   const perms = buildEmptyPermissions();
+  let hasEcommerceSubPerms = false;
   (res.data || []).forEach((row) => {
     if (row.permiso in perms) {
       perms[row.permiso] = !!row.habilitado;
+      if (row.permiso === 'ecommerce-imagenweb' || row.permiso === 'ecommerce-panel') {
+        hasEcommerceSubPerms = true;
+      }
     }
   });
+  normalizeEcommercePermissions(perms, hasEcommerceSubPerms);
   const role = rolesData.find((r) => r.id === roleId);
   if (role) role.permissions = perms;
   if (rolesStatus) rolesStatus.textContent = '';
@@ -10219,6 +10543,7 @@ function renderPermissions() {
   const submenuMap = {
     'pedidos-menu': ['pedidos', 'pedidos-todos'],
     cajas: ['cajas-cierre'],
+    ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
   };
   const submenuKeys = new Set(Object.values(submenuMap).flat());
 
@@ -10603,7 +10928,14 @@ function initMenu() {
         if (parentBtn) parentBtn.classList.add('active');
       }
       if (btn.classList.contains('logout')) return;
-      switchView(btn.dataset.target);
+      const target = btn.dataset.target;
+      if (target === 'ecommerce-panel') {
+        const url = `${window.location.origin}/?view=ecommerce-panel`;
+        window.open(url, '_blank', 'noopener');
+        if (mqMobile.matches) toggleMenu(false);
+        return;
+      }
+      switchView(target);
       if (mqMobile.matches) toggleMenu(false);
     });
   });
@@ -11400,6 +11732,8 @@ function switchView(target) {
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
+      viewEcommercePanel,
+      viewEcommercePanelDetail,
       viewCajas,
       viewCajasCierre,
       viewConfiguracion,
@@ -11431,6 +11765,8 @@ function switchView(target) {
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
+      viewEcommercePanel,
+      viewEcommercePanelDetail,
       viewCajas,
       viewCajasCierre,
     viewConfiguracion,
@@ -11468,6 +11804,11 @@ function switchView(target) {
     loadControlOrdenes();
   } else if (target === 'ecommerce-imagenweb') {
     viewEcommerceImagenweb.classList.remove('hidden');
+  } else if (target === 'ecommerce-panel') {
+    viewEcommercePanel.classList.remove('hidden');
+    loadEcommercePanel();
+  } else if (target === 'ecommerce-panel-detail') {
+    viewEcommercePanelDetail.classList.remove('hidden');
   } else if (target === 'cajas') {
     viewCajas.classList.remove('hidden');
   } else if (target === 'cajas-cierre') {
@@ -11516,6 +11857,8 @@ initMercaderia();
 initAbm();
 initControlOrdenes();
 initEcommerceImagenweb();
+initEcommercePanel();
+initEcommercePanelDetail();
 initCajasCierre();
 initFacturas();
 initComisiones();
