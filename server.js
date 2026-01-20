@@ -1213,37 +1213,30 @@ app.get('/api/ordencheckoutInDiff', requireAuth, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT
          ctrl.nropedido,
-         tn.articulo,
-         tn.detalle,
-         tn.TNCantidad,
-         tn.TNPrecio,
+         oa.articulo,
+         MAX(oa.detalle) AS detalle,
+         SUM(oa.cantidad) AS TNCantidad,
+         MAX(oa.precio) AS TNPrecio,
          local.CantidadLocal,
          local.PrecioLocal
        FROM controlpedidos ctrl
+       INNER JOIN ordenesarticulos oa ON oa.id_controlPedidos = ctrl.id
        INNER JOIN (
          SELECT
-           oa.id_controlPedidos,
-           oa.articulo,
-           MAX(oa.detalle) AS detalle,
-           SUM(oa.cantidad) AS TNCantidad,
-           MAX(oa.precio) AS TNPrecio
-         FROM ordenesarticulos oa
-         GROUP BY oa.id_controlPedidos, oa.articulo
-       ) AS tn ON tn.id_controlPedidos = ctrl.id
-       INNER JOIN (
-         SELECT
-           ptemp.nropedido,
-           ptemp.articulo,
-           SUM(ptemp.cantidad) AS CantidadLocal,
-           MAX(ptemp.PrecioUnitario) AS PrecioLocal
-         FROM pedidotemp ptemp
-         GROUP BY ptemp.nropedido, ptemp.articulo
+           nropedido,
+           articulo,
+           SUM(cantidad) AS CantidadLocal,
+           MAX(PrecioUnitario) AS PrecioLocal
+         FROM pedidotemp
+         WHERE nropedido = ?
+         GROUP BY nropedido, articulo
        ) AS local
          ON local.nropedido = ctrl.nropedido
-        AND local.articulo = tn.articulo
+        AND local.articulo = oa.articulo
        WHERE ctrl.nropedido = ?
+       GROUP BY ctrl.nropedido, oa.articulo
        HAVING TNCantidad <> CantidadLocal OR TNPrecio <> PrecioLocal`,
-      [nropedido]
+      [nropedido, nropedido]
     );
     res.json(rows || []);
   } catch (error) {
