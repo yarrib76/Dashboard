@@ -276,6 +276,7 @@ let controlOrdenesTotal = 0;
 let controlOrdenesTotalPages = 1;
 let controlOrdenesEstadoDefaulted = false;
 let controlOrdenesOrdenTimer = null;
+let controlOrdenesFilterTimer = null;
 let cajasCierreRows = [];
 const controlOrdenesFilters = {
   orden: '',
@@ -7704,6 +7705,21 @@ function buildControlOrdenesParams(forceOrden) {
   if (controlOrdenesSearchTerm) {
     params.set('q', controlOrdenesSearchTerm);
   }
+  if (controlOrdenesFilters.orden) {
+    params.set('fOrden', controlOrdenesFilters.orden);
+  }
+  if (controlOrdenesFilters.articulo) {
+    params.set('fArticulo', controlOrdenesFilters.articulo);
+  }
+  if (controlOrdenesFilters.detalle) {
+    params.set('fDetalle', controlOrdenesFilters.detalle);
+  }
+  if (controlOrdenesFilters.fecha) {
+    params.set('fFecha', controlOrdenesFilters.fecha);
+  }
+  if (controlOrdenesFilters.proveedor) {
+    params.set('fProveedor', controlOrdenesFilters.proveedor);
+  }
   params.set('page', String(controlOrdenesPage));
   params.set('pageSize', String(controlOrdenesPageSize));
   return params;
@@ -7732,36 +7748,28 @@ function buildControlOrdenesExportParams() {
   if (controlOrdenesSearchTerm) {
     params.set('q', controlOrdenesSearchTerm);
   }
+  if (controlOrdenesFilters.orden) {
+    params.set('fOrden', controlOrdenesFilters.orden);
+  }
+  if (controlOrdenesFilters.articulo) {
+    params.set('fArticulo', controlOrdenesFilters.articulo);
+  }
+  if (controlOrdenesFilters.detalle) {
+    params.set('fDetalle', controlOrdenesFilters.detalle);
+  }
+  if (controlOrdenesFilters.fecha) {
+    params.set('fFecha', controlOrdenesFilters.fecha);
+  }
+  if (controlOrdenesFilters.proveedor) {
+    params.set('fProveedor', controlOrdenesFilters.proveedor);
+  }
   params.set('page', '1');
   params.set('pageSize', '100000');
   return params;
 }
 
 function applyControlOrdenesFilters() {
-  let rows = controlOrdenesRows.slice();
-  if (controlOrdenesFilters.orden) {
-    rows = rows.filter((row) => String(row.orden || '').includes(controlOrdenesFilters.orden));
-  }
-  if (controlOrdenesFilters.articulo) {
-    rows = rows.filter((row) => textMatchesAllTokens(row.articulo, controlOrdenesFilters.articulo));
-  }
-  if (controlOrdenesFilters.detalle) {
-    rows = rows.filter((row) => textMatchesAllTokens(row.detalle, controlOrdenesFilters.detalle));
-  }
-  if (controlOrdenesFilters.fecha) {
-    rows = rows.filter((row) => String(row.fecha || '').includes(controlOrdenesFilters.fecha));
-  }
-  if (controlOrdenesFilters.proveedor) {
-    rows = rows.filter((row) => textMatchesAllTokens(row.proveedor, controlOrdenesFilters.proveedor));
-  }
-  if (controlOrdenesSearchTerm) {
-    rows = rows.filter((row) =>
-      textMatchesAllTokens(
-        `${row.orden} ${row.articulo} ${row.detalle} ${row.proveedor} ${row.observaciones}`,
-        controlOrdenesSearchTerm
-      )
-    );
-  }
+  const rows = controlOrdenesRows.slice();
   controlOrdenesFiltered = rows;
   renderControlOrdenesTable(rows);
   renderControlOrdenesCards(rows);
@@ -8143,7 +8151,11 @@ function initControlOrdenes() {
     if (!el) return;
     el.addEventListener('input', (e) => {
       controlOrdenesFilters[key] = (e.target.value || '').trim().toLowerCase();
-      applyControlOrdenesFilters();
+      if (controlOrdenesFilterTimer) clearTimeout(controlOrdenesFilterTimer);
+      controlOrdenesFilterTimer = setTimeout(() => {
+        controlOrdenesPage = 1;
+        loadControlOrdenes({ page: 1 });
+      }, 300);
     });
   });
   if (controlOrdenesTableBody) {

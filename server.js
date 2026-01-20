@@ -3132,11 +3132,11 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
   }
 });
 
-app.get('/api/control-ordenes', requireAuth, async (req, res) => {
-  try {
-    const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(100000, Math.max(1, Number(req.query.pageSize) || 10));
-    const offset = (page - 1) * pageSize;
+  app.get('/api/control-ordenes', requireAuth, async (req, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const pageSize = Math.min(100000, Math.max(1, Number(req.query.pageSize) || 10));
+      const offset = (page - 1) * pageSize;
     const estadosRaw = String(req.query.estado || '').trim();
     const estados = estadosRaw
       ? estadosRaw
@@ -3144,35 +3144,65 @@ app.get('/api/control-ordenes', requireAuth, async (req, res) => {
           .map((v) => Number(v))
           .filter((v) => [0, 1, 2].includes(v))
       : [];
-    const desde = req.query.desde || '';
-    const hasta = req.query.hasta || '';
-    const nroOrden = String(req.query.nroOrden || '').trim();
-    const searchTerm = String(req.query.q || '').trim();
+      const desde = req.query.desde || '';
+      const hasta = req.query.hasta || '';
+      const nroOrden = String(req.query.nroOrden || '').trim();
+      const filterOrden = String(req.query.fOrden || '').trim();
+      const filterArticulo = String(req.query.fArticulo || '').trim();
+      const filterDetalle = String(req.query.fDetalle || '').trim();
+      const filterFecha = String(req.query.fFecha || '').trim();
+      const filterProveedor = String(req.query.fProveedor || '').trim();
+      const searchTerm = String(req.query.q || '').trim();
 
-    const conditions = [
-      'c.TipoOrden IS NOT NULL',
-      'c.TipoOrden = 2',
-      'c.Cantidad <> 0',
-    ];
-    const params = [];
+      const conditions = [
+        'c.TipoOrden IS NOT NULL',
+        'c.TipoOrden = 2',
+        'c.Cantidad <> 0',
+      ];
+      const params = [];
+      const addTokenConditions = (field, value) => {
+        const tokens = String(value || '')
+          .split(/\s+/)
+          .map((token) => token.trim())
+          .filter(Boolean);
+        tokens.forEach((token) => {
+          conditions.push(`${field} LIKE ?`);
+          params.push(`%${token}%`);
+        });
+      };
 
-    if (estados.length) {
-      conditions.push(`c.ordenControlada IN (${estados.map(() => '?').join(',')})`);
-      params.push(...estados);
-    }
+      if (estados.length) {
+        conditions.push(`c.ordenControlada IN (${estados.map(() => '?').join(',')})`);
+        params.push(...estados);
+      }
     if (desde && hasta) {
       conditions.push('DATE(c.FechaCompra) BETWEEN ? AND ?');
       params.push(desde, hasta);
     }
-    if (nroOrden) {
-      conditions.push('c.OrdenCompra = ?');
-      params.push(nroOrden);
-    }
-    if (searchTerm) {
-      const like = `%${searchTerm}%`;
-      conditions.push(
-        '(c.OrdenCompra LIKE ? OR c.Articulo LIKE ? OR c.Detalle LIKE ? OR c.Observaciones LIKE ? OR c.Proveedor LIKE ?)'
-      );
+      if (nroOrden) {
+        conditions.push('c.OrdenCompra = ?');
+        params.push(nroOrden);
+      }
+      if (filterOrden) {
+        addTokenConditions('c.OrdenCompra', filterOrden);
+      }
+      if (filterArticulo) {
+        addTokenConditions('c.Articulo', filterArticulo);
+      }
+      if (filterDetalle) {
+        addTokenConditions('c.Detalle', filterDetalle);
+      }
+      if (filterFecha) {
+        addTokenConditions(`DATE_FORMAT(c.FechaCompra, '%Y-%m-%d')`, filterFecha);
+      }
+      if (filterProveedor) {
+        addTokenConditions('c.Proveedor', filterProveedor);
+      }
+      if (searchTerm) {
+        const like = `%${searchTerm}%`;
+        conditions.push(
+          '(c.OrdenCompra LIKE ? OR c.Articulo LIKE ? OR c.Detalle LIKE ? OR c.Observaciones LIKE ? OR c.Proveedor LIKE ?)'
+        );
       params.push(like, like, like, like, like);
     }
 
