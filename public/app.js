@@ -8313,8 +8313,14 @@ const cajasCierreState = { rows: [], query: '', page: 1, pageSize: 10 };
 const cajasGastosState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
 const cajasFacturasState = { rows: [], query: '', page: 1, pageSize: 10 };
 const cajasFacturaItemsState = { rows: [], query: '', page: 1, pageSize: 10 };
-const cajasControlState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
-const cajasControlFacturasState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '', tipo: 0 };
+  const cajasControlState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '' };
+  const cajasControlFacturasState = { rows: [], query: '', page: 1, pageSize: 10, fecha: '', tipo: 0 };
+  function resolveCajasControlTipoPagoLabel(tipoPago) {
+    const match = (cajasControlState.rows || []).find(
+      (row) => String(row.idTipoPago) === String(tipoPago)
+    );
+    return match?.tipoPago || String(tipoPago || '').trim();
+  }
 
 function filterRows(rows, query, keys) {
   if (!query) return rows;
@@ -8778,14 +8784,12 @@ function openCajasControl(fecha) {
   loadCajasControl(fecha);
 }
 
-async function loadCajasControlFacturas(fecha, tipoPago) {
-  if (!fecha || !tipoPago) return;
-  if (cajasControlFacturasStatus) cajasControlFacturasStatus.textContent = 'Cargando...';
-  if (cajasControlFacturasTitle)
-    cajasControlFacturasTitle.textContent = `Facturas - ${fecha}`;
-  if (cajasControlFacturasTableBody) cajasControlFacturasTableBody.innerHTML = '';
-  try {
-    const res = await fetch(
+  async function loadCajasControlFacturas(fecha, tipoPago) {
+    if (!fecha || !tipoPago) return;
+    if (cajasControlFacturasStatus) cajasControlFacturasStatus.textContent = 'Cargando...';
+    if (cajasControlFacturasTableBody) cajasControlFacturasTableBody.innerHTML = '';
+    try {
+      const res = await fetch(
       `/api/cajas/control-facturas?fecha=${encodeURIComponent(fecha)}&id_tipo_pago=${encodeURIComponent(
         tipoPago
       )}`,
@@ -8810,14 +8814,18 @@ async function loadCajasControlFacturas(fecha, tipoPago) {
   }
 }
 
-function openCajasControlFacturas(fecha, tipoPago) {
-  if (!cajasControlFacturasOverlay) return;
-  if (cajasControlFacturasSearch) cajasControlFacturasSearch.value = '';
-  cajasControlFacturasState.query = '';
-  cajasControlFacturasState.page = 1;
-  cajasControlFacturasOverlay.classList.add('open');
-  loadCajasControlFacturas(fecha, tipoPago);
-}
+  function openCajasControlFacturas(fecha, tipoPago) {
+    if (!cajasControlFacturasOverlay) return;
+    if (cajasControlFacturasSearch) cajasControlFacturasSearch.value = '';
+    cajasControlFacturasState.query = '';
+    cajasControlFacturasState.page = 1;
+    if (cajasControlFacturasTitle) {
+      const tipoPagoLabel = resolveCajasControlTipoPagoLabel(tipoPago);
+      cajasControlFacturasTitle.textContent = `Cierre de Caja Fecha: ${fecha} Tipo de Pago: ${tipoPagoLabel}`;
+    }
+    cajasControlFacturasOverlay.classList.add('open');
+    loadCajasControlFacturas(fecha, tipoPago);
+  }
 
 async function saveCajasGasto() {
   if (!cajasGastoNombre || !cajasGastoImporte) return;
