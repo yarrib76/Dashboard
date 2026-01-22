@@ -154,6 +154,7 @@ function getTnubeConnection(storeId) {
   return connection;
 }
 
+  // Envoltorio simple para llamadas a la API de Tienda Nube (headers + JSON).
   async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
     const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
     const headers = {
@@ -193,7 +194,8 @@ function redondeoDecimal(precioVenta) {
   return precio;
 }
 
-async function computePrecioVenta(conn, articuloRow) {
+  // Replica helper Precio en PHP: calcula precio de venta segun manual/convertido y tipo de cambio.
+  async function computePrecioVenta(conn, articuloRow) {
   const precioManual = Number(articuloRow.PrecioManual) || 0;
   const precioConvertido = Number(articuloRow.PrecioConvertido) || 0;
   if (!precioManual && !precioConvertido) return null;
@@ -3136,6 +3138,7 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
   }
 });
 
+  // Control Ordenes: listado con filtros/paginado del lado del servidor.
   app.get('/api/control-ordenes', requireAuth, async (req, res) => {
     try {
       const page = Math.max(1, Number(req.query.page) || 1);
@@ -4593,7 +4596,7 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
   }
 });
 
-app.get('/api/salon/vendedoras', async (req, res) => {
+  app.get('/api/salon/vendedoras', async (req, res) => {
   try {
     const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
     const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
@@ -4617,7 +4620,49 @@ app.get('/api/salon/vendedoras', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar ventas por vendedora (salón)', error: error.message });
   }
-});
+  });
+
+  app.get('/api/salon/vendedoras/detalle', async (req, res) => {
+    try {
+      const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+      const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+      const fechaDesde = desdeDate.toISOString().slice(0, 10);
+      const fechaHasta = hastaDate.toISOString().slice(0, 10);
+      const vendedora = String(req.query.vendedora || '').trim();
+      if (!vendedora) return res.status(400).json({ message: 'vendedora requerida' });
+
+      const conditions = [
+        'DATE(f.fecha) BETWEEN ? AND ?',
+        '(cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)',
+      ];
+      const params = [fechaDesde, fechaHasta];
+      if (vendedora === 'Sin vendedora') {
+        conditions.push('(f.vendedora IS NULL OR f.vendedora = "")');
+      } else {
+        conditions.push('f.vendedora = ?');
+        params.push(vendedora);
+      }
+
+      const [rows] = await pool.query(
+        `SELECT
+           CONCAT(cli.nombre, ' ', cli.apellido) AS cliente,
+           f.NroFactura AS factura,
+           f.Total AS total,
+           DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
+           DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora
+         FROM facturah f
+         INNER JOIN clientes cli ON cli.id_clientes = f.id_clientes
+         LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+         WHERE ${conditions.join(' AND ')}
+         ORDER BY f.fecha DESC, f.NroFactura DESC`,
+        params
+      );
+
+      res.json({ desde: fechaDesde, hasta: fechaHasta, data: rows || [] });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar ventas por vendedora (salón)', error: error.message });
+    }
+  });
 
 app.post('/api/ia/chat', express.json({ limit: '2mb' }), async (req, res) => {
   try {
@@ -4939,7 +4984,8 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
   }
 });
 
-app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  // Endpoint legacy de OpenAI (se mantiene por compatibilidad).
+  app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
   let tmpDir = null;
   try {
     const { imageDataUrl, prompt, maskDataUrl } = req.body || {};
@@ -5025,7 +5071,8 @@ app.post('/api/ecommerce/imagenweb', requireAuth, express.json({ limit: '35mb' }
   }
 });
 
-app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  // Proveedor Clipdrop para ImagenWeb (quita fondo).
+  app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
   try {
     const { imageDataUrl } = req.body || {};
     if (!imageDataUrl) {
@@ -5084,7 +5131,8 @@ app.post('/api/ecommerce/imagenweb/clipdrop', requireAuth, express.json({ limit:
   }
 });
 
-app.post('/api/ecommerce/imagenweb/photoroom', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
+  // Proveedor PhotoRoom para ImagenWeb (quita fondo).
+  app.post('/api/ecommerce/imagenweb/photoroom', requireAuth, express.json({ limit: '35mb' }), async (req, res) => {
   try {
     const { imageDataUrl } = req.body || {};
     if (!imageDataUrl) {
@@ -5140,7 +5188,8 @@ app.post('/api/ecommerce/imagenweb/photoroom', requireAuth, express.json({ limit
   }
 });
 
-app.get('/api/ecommerce/panel', requireAuth, async (req, res) => {
+  // Panel E-Commerce: resumen (una fila por corrida).
+  app.get('/api/ecommerce/panel', requireAuth, async (req, res) => {
   try {
     const sql = `
       SELECT
@@ -5191,7 +5240,8 @@ app.get('/api/ecommerce/panel', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/ecommerce/panel/detail', requireAuth, async (req, res) => {
+  // Panel E-Commerce: detalle (items por corrida).
+  app.get('/api/ecommerce/panel/detail', requireAuth, async (req, res) => {
   try {
     const idCorrida = req.query.id_corrida;
     if (!idCorrida) {
@@ -5241,7 +5291,8 @@ app.get('/api/ecommerce/panel/detail', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/tiendanubesincroArticulos', requireAuth, async (req, res) => {
+  // Sincro Tienda Nube: actualiza publicado y precio/stock de variantes.
+  app.get('/api/tiendanubesincroArticulos', requireAuth, async (req, res) => {
   let conn;
   try {
     const idCorrida = String(req.query.id_corrida || '').trim();

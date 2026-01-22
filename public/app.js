@@ -240,6 +240,8 @@ let currentPedidosScope = 'vendedora';
 let pedidosListaServerSide = false;
 let pedidosListaVariant = '';
 let pedidoItemsTable = null;
+let salonVendedoraTable = null;
+let salonVentasDetalleCache = [];
 let pedidoNotasCurrentId = null;
 let pedidoNotasEditingId = null;
 let currentPedidosTipo = '';
@@ -356,6 +358,11 @@ const pedidosVendedoraListaTitle = document.getElementById('pedidos-vendedora-li
 const pedidosVendedoraListaClose = document.getElementById('pedidos-vendedora-lista-close');
 const pedidosVendedoraListaTableEl = document.getElementById('pedidos-vendedora-lista-table');
 const pedidosVendedoraListaStatus = document.getElementById('pedidos-vendedora-lista-status');
+const salonVendedoraOverlay = document.getElementById('salon-vendedora-overlay');
+const salonVendedoraTitle = document.getElementById('salon-vendedora-title');
+const salonVendedoraClose = document.getElementById('salon-vendedora-close');
+const salonVendedoraTableEl = document.getElementById('salon-vendedora-table');
+const salonVendedoraStatus = document.getElementById('salon-vendedora-status');
 const pedidoCardsEl = document.getElementById('pedido-cards');
 const pedidoCardsSearchInput = document.getElementById('pedido-cards-search');
 const pedidoItemsOverlay = document.getElementById('pedido-items-overlay');
@@ -924,6 +931,13 @@ function renderSalonVendedorasChart(rows) {
   const labels = rows.map((r) => r.vendedora || 'Sin vendedora');
   const values = rows.map((r) => Number(r.cantidad) || 0);
   const totalV = values.reduce((acc, v) => acc + v, 0);
+  const handleClick = (_event, elements) => {
+    if (!elements?.length) return;
+    const idx = elements[0].index;
+    const vendedora = labels[idx];
+    if (!vendedora) return;
+    openSalonVendedoraModal(vendedora);
+  };
   if (chartSalonVendedoras) {
     chartSalonVendedoras.data.labels = labels;
     chartSalonVendedoras.data.datasets[0].data = values;
@@ -931,6 +945,7 @@ function renderSalonVendedorasChart(rows) {
       const pct = totalV > 0 ? ((ctx.parsed.y / totalV) * 100).toFixed(1) : '0.0';
       return `${ctx.parsed.y} ventas (${pct}%)`;
     };
+    chartSalonVendedoras.options.onClick = handleClick;
     chartSalonVendedoras.update();
     return;
   }
@@ -950,6 +965,7 @@ function renderSalonVendedorasChart(rows) {
     },
     options: {
       responsive: true,
+      onClick: handleClick,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -968,6 +984,81 @@ function renderSalonVendedorasChart(rows) {
   });
 }
 
+
+function openSalonVendedoraModal(vendedora) {
+  if (!salonVendedoraOverlay || !vendedora) return;
+  if (salonVendedoraTitle) salonVendedoraTitle.textContent = `Ventas - ${vendedora}`;
+  salonVentasDetalleCache = [];
+  if (salonVendedoraTable) {
+    salonVendedoraTable.clear();
+    salonVendedoraTable.draw();
+  }
+  salonVendedoraOverlay.classList.add('open');
+  loadSalonVendedoraDetalle(vendedora);
+}
+
+async function loadSalonVendedoraDetalle(vendedora) {
+  if (!salonDesdeInput || !salonHastaInput) return;
+  const desde = salonDesdeInput.value || new Date().toISOString().slice(0, 10);
+  const hasta = salonHastaInput.value || desde;
+  if (salonVendedoraStatus) salonVendedoraStatus.textContent = 'Cargando...';
+  try {
+    const params = new URLSearchParams({ desde, hasta, vendedora });
+    const res = await fetchJSON(`/api/salon/vendedoras/detalle?${params.toString()}`);
+    salonVentasDetalleCache = Array.isArray(res.data) ? res.data : [];
+    renderSalonVendedoraTable(salonVentasDetalleCache);
+    if (salonVendedoraStatus) {
+      salonVendedoraStatus.textContent = salonVentasDetalleCache.length
+        ? `${salonVentasDetalleCache.length} ventas`
+        : 'Sin ventas.';
+    }
+  } catch (error) {
+    if (salonVendedoraStatus)
+      salonVendedoraStatus.textContent = error.message || 'Error al cargar ventas.';
+  }
+}
+
+function renderSalonVendedoraTable(rows) {
+  if (!salonVendedoraTableEl) return;
+  const data = rows.map((row) => ({
+    cliente: row.cliente || '',
+    factura: row.factura || '',
+    total: Number(row.total) || 0,
+    fecha: row.fecha || '',
+    hora: row.hora || '',
+  }));
+  if (salonVendedoraTable) {
+    salonVendedoraTable.clear();
+    salonVendedoraTable.rows.add(data);
+    salonVendedoraTable.draw();
+    return;
+  }
+  salonVendedoraTable = new DataTable('#salon-vendedora-table', {
+    data,
+    pageLength: 10,
+    order: [[3, 'desc']],
+    columns: [
+      { data: 'cliente' },
+      { data: 'factura' },
+      { data: 'total', render: (val) => formatMoney(val) },
+      { data: 'fecha' },
+      { data: 'hora' },
+    ],
+    language: {
+      search: 'Buscar:',
+      lengthMenu: 'Mostrar _MENU_',
+      info: 'Mostrando _START_ a _END_ de _TOTAL_',
+      infoEmpty: 'Sin resultados',
+      emptyTable: 'Sin resultados.',
+      paginate: {
+        first: 'Primero',
+        last: 'Ultimo',
+        next: 'Siguiente',
+        previous: 'Anterior',
+      },
+    },
+  });
+}
 
 function initPedidosResumen() {
   if (!pedidosDesdeInput || !pedidosHastaInput) return;
@@ -3537,6 +3628,7 @@ async function printPedidoTicketPdf() {
   }
 }
 
+// ImagenWeb: cargar imagen, enviar a proveedor, cuadrar a fondo blanco, aplicar marca de agua.
 function initEcommerceImagenweb() {
   if (!viewEcommerceImagenweb) return;
   if (ecommerceWatermarkSize && ecommerceWatermarkSizeValue) {
@@ -3580,8 +3672,8 @@ function initEcommerceImagenweb() {
       reader.readAsDataURL(file);
     });
   }
-  if (ecommerceImageSend) {
-    ecommerceImageSend.addEventListener('click', async () => {
+    if (ecommerceImageSend) {
+      ecommerceImageSend.addEventListener('click', async () => {
       if (!ecommerceImageDataUrl) {
         if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Selecciona una imagen.';
         return;
@@ -3596,12 +3688,12 @@ function initEcommerceImagenweb() {
         if (ecommerceImageCredits) ecommerceImageCredits.textContent = '';
         const endpoint =
           provider === 'photoroom' ? '/api/ecommerce/imagenweb/photoroom' : '/api/ecommerce/imagenweb/clipdrop';
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ imageDataUrl: ecommerceImageDataUrl }),
-        });
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ imageDataUrl: ecommerceImageDataUrl }),
+          });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.message || 'No se pudo generar la imagen.');
         if (!data.imageDataUrl) throw new Error('Respuesta sin imagen.');
@@ -3846,6 +3938,7 @@ function initEcommercePanel() {
   }
 }
 
+// Panel detalle: sincroniza en Tienda Nube y muestra modal de progreso/resultado.
 function initEcommercePanelDetail() {
   if (ecommercePanelDetailBack) {
     ecommercePanelDetailBack.addEventListener('click', () => {
@@ -7682,6 +7775,7 @@ function updateControlOrdenesBuscarState() {
   return;
 }
 
+// Control Ordenes: filtros/paginado se envian al servidor (dataset completo).
 function buildControlOrdenesParams(forceOrden) {
   const params = new URLSearchParams();
   const estados = getControlOrdenesEstadoSelection();
@@ -9588,6 +9682,16 @@ if (pedidosTodosGrid) {
   if (pedidosVendedoraListaOverlay) {
     pedidosVendedoraListaOverlay.addEventListener('click', (e) => {
       if (e.target === pedidosVendedoraListaOverlay) pedidosVendedoraListaOverlay.classList.remove('open');
+    });
+  }
+  if (salonVendedoraClose) {
+    salonVendedoraClose.addEventListener('click', () => {
+      salonVendedoraOverlay?.classList.remove('open');
+    });
+  }
+  if (salonVendedoraOverlay) {
+    salonVendedoraOverlay.addEventListener('click', (e) => {
+      if (e.target === salonVendedoraOverlay) salonVendedoraOverlay.classList.remove('open');
     });
   }
   if (pedidosVendedoraListaTableEl) {
