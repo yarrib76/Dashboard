@@ -154,26 +154,30 @@ function getTnubeConnection(storeId) {
   return connection;
 }
 
-async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
-  const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
-  const headers = {
-    'Content-Type': 'application/json',
-    Authentication: `bearer ${token}`,
+  async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
+    const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
+    const headers = {
+      'Content-Type': 'application/json',
+      Authentication: `bearer ${token}`,
     'User-Agent': appName || 'Dashboard',
     Accept: 'application/json',
   };
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: payload ? JSON.stringify(payload) : undefined,
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `TiendaNube error ${response.status}`);
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      const err = new Error(text || `TiendaNube error ${response.status}`);
+      err.status = response.status;
+      err.body = text;
+      err.url = url;
+      throw err;
+    }
+    if (response.status === 204) return null;
+    return response.json().catch(() => null);
   }
-  if (response.status === 204) return null;
-  return response.json().catch(() => null);
-}
 
 function redondeoDecimal(precioVenta) {
   let precio = Number(precioVenta) || 0;
@@ -210,7 +214,7 @@ async function computePrecioVenta(conn, articuloRow) {
   if (moneda === 'ARG') {
     return redondeoDecimal(precioConvertido * gastos * ganancia);
   }
-  const [dolarRows] = await conn.query(`SELECT PrecioDolar FROM ${DB_NAME}.dolar LIMIT 1`);
+    const [dolarRows] = await conn.query(`SELECT PrecioDolar FROM ${DB_NAME}.preciodolar LIMIT 1`);
   const dolar = dolarRows[0] || {};
   const precioEnPesos = precioConvertido * (Number(dolar.PrecioDolar) || 0);
   return redondeoDecimal(precioEnPesos * gastos * ganancia);
@@ -5390,12 +5394,12 @@ app.get('/api/tiendanubesincroArticulos', requireAuth, async (req, res) => {
           await updateStatus(row.e_id, 'Excluido');
           countOk += 1;
         }
-      } catch (_err) {
-        try {
-          await updateStatus(row.e_id, 'ErrorAPI');
-        } catch (_updateErr) {
-          /* ignore */
-        }
+        } catch (_err) {
+          try {
+            await updateStatus(row.e_id, 'ErrorAPI');
+          } catch (_updateErr) {
+            /* ignore */
+          }
         countError += 1;
       }
     }

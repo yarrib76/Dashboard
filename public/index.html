@@ -895,11 +895,14 @@
       <div class="modal-header">
         <h3>Sincronizando</h3>
       </div>
-      <div class="modal-body">
-        <p class="status">Procesando sincronizacion...</p>
+        <div class="modal-body">
+          <div class="sync-loading">
+            <span class="sync-spinner" aria-hidden="true"></span>
+            <p class="status">Procesando sincronizacion<span class="sync-dots" aria-hidden="true"></span></p>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
 
   <div class="modal-overlay" id="ecommerce-sync-finish">
     <div class="modal">
