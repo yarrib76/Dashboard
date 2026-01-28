@@ -676,9 +676,17 @@ input[type='month'] {
 }
 
 .status {
-  font-size: 13px;
+  font-size: 16px;
   color: var(--muted);
   margin: 12px 0 0;
+}
+
+.status.status--ok {
+  color: var(--success);
+}
+
+.status.status--error {
+  color: var(--danger);
 }
 
 .stat-grid {
@@ -4072,4 +4080,275 @@ body.theme-light select:focus {
 .gastos-form input,
 .gastos-form select {
   min-width: 120px;
+}
+
+.pedido-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 2fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.pedido-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pedido-item-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.input-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input-action input {
+  flex: 1;
+}
+
+.pedido-item-form input {
+  min-width: 140px;
+}
+
+.pedido-item-form button {
+  min-width: 110px;
+}
+
+.btn-icon {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.clear-btn {
+  color: #fff;
+  background: #d64545;
+}
+
+.clear-btn:hover {
+  background: #b23636;
+}
+
+
+.pedido-totals {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.checkbox-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+@media (max-width: 960px) {
+  .pedido-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1200px) {
+  .page {
+    max-width: 1400px;
+  }
+}
+
+.pedido-legacy {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.pedido-legacy .table-wrap {
+  max-width: 820px;
+  width: 820px;
+  margin-top: 0;
+  margin-bottom: 6px;
+  position: relative;
+  top: -220px;
+}
+
+.pedido-legacy-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(220px, 0.9fr) minmax(220px, 0.8fr);
+  gap: 18px;
+  align-items: start;
+  margin-bottom: -28px;
+}
+
+.pedido-legacy-left,
+.pedido-legacy-mid,
+.pedido-legacy-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pedido-legacy label span,
+.pedido-legacy .pedido-legacy-field span,
+.pedido-legacy .pedido-legacy-discount label,
+.pedido-legacy input,
+.pedido-legacy select {
+  font-size: 1.3em;
+}
+
+.pedido-legacy-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pedido-legacy-input input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.pedido-legacy-mid .pedido-legacy-field {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  align-items: center;
+  gap: 12px;
+}
+
+.pedido-legacy-discount {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pedido-legacy-discount label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: inherit;
+  color: #5c5c5c;
+}
+
+.pedido-legacy-discount label span {
+  font-size: 13px;
+}
+
+.pedido-legacy-discount select {
+  width: 110px;
+}
+
+.pedido-legacy-mid .pedido-legacy-field span {
+  font-size: 13px;
+  color: #5c5c5c;
+}
+
+.pedido-legacy-mid input {
+  width: 90px;
+}
+
+.pedido-legacy-right label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pedido-legacy-right input,
+.pedido-legacy-right select {
+  max-width: 180px;
+}
+
+.pedido-foto {
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  background: #f0f0f0;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+.pedido-foto.zoomed {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(420px, 90vw);
+  height: min(420px, 90vw);
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  background: #fff;
+  padding: 8px;
+  border-radius: 12px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+  cursor: zoom-out;
+}
+
+body.pedido-foto-open::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+}
+
+.btn-primary {
+  background: #45a2c7;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.btn-primary:hover {
+  background: #3588a7;
+}
+
+.btn-secondary {
+  background: #d9d9d9;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+#pedido-items-table th:nth-child(1),
+#pedido-items-table td:nth-child(1) {
+  width: 180px;
+}
+
+#pedido-items-table th:nth-child(2),
+#pedido-items-table td:nth-child(2) {
+  width: 320px;
+}
+
+#pedido-items-table {
+  display: block;
+}
+
+#pedido-items-table thead,
+#pedido-items-table tbody {
+  display: block;
+}
+
+#pedido-items-table tbody {
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+#pedido-items-table thead tr,
+#pedido-items-table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+@media (max-width: 1024px) {
+  .pedido-legacy-row {
+    grid-template-columns: 1fr;
+  }
+  .pedido-legacy .table-wrap {
+    max-width: 100%;
+  }
 }

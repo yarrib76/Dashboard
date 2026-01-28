@@ -71,6 +71,10 @@
                 <span class="icon">📚</span>
                 <span class="label">Todos</span>
               </button>
+              <button class="menu-item submenu-item" data-target="pedidos-nuevo">
+                <span class="icon">+</span>
+                <span class="label">Nuevo Pedido</span>
+              </button>
             </div>
           </div>
 
@@ -101,6 +105,10 @@
               <button class="menu-item submenu-item" data-target="cajas-cierre">
                 <span class="icon">🧮</span>
                 <span class="label">Cierre</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="cajas-nueva-factura">
+                <span class="icon">+</span>
+                <span class="label">Nueva Factura</span>
               </button>
             </div>
           </div>
@@ -655,6 +663,137 @@
     </article>
   </section>
 
+    <section class="view hidden" id="view-pedidos-nuevo">
+      <article class="card wide">
+        <div class="actions between">
+          <div>
+            <h2>Nuevo Pedido</h2>
+            <p class="status" id="pedido-nuevo-status"></p>
+          </div>
+          <div class="actions">
+            <button id="pedido-nuevo-add" type="button">Agregar articulo</button>
+            <button id="pedido-nuevo-save" type="button">Guardar pedido</button>
+          </div>
+        </div>
+        <div class="pedido-legacy">
+          <div class="pedido-legacy-row">
+            <div class="pedido-legacy-left">
+              <div class="pedido-legacy-input">
+                <input type="text" id="pedido-item-articulo" list="pedido-articulos-list" placeholder="Articulo" />
+                <datalist id="pedido-articulos-list"></datalist>
+                <button type="button" id="pedido-articulo-search" class="abm-icon-btn" title="Buscar articulo">🔍</button>
+                <button type="button" id="pedido-articulo-search-text" class="btn-secondary">Buscar</button>
+                <button type="button" id="pedido-articulo-clear" class="abm-icon-btn clear-btn" title="Limpiar articulo">✖</button>
+              </div>
+              <input type="text" id="pedido-item-detalle" placeholder="Detalle" readonly />
+              <div class="pedido-legacy-input">
+                <input type="text" id="pedido-cliente-input" list="pedido-clientes-list" placeholder="Cliente" />
+                <button type="button" id="pedido-cliente-search" class="abm-icon-btn" title="Buscar cliente">🔍</button>
+                <button type="button" id="pedido-cliente-clear" class="abm-icon-btn clear-btn" title="Limpiar cliente">✖</button>
+                <datalist id="pedido-clientes-list"></datalist>
+              </div>
+              <img id="pedido-articulo-foto" class="pedido-foto" alt="Foto articulo" />
+              <input type="hidden" id="pedido-cliente-id" />
+            </div>
+            <div class="pedido-legacy-mid">
+              <div class="pedido-legacy-field">
+                <span>Precio de Venta</span>
+                <input type="number" id="pedido-item-precio" min="0" step="0.01" placeholder="0" />
+              </div>
+              <div class="pedido-legacy-field">
+                <span>Stock</span>
+                <input type="number" id="pedido-item-stock" placeholder="0" readonly />
+              </div>
+              <div class="pedido-legacy-field">
+                <span>Cantidad</span>
+                <input type="number" id="pedido-item-cantidad" min="1" value="1" />
+              </div>
+              <div class="pedido-legacy-discount">
+                <label>
+                  <input type="checkbox" id="pedido-descuento-check" />
+                  <span>Descuento</span>
+                </label>
+                <select id="pedido-descuento-select">
+                  <option value="0">0</option>
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+              <button id="pedido-item-add" type="button" class="btn-primary">Agregar</button>
+            </div>
+            <div class="pedido-legacy-right">
+              <label>
+                <span>Pedido</span>
+                <div class="input-action">
+                  <input type="text" id="pedido-numero" readonly />
+                  <button type="button" id="pedido-buscar-open" class="abm-icon-btn" title="Buscar pedido">🔍</button>
+                  <button type="button" id="pedido-nuevo-reservar" class="btn-secondary">Nuevo</button>
+                </div>
+              </label>
+              <label>
+                <span>Vendedora</span>
+                <select id="pedido-vendedora"></select>
+              </label>
+              <label>
+                <span>Recargo</span>
+                <select id="pedido-recargo-select">
+                  <option value="0">0</option>
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="20">20</option>
+                  <option value="25">25</option>
+                  <option value="30">30</option>
+                  <option value="35">35</option>
+                  <option value="40">40</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </label>
+              <label>
+                <span>Total</span>
+                <input type="text" id="pedido-total" readonly />
+              </label>
+              <label>
+                <span>Descuento</span>
+                <input type="text" id="pedido-descuento-total" readonly />
+              </label>
+              <label>
+                <span>Orden Web</span>
+                <input type="number" id="pedido-ordenweb" min="0" placeholder="0" />
+              </label>
+              <div class="pedido-legacy-input">
+                <input type="number" id="pedido-correo" placeholder="Correo" />
+                <input type="text" id="pedido-total-correo" placeholder="Total" readonly />
+              </div>
+              <button type="button" id="pedido-imprimir" class="btn-primary">🖨</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="pedido-items-table">
+              <thead>
+                <tr>
+                  <th>Articulo</th>
+                  <th>Detalle</th>
+                  <th>Cantidad</th>
+                  <th>Precio</th>
+                  <th>Total</th>
+                  <th>Accion</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </article>
+    </section>
+
   <section class="view hidden" id="view-mercaderia">
     <article class="card wide">
       <div class="actions between abm-actions-header">
@@ -1102,6 +1241,222 @@
       <p class="status" id="cajas-cierre-status"></p>
     </article>
   </section>
+  <section class="view hidden" id="view-cajas-nueva-factura">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Nueva Factura</h2>
+          <p class="status">Crea una factura manual con cliente y articulos.</p>
+        </div>
+        <div class="actions">
+          <button id="factura-nueva-calculadora" type="button">Calculadora</button>
+          <button id="factura-nueva-add" type="button">Agregar articulo</button>
+          <button id="factura-nueva-save" type="button">Guardar factura</button>
+        </div>
+      </div>
+      <div class="pedido-layout">
+        <div class="pedido-form">
+          <div class="abm-form-grid pedido-form-grid">
+            <label>
+              <span>Pedido pendiente</span>
+              <select id="factura-pedido-select"></select>
+            </label>
+              <label>
+                <span>Cliente</span>
+                <div class="input-action">
+                  <input type="text" id="factura-cliente-input" list="factura-clientes-list" placeholder="Buscar cliente..." />
+                  <button type="button" id="factura-cliente-search" class="abm-icon-btn" title="Buscar cliente">🔍</button>
+                  <button type="button" id="factura-cliente-clear" class="abm-icon-btn clear-btn" title="Limpiar cliente">✖</button>
+                </div>
+                <datalist id="factura-clientes-list"></datalist>
+              </label>
+              <input type="hidden" id="factura-cliente-id" />
+            <label>
+              <span>Vendedora</span>
+              <select id="factura-vendedora"></select>
+            </label>
+            <label>
+              <span>Tipo de pago</span>
+              <select id="factura-tipo-pago"></select>
+            </label>
+            <label>
+              <span>Nro Factura</span>
+              <input type="text" id="factura-numero" readonly />
+            </label>
+            <label>
+              <span>Descuento %</span>
+              <input type="number" id="factura-descuento-pct" min="0" max="100" value="0" />
+            </label>
+            <label>
+              <span>Envio</span>
+              <input type="number" id="factura-envio" min="0" step="0.01" value="0" />
+            </label>
+            <label>
+              <span>Pago mixto</span>
+              <input type="number" id="factura-pago-mixto" min="0" step="0.01" value="0" />
+            </label>
+            <label class="checkbox-line">
+              <input type="checkbox" id="factura-listo-envio" />
+              <span>Listo para envio</span>
+            </label>
+          </div>
+        </div>
+        <div class="pedido-items">
+          <div class="pedido-item-form">
+            <input type="text" id="factura-item-articulo" list="factura-articulos-list" placeholder="Articulo" />
+            <datalist id="factura-articulos-list"></datalist>
+            <button type="button" id="factura-articulo-search" class="abm-icon-btn" title="Buscar articulo">🔍</button>
+            <button type="button" id="factura-articulo-clear" class="abm-icon-btn clear-btn" title="Limpiar articulo">✖</button>
+            <input type="text" id="factura-item-detalle" placeholder="Detalle" readonly />
+            <input type="number" id="factura-item-precio" min="0" step="0.01" placeholder="Precio unitario" />
+            <input type="number" id="factura-item-stock" placeholder="Stock" readonly />
+            <input type="number" id="factura-item-cantidad" min="1" value="1" />
+            <button id="factura-item-add" type="button">Sumar</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="factura-items-table">
+              <thead>
+                <tr>
+                  <th>Articulo</th>
+                  <th>Detalle</th>
+                  <th>Cantidad</th>
+                  <th>Precio</th>
+                  <th>Total</th>
+                  <th>Accion</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pedido-totals">
+            <span>Subtotal</span>
+            <strong id="factura-subtotal">$ 0</strong>
+          </div>
+          <div class="pedido-totals">
+            <span>Total con descuento</span>
+            <strong id="factura-total-descuento">$ 0</strong>
+          </div>
+          <div class="pedido-totals">
+            <span>Total con envio</span>
+            <strong id="factura-total-envio">$ 0</strong>
+          </div>
+        </div>
+      </div>
+      <p class="status" id="factura-nueva-status"></p>
+    </article>
+  </section>
+
+  <div class="modal-overlay" id="factura-calculadora-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Calculadora</h3>
+        <button class="close-btn" type="button" id="factura-calculadora-close">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="abm-form-grid pedido-form-grid">
+          <label>
+            <span>Total</span>
+            <input type="number" id="factura-calc-total" readonly />
+          </label>
+          <label>
+            <span>Pago cliente</span>
+            <input type="number" id="factura-calc-pago" step="0.01" />
+          </label>
+          <label>
+            <span>Vuelto</span>
+            <input type="number" id="factura-calc-vuelto" readonly />
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="facturacion-clientes-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Seleccionar Cliente</h3>
+        <button id="facturacion-clientes-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-controls">
+          <input type="search" id="facturacion-clientes-search" placeholder="Buscar cliente..." />
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="facturacion-clientes-table">
+            <thead>
+              <tr>
+                <th>Id</th>
+                <th>Nombre</th>
+                <th>Apellido</th>
+                <th>Mail</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="facturacion-clientes-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="facturacion-articulos-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Seleccionar Articulo</h3>
+        <button id="facturacion-articulos-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-controls">
+          <input type="search" id="facturacion-articulos-search" placeholder="Buscar articulo..." />
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="facturacion-articulos-table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Detalle</th>
+                <th>Precio Venta</th>
+                <th>Stock</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="facturacion-articulos-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="pedido-buscar-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Buscar Pedido</h3>
+        <button id="pedido-buscar-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-controls">
+          <input type="search" id="pedido-buscar-search" placeholder="Buscar por pedido o cliente..." />
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="pedido-buscar-table">
+            <thead>
+              <tr>
+                <th>Pedido</th>
+                <th>Cliente</th>
+                <th>Total</th>
+                <th>Vendedora</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="pedido-buscar-status"></p>
+      </div>
+    </div>
+  </div>
 
 <section class="view hidden" id="view-cajas">
     <article class="card wide">
@@ -2515,6 +2870,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
     
   

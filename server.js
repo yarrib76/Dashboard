@@ -222,6 +222,25 @@ function redondeoDecimal(precioVenta) {
   return redondeoDecimal(precioEnPesos * gastos * ganancia);
 }
 
+async function computePrecioArgen(conn, articuloRow) {
+  const precioManual = Number(articuloRow.PrecioManual) || 0;
+  const precioConvertido = Number(articuloRow.PrecioConvertido) || 0;
+  if (precioManual !== 0) return precioManual;
+  if (!precioConvertido) return 0;
+  const moneda = String(articuloRow.Moneda || '').toUpperCase();
+  if (moneda === 'ARG') return precioConvertido;
+  const [dolarRows] = await conn.query(`SELECT PrecioDolar FROM ${DB_NAME}.preciodolar LIMIT 1`);
+  const dolar = dolarRows[0] || {};
+  return precioConvertido * (Number(dolar.PrecioDolar) || 0);
+}
+
+function getRequestIp(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  const raw = req.socket?.remoteAddress || req.ip || '';
+  return raw.replace('::ffff:', '');
+}
+
 function verificoStock(cantidad, artiCant) {
   return Number(cantidad) >= Number(artiCant) ? 1000 : 0;
 }
@@ -363,6 +382,7 @@ const ROLE_PERMISSIONS = [
   'pedidos',
   'pedidos-menu',
   'pedidos-todos',
+  'pedidos-nuevo',
   'facturas',
   'comisiones',
   'mercaderia',
@@ -373,6 +393,7 @@ const ROLE_PERMISSIONS = [
   'ecommerce-panel',
   'cajas',
   'cajas-cierre',
+  'cajas-nueva-factura',
   'configuracion',
 ];
 
@@ -2790,6 +2811,7 @@ app.get('/api/config/vendedoras', async (_req, res) => {
     const [rows] = await pool.query(
       `SELECT id, nombre
        FROM vendedores
+       WHERE tipo <> 0
        ORDER BY nombre`
     );
     res.json({ data: rows || [] });
@@ -4341,6 +4363,723 @@ app.get('/api/pedidos/clientes', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar pedidos de clientes', error: error.message });
+  }
+});
+
+app.get('/api/facturacion/autorizacion', requireAuth, async (req, res) => {
+  try {
+    const ip = getRequestIp(req);
+    const [rows] = await pool.query(
+      `SELECT 1 FROM ${DB_NAME}.autorizacion_facturaweb WHERE ip_autorizada = ? LIMIT 1`,
+      [ip]
+    );
+    res.json({ autorizado: rows.length > 0, ip });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al validar autorizacion', error: error.message });
+  }
+});
+
+app.get('/api/facturacion/clientes', requireAuth, async (req, res) => {
+  try {
+    const term = String(req.query.q || '').trim();
+    const like = `%${term}%`;
+    const params = term ? [like, like, like, like, like, like, like] : [];
+    const where = term
+      ? `WHERE nombre LIKE ?
+         OR apellido LIKE ?
+         OR CONCAT(nombre, ' ', apellido) LIKE ?
+         OR CONCAT(apellido, ' ', nombre) LIKE ?
+         OR mail LIKE ?
+         OR telefono LIKE ?
+         OR apodo LIKE ?`
+      : '';
+    const [rows] = await pool.query(
+      `SELECT id_clientes AS id, nombre, apellido, mail
+       FROM ${DB_NAME}.clientes
+       ${where}
+       ORDER BY nombre
+       LIMIT 50`,
+      params
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar clientes', error: error.message });
+  }
+});
+
+app.post('/api/facturacion/clientes', requireAuth, async (req, res) => {
+  try {
+    const {
+      nombre = '',
+      apellido = '',
+      cuit = null,
+      direccion = '',
+      localidad = '',
+      provincia_id = null,
+      cod_postal = '',
+      mail = '',
+      telefono = '',
+      encuesta = 'Ninguna',
+    } = req.body || {};
+    if (!nombre || !apellido || !mail) {
+      return res.status(400).json({ message: 'Nombre, apellido y mail son requeridos' });
+    }
+    const [existsRows] = await pool.query(
+      `SELECT mail FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
+      [mail]
+    );
+    if (existsRows.length) {
+      return res.status(409).json({ message: 'El cliente ya existe' });
+    }
+    await pool.query(
+      `INSERT INTO ${DB_NAME}.clientes
+       (nombre, apellido, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nombre, apellido, direccion, mail, telefono, cuit, localidad, cod_postal, provincia_id, encuesta]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al crear cliente', error: error.message });
+  }
+});
+
+app.get('/api/facturacion/articulos', requireAuth, async (req, res) => {
+  try {
+    const term = String(req.query.q || '').trim();
+    const like = `%${term}%`;
+    const params = term ? [like, like] : [];
+    const where = term ? 'WHERE Articulo LIKE ? OR Detalle LIKE ?' : '';
+    const [rows] = await pool.query(
+      `SELECT Articulo, Detalle, Cantidad, PrecioManual, PrecioConvertido, Moneda, Gastos, Ganancia, Proveedor
+       FROM ${DB_NAME}.articulos
+       ${where}
+       ORDER BY Articulo
+       LIMIT 50`,
+      params
+    );
+    let precioDolar = 0;
+    try {
+      const [[dolarRow]] = await pool.query(`SELECT PrecioDolar FROM ${DB_NAME}.preciodolar LIMIT 1`);
+      precioDolar = Number(dolarRow?.PrecioDolar) || 0;
+    } catch (_err) {
+      precioDolar = 0;
+    }
+    const proveedorCache = new Map();
+    const data = [];
+    for (const row of rows) {
+      let precioVenta = 0;
+      const precioManual = Number(row.PrecioManual) || 0;
+      const precioConvertido = Number(row.PrecioConvertido) || 0;
+      if (precioManual !== 0) {
+        const gastos = Number(row.Gastos) || 0;
+        const ganancia = Number(row.Ganancia) || 0;
+        precioVenta = redondeoDecimal(precioManual * gastos * ganancia);
+      } else if (precioConvertido !== 0) {
+        let gastos = 0;
+        let ganancia = 0;
+        if (row.Proveedor) {
+          if (!proveedorCache.has(row.Proveedor)) {
+            const [[provRow]] = await pool.query(
+              `SELECT Gastos, Ganancia FROM ${DB_NAME}.proveedores WHERE Nombre = ? LIMIT 1`,
+              [row.Proveedor]
+            );
+            proveedorCache.set(row.Proveedor, provRow || null);
+          }
+          const prov = proveedorCache.get(row.Proveedor);
+          gastos = Number(prov?.Gastos) || 0;
+          ganancia = Number(prov?.Ganancia) || 0;
+        }
+        const moneda = String(row.Moneda || '').toUpperCase();
+        if (moneda === 'ARG') {
+          precioVenta = redondeoDecimal(precioConvertido * gastos * ganancia);
+        } else {
+          const precioEnPesos = precioConvertido * precioDolar;
+          precioVenta = redondeoDecimal(precioEnPesos * gastos * ganancia);
+        }
+      }
+      data.push({
+        articulo: row.Articulo,
+        detalle: row.Detalle,
+        cantidad: row.Cantidad,
+        precioVenta,
+      });
+    }
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos', error: error.message });
+  }
+});
+
+app.get('/api/facturacion/articulo', requireAuth, async (req, res) => {
+  try {
+    const articulo = String(req.query.articulo || '').trim();
+    if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const [rows] = await pool.query(
+      `SELECT Articulo, Detalle, Cantidad, PrecioManual, PrecioConvertido, Moneda, Gastos, Ganancia, Proveedor
+       FROM ${DB_NAME}.articulos
+       WHERE Articulo = ?
+       LIMIT 1`,
+      [articulo]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ message: 'Articulo no encontrado' });
+    const precioVenta = (await computePrecioVenta(pool, row)) ?? 0;
+    const precioArgen = await computePrecioArgen(pool, row);
+    res.json({
+      data: {
+        articulo: row.Articulo,
+        detalle: row.Detalle,
+        cantidad: row.Cantidad,
+        precioVenta,
+        precioArgen,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulo', error: error.message });
+  }
+});
+
+app.get('/api/facturacion/pedidos', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.nropedido,
+         CONCAT(cli.nombre, ', ', cli.apellido) AS cliente,
+         ctrl.ordenweb,
+         ctrl.total,
+         DATE_FORMAT(ctrl.fecha, '%d/%m/%Y') AS fecha,
+         ctrl.vendedora,
+         ctrl.id_cliente
+       FROM ${DB_NAME}.controlpedidos AS ctrl
+       INNER JOIN ${DB_NAME}.clientes cli ON ctrl.id_cliente = cli.id_clientes
+       WHERE ctrl.estado = 1
+         AND (ctrl.instancia = 2 OR ctrl.ordenweb = 0 OR ctrl.ordenweb IS NULL)
+       ORDER BY ctrl.nropedido DESC`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar pedidos', error: error.message });
+  }
+});
+
+app.get('/api/facturas/next', requireAuth, async (_req, res) => {
+  try {
+    const [[row]] = await pool.query(`SELECT NroFactura FROM ${DB_NAME}.nrofactura LIMIT 1`);
+    res.json({ nroFactura: row?.NroFactura || '' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar nro factura', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/next', requireAuth, async (_req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT nropedido FROM ${DB_NAME}.controlpedidos ORDER BY nropedido DESC LIMIT 1`
+    );
+    const nroPedido = (Number(row?.nropedido) || 0) + 1;
+    res.json({ nroPedido });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar nro pedido', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
+  try {
+    const nro = String(req.query.nro || '').trim();
+    const search = String(req.query.q || '').trim();
+    if (nro) {
+      const [rows] = await pool.query(
+        `SELECT
+           ctrl.nropedido,
+           ctrl.id_cliente,
+           ctrl.vendedora,
+           ctrl.total,
+           ctrl.ordenweb,
+           CONCAT(c.nombre, ' ', c.apellido) AS cliente
+         FROM ${DB_NAME}.controlpedidos ctrl
+         LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
+         WHERE ctrl.nropedido = ?
+           AND ctrl.estado = 1
+           AND (ctrl.instancia = 2 OR ctrl.ordenweb = 0 OR ctrl.ordenweb IS NULL)
+         LIMIT 1`,
+        [nro]
+      );
+      return res.json({ data: rows || [] });
+    }
+    const like = `%${search}%`;
+    const baseWhere = `WHERE ctrl.estado = 1 AND (ctrl.instancia = 2 OR ctrl.ordenweb = 0 OR ctrl.ordenweb IS NULL)`;
+    const where = search ? `${baseWhere} AND (ctrl.nropedido LIKE ? OR CONCAT(c.nombre, ' ', c.apellido) LIKE ?)` : baseWhere;
+    const params = search ? [like, like] : [];
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.nropedido,
+         ctrl.id_cliente,
+         ctrl.vendedora,
+         ctrl.total,
+         ctrl.ordenweb,
+         CONCAT(c.nombre, ' ', c.apellido) AS cliente
+       FROM ${DB_NAME}.controlpedidos ctrl
+       LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
+       ${where}
+       ORDER BY ctrl.nropedido DESC
+       LIMIT 100`,
+      params
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al buscar pedidos', error: error.message });
+  }
+});
+
+app.post('/api/pedidos/reservar', requireAuth, async (_req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[row]] = await connection.query(
+      `SELECT Nropedido FROM ${DB_NAME}.nropedido LIMIT 1 FOR UPDATE`
+    );
+    const nroPedido = (Number(row?.Nropedido) || 0) + 1;
+    await connection.query(`UPDATE ${DB_NAME}.nropedido SET Nropedido = ?`, [nroPedido]);
+    await connection.commit();
+    res.json({ nroPedido });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al reservar nro pedido', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.get('/api/facturacion/tipo-pagos', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id_tipo_pagos AS id, tipo_pago FROM ${DB_NAME}.tipo_pagos ORDER BY tipo_pago`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar tipos de pago', error: error.message });
+  }
+});
+
+app.get('/api/pedidos/articulo-foto', requireAuth, async (req, res) => {
+  try {
+    const nroArticulo = String(req.query.nroArticulo || '').trim();
+    if (!nroArticulo) return res.status(400).json({ message: 'nroArticulo requerido' });
+    const [rows] = await pool.query(
+      `SELECT imagessrc FROM ${DB_NAME}.statusecomercesincro
+       WHERE articulo = ?
+         AND id_provecomerce = (
+           SELECT id_provecomerce FROM ${DB_NAME}.statusecomercesincro
+           ORDER BY id_provecomerce DESC LIMIT 1
+         )`,
+      [nroArticulo]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar foto de articulo', error: error.message });
+  }
+});
+
+app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
+  let connection;
+  try {
+    const nroPedido = Number(req.params.nro);
+    const { cliente_id, vendedora, ordenWeb = 0, items = [] } = req.body || {};
+    const clienteId = Number(cliente_id) || 1;
+    if (!nroPedido) {
+      return res.status(400).json({ message: 'nroPedido requerido' });
+    }
+    if (!vendedora) {
+      return res.status(400).json({ message: 'vendedora requerida' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items requeridos' });
+    }
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[existsRow]] = await connection.query(
+      `SELECT nropedido FROM ${DB_NAME}.controlpedidos WHERE nropedido = ? LIMIT 1 FOR UPDATE`,
+      [nroPedido]
+    );
+    if (!existsRow) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Pedido no encontrado' });
+    }
+    const fecha = formatDateTimeLocal(new Date());
+    const cajera = req.user?.name || '';
+    const local = Number(ordenWeb) ? process.env.LOCAL || null : null;
+    const instancia = Number(ordenWeb) ? 2 : 0;
+    const processedItems = [];
+    let total = 0;
+    for (const item of items) {
+      const articulo = String(item.articulo || '').trim();
+      const cantidad = Number(item.cantidad) || 0;
+      if (!articulo || cantidad <= 0) continue;
+      const [artRows] = await connection.query(
+        `SELECT Articulo, Detalle, PrecioManual, PrecioConvertido, Moneda, Gastos, Ganancia, Proveedor
+         FROM ${DB_NAME}.articulos
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [articulo]
+      );
+      const art = artRows[0];
+      if (!art) continue;
+      const precioVenta = (await computePrecioVenta(connection, art)) ?? 0;
+      const precioArgen = await computePrecioArgen(connection, art);
+      const precioUnitario = Number(item.precioUnitario) || precioVenta || 0;
+      const totalItem = precioUnitario * cantidad;
+      const ganancia = (precioUnitario - precioArgen) * cantidad;
+      total += totalItem;
+      processedItems.push({
+        articulo,
+        detalle: art.Detalle,
+        cantidad,
+        precioArgen,
+        precioUnitario,
+        precioVenta: precioUnitario,
+        total: totalItem,
+        ganancia,
+      });
+    }
+    if (!processedItems.length) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'items invalidos' });
+    }
+    const totalWeb = Number(ordenWeb) ? total : 0;
+    await connection.query(
+      `UPDATE ${DB_NAME}.controlpedidos
+       SET id_cliente = ?,
+           vendedora = ?,
+           total = ?,
+           ordenWeb = ?,
+           local = ?,
+           totalweb = ?,
+           instancia = ?,
+           ultactualizacion = ?
+       WHERE nropedido = ?
+       LIMIT 1`,
+      [clienteId, vendedora, total, ordenWeb, local, totalWeb, instancia, fecha, nroPedido]
+    );
+    await connection.query(`DELETE FROM ${DB_NAME}.pedidotemp WHERE NroPedido = ?`, [nroPedido]);
+    for (const item of processedItems) {
+      await connection.query(
+        `INSERT INTO ${DB_NAME}.pedidotemp
+         (NroPedido, Articulo, Detalle, Cantidad, PrecioArgen, PrecioUnitario, PrecioVenta, Ganancia, Descuento, Cajera, Vendedora, Fecha, Estado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1)`,
+        [
+          nroPedido,
+          item.articulo,
+          item.detalle,
+          item.cantidad,
+          item.precioArgen,
+          item.precioUnitario,
+          item.total,
+          item.ganancia,
+          cajera,
+          vendedora,
+          fecha,
+        ]
+      );
+    }
+    await connection.commit();
+    res.json({ ok: true, nroPedido });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al actualizar pedido', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.post('/api/pedidos', requireAuth, async (req, res) => {
+  let connection;
+  try {
+    const { cliente_id, vendedora, ordenWeb = 0, items = [], nroPedido } = req.body || {};
+    const clienteId = Number(cliente_id) || 1;
+    if (!vendedora) {
+      return res.status(400).json({ message: 'vendedora requerida' });
+    }
+    let pedidoNumero = Number(nroPedido) || 0;
+    if (!pedidoNumero) {
+      return res.status(400).json({ message: 'nroPedido requerido' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items requeridos' });
+    }
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    let attempts = 0;
+    while (attempts < 5) {
+      const [[existsRow]] = await connection.query(
+        `SELECT 1 FROM ${DB_NAME}.controlpedidos WHERE nropedido = ? LIMIT 1`,
+        [pedidoNumero]
+      );
+      if (!existsRow) break;
+      const [[row]] = await connection.query(
+        `SELECT Nropedido FROM ${DB_NAME}.nropedido LIMIT 1 FOR UPDATE`
+      );
+      pedidoNumero = (Number(row?.Nropedido) || 0) + 1;
+      await connection.query(`UPDATE ${DB_NAME}.nropedido SET Nropedido = ?`, [pedidoNumero]);
+      attempts += 1;
+    }
+    if (attempts >= 5) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'No se pudo reservar un nroPedido libre' });
+    }
+    const fecha = formatDateTimeLocal(new Date());
+    const cajera = req.user?.name || '';
+    const local = Number(ordenWeb) ? process.env.LOCAL || null : null;
+    const instancia = Number(ordenWeb) ? 2 : 0;
+    const totalWeb = Number(ordenWeb) ? total : 0;
+    const processedItems = [];
+    let total = 0;
+    for (const item of items) {
+      const articulo = String(item.articulo || '').trim();
+      const cantidad = Number(item.cantidad) || 0;
+      if (!articulo || cantidad <= 0) continue;
+      const [artRows] = await connection.query(
+        `SELECT Articulo, Detalle, PrecioManual, PrecioConvertido, Moneda, Gastos, Ganancia, Proveedor
+         FROM ${DB_NAME}.articulos
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [articulo]
+      );
+      const art = artRows[0];
+      if (!art) continue;
+      const precioVenta = (await computePrecioVenta(connection, art)) ?? 0;
+      const precioArgen = await computePrecioArgen(connection, art);
+      const precioUnitario = Number(item.precioUnitario) || precioVenta || 0;
+      const totalItem = precioUnitario * cantidad;
+      const ganancia = (precioUnitario - precioArgen) * cantidad;
+      total += totalItem;
+        processedItems.push({
+          articulo,
+          detalle: art.Detalle,
+          cantidad,
+          precioArgen,
+          precioUnitario,
+          precioVenta: precioUnitario,
+          total: totalItem,
+          ganancia,
+        });
+    }
+    if (!processedItems.length) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'items invalidos' });
+    }
+    await connection.query(
+      `INSERT INTO ${DB_NAME}.controlpedidos
+       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, totalweb, instancia)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)`,
+      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, totalWeb, instancia]
+    );
+    for (const item of processedItems) {
+      await connection.query(
+        `INSERT INTO ${DB_NAME}.pedidotemp
+         (NroPedido, Articulo, Detalle, Cantidad, PrecioArgen, PrecioUnitario, PrecioVenta, Ganancia, Descuento, Cajera, Vendedora, Fecha, Estado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 1)`,
+        [
+          pedidoNumero,
+          item.articulo,
+          item.detalle,
+          item.cantidad,
+          item.precioArgen,
+          item.precioUnitario,
+          item.total,
+          item.ganancia,
+          cajera,
+          vendedora,
+          fecha,
+        ]
+      );
+    }
+    await connection.commit();
+    res.json({ ok: true, nroPedido: pedidoNumero });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al crear pedido', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.post('/api/facturas', requireAuth, async (req, res) => {
+  let connection;
+  try {
+    const {
+      cliente_id,
+      vendedora,
+      tipo_pago_id,
+      items = [],
+      porcentajeDescuento = 0,
+      envio = 0,
+      pagoMixto = 0,
+      esPedido = 'NO',
+      nroPedido = null,
+      listoParaEnvio = 0,
+    } = req.body || {};
+    if (!cliente_id || !vendedora || !tipo_pago_id) {
+      return res.status(400).json({ message: 'cliente_id, vendedora y tipo_pago_id requeridos' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items requeridos' });
+    }
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[nroRow]] = await connection.query(
+      `SELECT NroFactura FROM ${DB_NAME}.nrofactura LIMIT 1 FOR UPDATE`
+    );
+    let nroFactura = Number(nroRow?.NroFactura) || 0;
+    if (!nroFactura) {
+      await connection.rollback();
+      return res.status(500).json({ message: 'NroFactura no configurado' });
+    }
+    let exists = true;
+    while (exists) {
+      const [[factRow]] = await connection.query(
+        `SELECT 1 FROM ${DB_NAME}.facturah WHERE NroFactura = ? LIMIT 1`,
+        [nroFactura]
+      );
+      if (!factRow) {
+        exists = false;
+      } else {
+        nroFactura += 1;
+      }
+    }
+    const fecha = new Date().toISOString().slice(0, 10);
+    const cajera = req.user?.name || '';
+    const processedItems = [];
+    let subtotal = 0;
+    let gananciaTotal = 0;
+    let precioArgentina = 0;
+    for (const item of items) {
+      const articulo = String(item.articulo || '').trim();
+      const cantidad = Number(item.cantidad) || 0;
+      if (!articulo || cantidad <= 0) continue;
+      const [artRows] = await connection.query(
+        `SELECT Articulo, Detalle, PrecioManual, PrecioConvertido, Moneda, Gastos, Ganancia, Proveedor, Cantidad
+         FROM ${DB_NAME}.articulos
+         WHERE Articulo = ?
+         LIMIT 1
+         FOR UPDATE`,
+        [articulo]
+      );
+      const art = artRows[0];
+      if (!art) continue;
+      const precioVenta = (await computePrecioVenta(connection, art)) ?? 0;
+      const precioArgen = await computePrecioArgen(connection, art);
+      const precioUnitario = Number(item.precioUnitario) || precioVenta || 0;
+      const totalItem = precioUnitario * cantidad;
+      const ganancia = (precioUnitario - precioArgen) * cantidad;
+      subtotal += totalItem;
+      gananciaTotal += ganancia;
+      precioArgentina += precioArgen * cantidad;
+      processedItems.push({
+        articulo,
+        detalle: art.Detalle,
+        cantidad,
+        precioArgen,
+        precioUnitario,
+        precioVenta: precioUnitario,
+        ganancia,
+      });
+      await connection.query(
+        `UPDATE ${DB_NAME}.articulos SET Cantidad = Cantidad - ? WHERE Articulo = ? LIMIT 1`,
+        [cantidad, articulo]
+      );
+    }
+    if (!processedItems.length) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'items invalidos' });
+    }
+    const pct = Number(porcentajeDescuento) || 0;
+    const envioValue = Number(envio) || 0;
+    const totalDescuento = pct > 0 ? subtotal * (1 - pct / 100) : null;
+    const totalEnvio = (totalDescuento ?? subtotal) + envioValue;
+    if (pct > 0) {
+      gananciaTotal = Number(totalDescuento) - precioArgentina;
+    }
+    for (const item of processedItems) {
+      await connection.query(
+        `INSERT INTO ${DB_NAME}.factura
+         (NroFactura, Articulo, Detalle, Cantidad, PrecioArgen, PrecioUnitario, PrecioVenta, Ganancia, Descuento, Cajera, Vendedora, Fecha, Estado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0)`,
+        [
+          nroFactura,
+          item.articulo,
+          item.detalle,
+          item.cantidad,
+          item.precioArgen,
+          item.precioUnitario,
+          item.precioVenta,
+          item.ganancia,
+          cajera,
+          vendedora,
+          fecha,
+        ]
+      );
+    }
+    await connection.query(
+      `INSERT INTO ${DB_NAME}.facturah
+       (NroFactura, Total, Porcentaje, Descuento, Ganancia, Fecha, Estado, id_clientes, envio, totalEnvio, id_tipo_pago, vendedora, pagomixto)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        nroFactura,
+        subtotal,
+        pct,
+        totalDescuento,
+        gananciaTotal,
+        fecha,
+        cliente_id,
+        envioValue,
+        totalEnvio,
+        tipo_pago_id,
+        vendedora,
+        Number(pagoMixto) || 0,
+      ]
+    );
+    await connection.query(`UPDATE ${DB_NAME}.nrofactura SET NroFactura = ?`, [nroFactura + 1]);
+    if (String(esPedido).toUpperCase() === 'SI' && nroPedido) {
+      await connection.query(
+        `UPDATE ${DB_NAME}.controlpedidos
+         SET nrofactura = ?, estado = 0, empaquetado = ?
+         WHERE nropedido = ?
+         LIMIT 1`,
+        [nroFactura, listoParaEnvio ? 1 : 0, nroPedido]
+      );
+    }
+    await connection.commit();
+    res.json({ ok: true, nroFactura });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al crear factura', error: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 

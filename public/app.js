@@ -280,6 +280,16 @@ let controlOrdenesEstadoDefaulted = false;
 let controlOrdenesOrdenTimer = null;
 let controlOrdenesFilterTimer = null;
 let cajasCierreRows = [];
+let pedidoNuevoItems = [];
+let facturaNuevaItems = [];
+let pedidoNuevoClientesTimer = null;
+let facturaNuevaClientesTimer = null;
+let pedidoNuevoArticulosTimer = null;
+let facturaNuevaArticulosTimer = null;
+let facturaNuevaAutorizado = true;
+let facturacionClientesTarget = 'pedido';
+let facturacionArticulosTarget = 'pedido';
+let pedidoEditandoNumero = null;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -293,9 +303,10 @@ const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
-  const viewSalon = document.getElementById('view-salon');
-  const viewPedidos = document.getElementById('view-pedidos');
+const viewSalon = document.getElementById('view-salon');
+const viewPedidos = document.getElementById('view-pedidos');
 const viewPedidosTodos = document.getElementById('view-pedidos-todos');
+const viewPedidosNuevo = document.getElementById('view-pedidos-nuevo');
 const viewMercaderia = document.getElementById('view-mercaderia');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
@@ -304,6 +315,7 @@ const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
 const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
 const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
+const viewCajasNuevaFactura = document.getElementById('view-cajas-nueva-factura');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
 const DEBUG_OCR = true;
   const viewConfiguracion = document.getElementById('view-configuracion');
@@ -377,6 +389,90 @@ const pedidoNotasList = document.getElementById('pedido-notas-list');
 const pedidoNotasInput = document.getElementById('pedido-notas-input');
 const pedidoNotasSave = document.getElementById('pedido-notas-save');
 const pedidoNotasStatus = document.getElementById('pedido-notas-status');
+const pedidoNuevoAddBtn = document.getElementById('pedido-nuevo-add');
+const pedidoNuevoSaveBtn = document.getElementById('pedido-nuevo-save');
+const pedidoClienteInput = document.getElementById('pedido-cliente-input');
+const pedidoClienteId = document.getElementById('pedido-cliente-id');
+const pedidoClientesList = document.getElementById('pedido-clientes-list');
+const pedidoVendedoraSelect = document.getElementById('pedido-vendedora');
+const pedidoNumeroInput = document.getElementById('pedido-numero');
+const pedidoOrdenWebInput = document.getElementById('pedido-ordenweb');
+const pedidoTotalInput = document.getElementById('pedido-total');
+const pedidoItemArticuloInput = document.getElementById('pedido-item-articulo');
+const pedidoArticulosList = document.getElementById('pedido-articulos-list');
+const pedidoItemDetalleInput = document.getElementById('pedido-item-detalle');
+const pedidoItemStockInput = document.getElementById('pedido-item-stock');
+const pedidoItemCantidadInput = document.getElementById('pedido-item-cantidad');
+const pedidoItemPrecioInput = document.getElementById('pedido-item-precio');
+const pedidoArticuloFoto = document.getElementById('pedido-articulo-foto');
+const pedidoDescuentoCheck = document.getElementById('pedido-descuento-check');
+const pedidoDescuentoSelect = document.getElementById('pedido-descuento-select');
+const pedidoRecargoSelect = document.getElementById('pedido-recargo-select');
+const pedidoDescuentoTotalInput = document.getElementById('pedido-descuento-total');
+const pedidoCorreoInput = document.getElementById('pedido-correo');
+const pedidoTotalCorreoInput = document.getElementById('pedido-total-correo');
+const pedidoImprimirBtn = document.getElementById('pedido-imprimir');
+const pedidoItemAddBtn = document.getElementById('pedido-item-add');
+const pedidoItemsTableBody = document.querySelector('#pedido-items-table tbody');
+const pedidoSubtotalEl = document.getElementById('pedido-subtotal');
+const pedidoNuevoStatus = document.getElementById('pedido-nuevo-status');
+const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
+const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
+const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
+const facturaPedidoSelect = document.getElementById('factura-pedido-select');
+const facturaClienteInput = document.getElementById('factura-cliente-input');
+const facturaClienteId = document.getElementById('factura-cliente-id');
+const facturaClientesList = document.getElementById('factura-clientes-list');
+const facturaVendedoraSelect = document.getElementById('factura-vendedora');
+const facturaTipoPagoSelect = document.getElementById('factura-tipo-pago');
+const facturaNumeroInput = document.getElementById('factura-numero');
+const facturaDescuentoPctInput = document.getElementById('factura-descuento-pct');
+const facturaEnvioInput = document.getElementById('factura-envio');
+const facturaPagoMixtoInput = document.getElementById('factura-pago-mixto');
+const facturaListoEnvioInput = document.getElementById('factura-listo-envio');
+const facturaItemArticuloInput = document.getElementById('factura-item-articulo');
+const facturaArticulosList = document.getElementById('factura-articulos-list');
+const facturaItemDetalleInput = document.getElementById('factura-item-detalle');
+const facturaItemStockInput = document.getElementById('factura-item-stock');
+const facturaItemCantidadInput = document.getElementById('factura-item-cantidad');
+const facturaItemPrecioInput = document.getElementById('factura-item-precio');
+const facturaItemAddBtn = document.getElementById('factura-item-add');
+const facturaItemsTableBody = document.querySelector('#factura-items-table tbody');
+const facturaSubtotalEl = document.getElementById('factura-subtotal');
+const facturaTotalDescuentoEl = document.getElementById('factura-total-descuento');
+const facturaTotalEnvioEl = document.getElementById('factura-total-envio');
+const facturaNuevaStatus = document.getElementById('factura-nueva-status');
+const facturaCalcOverlay = document.getElementById('factura-calculadora-overlay');
+const facturaCalcClose = document.getElementById('factura-calculadora-close');
+const facturaCalcTotal = document.getElementById('factura-calc-total');
+const facturaCalcPago = document.getElementById('factura-calc-pago');
+const facturaCalcVuelto = document.getElementById('factura-calc-vuelto');
+const pedidoClienteSearchBtn = document.getElementById('pedido-cliente-search');
+const facturaClienteSearchBtn = document.getElementById('factura-cliente-search');
+const pedidoArticuloSearchBtn = document.getElementById('pedido-articulo-search');
+const pedidoArticuloSearchTextBtn = document.getElementById('pedido-articulo-search-text');
+const pedidoNuevoReservarBtn = document.getElementById('pedido-nuevo-reservar');
+const pedidoBuscarOpenBtn = document.getElementById('pedido-buscar-open');
+const pedidoBuscarOverlay = document.getElementById('pedido-buscar-overlay');
+const pedidoBuscarClose = document.getElementById('pedido-buscar-close');
+const pedidoBuscarSearch = document.getElementById('pedido-buscar-search');
+const pedidoBuscarTableBody = document.querySelector('#pedido-buscar-table tbody');
+const pedidoBuscarStatus = document.getElementById('pedido-buscar-status');
+const facturaArticuloSearchBtn = document.getElementById('factura-articulo-search');
+const pedidoClienteClearBtn = document.getElementById('pedido-cliente-clear');
+const facturaClienteClearBtn = document.getElementById('factura-cliente-clear');
+const pedidoArticuloClearBtn = document.getElementById('pedido-articulo-clear');
+const facturaArticuloClearBtn = document.getElementById('factura-articulo-clear');
+const facturacionClientesOverlay = document.getElementById('facturacion-clientes-overlay');
+const facturacionClientesClose = document.getElementById('facturacion-clientes-close');
+const facturacionClientesSearch = document.getElementById('facturacion-clientes-search');
+const facturacionClientesTableBody = document.querySelector('#facturacion-clientes-table tbody');
+const facturacionClientesStatus = document.getElementById('facturacion-clientes-status');
+const facturacionArticulosOverlay = document.getElementById('facturacion-articulos-overlay');
+const facturacionArticulosClose = document.getElementById('facturacion-articulos-close');
+const facturacionArticulosSearch = document.getElementById('facturacion-articulos-search');
+const facturacionArticulosTableBody = document.querySelector('#facturacion-articulos-table tbody');
+const facturacionArticulosStatus = document.getElementById('facturacion-articulos-status');
 const pedidoCheckoutOverlay = document.getElementById('pedido-checkout-overlay');
 const pedidoCheckoutTitle = document.getElementById('pedido-checkout-title');
 const pedidoCheckoutClose = document.getElementById('pedido-checkout-close');
@@ -864,6 +960,31 @@ function formatMoney(value) {
   return currencyFormatter.format(Number(value) || 0);
 }
 
+function parseIdFromInput(value) {
+  const match = String(value || '').trim().match(/^(\d+)\s*-/);
+  return match ? match[1] : '';
+}
+
+function buildDatalistOptions(rows, format) {
+  if (!Array.isArray(rows)) return '';
+  return rows
+    .map((row) => {
+      const value = format(row);
+      return value ? `<option value="${value}"></option>` : '';
+    })
+    .join('');
+}
+
+async function loadFacturacionClientes(query) {
+  const res = await fetchJSON(`/api/facturacion/clientes?q=${encodeURIComponent(query || '')}`);
+  return Array.isArray(res.data) ? res.data : [];
+}
+
+async function loadFacturacionArticulos(query) {
+  const res = await fetchJSON(`/api/facturacion/articulos?q=${encodeURIComponent(query || '')}`);
+  return Array.isArray(res.data) ? res.data : [];
+}
+
 function fillSelectOptions(selectEl, options) {
   if (!selectEl) return;
   selectEl.innerHTML = '';
@@ -1058,6 +1179,1090 @@ function renderSalonVendedoraTable(rows) {
       },
     },
   });
+}
+
+function setStatusMessage(el, message, tone) {
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.remove('status--ok', 'status--error');
+  if (!message) return;
+  if (tone === 'ok') {
+    el.classList.add('status--ok');
+  } else if (tone === 'error') {
+    el.classList.add('status--error');
+  }
+}
+
+function computeSubtotal(items) {
+  return items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+}
+
+function updatePedidoNuevoTotals() {
+  const subtotal = computeSubtotal(pedidoNuevoItems);
+  const aplicaDescuento = Boolean(pedidoDescuentoCheck?.checked);
+  if (pedidoDescuentoSelect) pedidoDescuentoSelect.disabled = !aplicaDescuento;
+  if (pedidoRecargoSelect) pedidoRecargoSelect.disabled = aplicaDescuento;
+  const descuentoPct = aplicaDescuento ? Number(pedidoDescuentoSelect?.value || 0) : 0;
+  const recargoPct = aplicaDescuento ? 0 : Number(pedidoRecargoSelect?.value || 0);
+  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
+  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : 0;
+  const base = descuentoPct > 0 ? totalConDescuento : recargoPct > 0 ? totalConRecargo : subtotal;
+  const correo = Number(pedidoCorreoInput?.value) || 0;
+  const totalConCorreo = base + correo;
+  if (pedidoTotalInput) pedidoTotalInput.value = subtotal ? subtotal.toFixed(2) : '';
+  if (pedidoDescuentoTotalInput) {
+    pedidoDescuentoTotalInput.value = descuentoPct > 0 ? totalConDescuento.toFixed(2) : '0';
+  }
+  if (pedidoTotalCorreoInput) {
+    pedidoTotalCorreoInput.value = totalConCorreo ? totalConCorreo.toFixed(2) : '';
+  }
+  return subtotal;
+}
+
+async function printPedidoNuevoPdf() {
+  if (!window.jspdf?.jsPDF) return;
+  if (!pedidoNuevoItems.length) {
+    setStatusMessage(pedidoNuevoStatus, 'No hay articulos para imprimir.', 'error');
+    return;
+  }
+  const doc = new window.jspdf.jsPDF();
+  const margin = 14;
+  let y = 18;
+  const pedidoNumero = pedidoNumeroInput?.value || '';
+  const pedidoCliente = (pedidoClienteInput?.value || '').replace(/^\d+\s*-\s*/, '').trim();
+  const pedidoVendedora = (pedidoVendedoraSelect?.value || '').trim();
+  const now = new Date();
+  const fechaPdf = now.toLocaleDateString();
+  const horaPdf = now.toLocaleTimeString();
+  doc.setFontSize(12);
+  doc.text(`Pedido ${pedidoNumero}`, margin, y);
+  y += 6;
+  const detalleParts = [];
+  if (pedidoCliente) detalleParts.push(`Cliente: ${pedidoCliente}`);
+  if (pedidoVendedora) detalleParts.push(`Vendedora: ${pedidoVendedora}`);
+  detalleParts.push(`Fecha: ${fechaPdf} ${horaPdf}`);
+  if (detalleParts.length) {
+    doc.setFontSize(10);
+    doc.text(detalleParts.join('  |  '), margin, y);
+  }
+  y += 8;
+  const headers = ['Cant', 'Detalle', 'Unitario', 'Total'];
+  const body = pedidoNuevoItems.map((item) => [
+    String(item.cantidad),
+    item.detalle || item.articulo,
+    formatMoney(item.precioUnitario),
+    formatMoney(item.total),
+  ]);
+  doc.autoTable({
+    head: [headers],
+    body,
+    startY: y,
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 9, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 15 },
+      1: { cellWidth: 90 },
+      2: { cellWidth: 30 },
+      3: { cellWidth: 30 },
+    },
+    didParseCell(data) {
+      if (data.section === 'head') {
+        data.cell.styles.fillColor = [223, 233, 240];
+        data.cell.styles.textColor = [33, 33, 33];
+      } else if (data.section === 'body' && data.row.index % 2 === 1) {
+        data.cell.styles.fillColor = [248, 250, 252];
+      }
+    },
+  });
+  const finalY = doc.lastAutoTable?.finalY || y;
+  const subtotal = computeSubtotal(pedidoNuevoItems);
+  const descuentoPct = pedidoDescuentoCheck?.checked ? Number(pedidoDescuentoSelect?.value || 0) : 0;
+  const recargoPct = pedidoDescuentoCheck?.checked ? 0 : Number(pedidoRecargoSelect?.value || 0);
+  const correo = Number(pedidoCorreoInput?.value) || 0;
+  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : subtotal;
+  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : subtotal;
+  let base = subtotal;
+  if (descuentoPct > 0) base = totalConDescuento;
+  else if (recargoPct > 0) base = totalConRecargo;
+  const totalConCorreo = base + correo;
+  let fy = finalY + 10;
+  if (descuentoPct > 0) {
+    doc.text(
+      `Total: ${formatMoney(subtotal)}  ${descuentoPct}% de Descuento = ${formatMoney(totalConDescuento)}`,
+      margin,
+      fy
+    );
+  } else if (recargoPct > 0) {
+    doc.text(
+      `Total: ${formatMoney(subtotal)}  Recargo ${recargoPct}% = ${formatMoney(totalConRecargo)}`,
+      margin,
+      fy
+    );
+  } else {
+    doc.text(`Total: ${formatMoney(subtotal)}`, margin, fy);
+  }
+  fy += 8;
+  if (correo > 0) {
+    doc.text(`Envio: ${formatMoney(correo)}  Total Con Envio: ${formatMoney(totalConCorreo)}`, margin, fy);
+  }
+  doc.save(`pedido-${pedidoNumero || 'nuevo'}.pdf`);
+}
+
+function openPedidoBuscarModal() {
+  if (!pedidoBuscarOverlay) return;
+  pedidoBuscarOverlay.classList.add('open');
+  pedidoBuscarOverlay.style.display = 'flex';
+  if (pedidoBuscarSearch) {
+    pedidoBuscarSearch.value = '';
+    pedidoBuscarSearch.focus();
+  }
+  loadPedidosBuscarTable('');
+}
+
+function closePedidoBuscarModal() {
+  if (!pedidoBuscarOverlay) return;
+  pedidoBuscarOverlay.classList.remove('open');
+  pedidoBuscarOverlay.style.display = '';
+}
+
+async function loadPedidosBuscarTable(query) {
+  if (!pedidoBuscarTableBody) return;
+  setStatusMessage(pedidoBuscarStatus, 'Cargando...');
+  try {
+    const res = await fetchJSON(`/api/pedidos/buscar?q=${encodeURIComponent(query || '')}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    pedidoBuscarTableBody.innerHTML = rows
+      .map(
+        (row) => `
+        <tr>
+          <td>${row.nropedido}</td>
+          <td>${row.cliente || ''}</td>
+          <td>${formatMoney(row.total || 0)}</td>
+          <td>${row.vendedora || ''}</td>
+          <td><button type="button" class="btn-icon" data-nro="${row.nropedido}">Cargar</button></td>
+        </tr>`
+      )
+      .join('');
+    setStatusMessage(pedidoBuscarStatus, rows.length ? '' : 'Sin resultados.');
+  } catch (error) {
+    setStatusMessage(pedidoBuscarStatus, error.message || 'Error al cargar pedidos.');
+  }
+}
+
+async function loadPedidoExistente(nroPedido) {
+  if (!nroPedido) return;
+  try {
+    const res = await fetchJSON(`/api/pedidos/buscar?nro=${encodeURIComponent(nroPedido)}`);
+    const row = Array.isArray(res.data) && res.data.length ? res.data[0] : null;
+    if (!row) return;
+    pedidoEditandoNumero = Number(row.nropedido) || null;
+    if (pedidoNumeroInput) pedidoNumeroInput.value = String(row.nropedido || '');
+    if (pedidoClienteId) pedidoClienteId.value = String(row.id_cliente || '');
+    if (pedidoClienteInput)
+      pedidoClienteInput.value = row.id_cliente ? `${row.id_cliente} - ${row.cliente || ''}` : row.cliente || '';
+    if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = row.vendedora || '';
+    if (pedidoOrdenWebInput) pedidoOrdenWebInput.value = row.ordenweb || 0;
+    const itemsRes = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(nroPedido)}`);
+    pedidoNuevoItems = (itemsRes.data || []).map((item) => {
+      const cantidad = Number(item.cantidad) || 0;
+      const precioUnitario = Number(item.precio_unitario) || 0;
+      return {
+        articulo: item.articulo,
+        detalle: item.detalle,
+        cantidad,
+        precioUnitario,
+        precioArgen: 0,
+        total: cantidad * precioUnitario,
+      };
+    });
+    renderPedidoNuevoItems();
+    setStatusMessage(pedidoNuevoStatus, `Editando pedido ${row.nropedido}.`, 'ok');
+  } catch (error) {
+    setStatusMessage(pedidoNuevoStatus, error.message || 'Error al cargar pedido.', 'error');
+  }
+}
+
+function renderPedidoNuevoItems() {
+  if (!pedidoItemsTableBody) return;
+  const rows = pedidoNuevoItems
+    .map((item, index) => ({ item, index }))
+    .reverse();
+  pedidoItemsTableBody.innerHTML = rows
+    .map(
+      ({ item, index }) => `
+        <tr>
+          <td>${item.articulo}</td>
+          <td>${item.detalle}</td>
+          <td>${item.cantidad}</td>
+          <td>${formatMoney(item.precioUnitario)}</td>
+          <td>${formatMoney(item.total)}</td>
+          <td><button type="button" data-index="${index}" class="btn-icon">Quitar</button></td>
+        </tr>`
+    )
+    .join('');
+  updatePedidoNuevoTotals();
+}
+
+async function loadPedidoArticuloFoto(articulo) {
+  if (!pedidoArticuloFoto) return;
+  if (!articulo) {
+    pedidoArticuloFoto.src = '';
+    return;
+  }
+  try {
+    const res = await fetchJSON(`/api/pedidos/articulo-foto?nroArticulo=${encodeURIComponent(articulo)}`);
+    const src = Array.isArray(res?.data) && res.data[0]?.imagessrc ? res.data[0].imagessrc : '';
+    pedidoArticuloFoto.src = src || '';
+  } catch (_error) {
+    pedidoArticuloFoto.src = '';
+  }
+}
+
+function updateFacturaNuevaTotals() {
+  const subtotal = computeSubtotal(facturaNuevaItems);
+  const pct = Number(facturaDescuentoPctInput?.value) || 0;
+  const envio = Number(facturaEnvioInput?.value) || 0;
+  const totalConDescuento = pct > 0 ? subtotal * (1 - pct / 100) : subtotal;
+  const totalConEnvio = totalConDescuento + envio;
+  if (facturaSubtotalEl) facturaSubtotalEl.textContent = formatMoney(subtotal);
+  if (facturaTotalDescuentoEl) facturaTotalDescuentoEl.textContent = formatMoney(totalConDescuento);
+  if (facturaTotalEnvioEl) facturaTotalEnvioEl.textContent = formatMoney(totalConEnvio);
+  if (facturaCalcTotal) facturaCalcTotal.value = totalConEnvio ? totalConEnvio.toFixed(2) : '';
+  return { subtotal, totalConDescuento, totalConEnvio };
+}
+
+function renderFacturaNuevaItems() {
+  if (!facturaItemsTableBody) return;
+  facturaItemsTableBody.innerHTML = facturaNuevaItems
+    .map(
+      (item, index) => `
+        <tr>
+          <td>${item.articulo}</td>
+          <td>${item.detalle}</td>
+          <td>${item.cantidad}</td>
+          <td>${formatMoney(item.precioUnitario)}</td>
+          <td>${formatMoney(item.total)}</td>
+          <td><button type="button" data-index="${index}" class="btn-icon">Quitar</button></td>
+        </tr>`
+    )
+    .join('');
+  updateFacturaNuevaTotals();
+}
+
+async function refreshClientesDatalist(inputValue, listEl) {
+  try {
+    const rows = await loadFacturacionClientes(inputValue);
+    if (!listEl) return;
+    listEl.innerHTML = buildDatalistOptions(rows, (row) => `${row.id} - ${row.nombre} ${row.apellido}`.trim());
+  } catch (_error) {
+    /* ignore */
+  }
+}
+
+async function refreshArticulosDatalist(inputValue, listEl) {
+  try {
+    const rows = await loadFacturacionArticulos(inputValue);
+    if (!listEl) return;
+    listEl.innerHTML = buildDatalistOptions(rows, (row) => `${row.articulo} - ${row.detalle}`.trim());
+  } catch (_error) {
+    /* ignore */
+  }
+}
+
+async function reservarPedidoNumero() {
+  if (!pedidoNumeroInput) return;
+  try {
+    resetPedidoEdicion();
+    resetPedidoNuevoForm();
+    const res = await fetchJSON('/api/pedidos/reservar', { method: 'POST' });
+    if (res?.nroPedido) pedidoNumeroInput.value = res.nroPedido;
+    pedidoEditandoNumero = null;
+  } catch (error) {
+    setStatusMessage(pedidoNuevoStatus, error.message || 'Error al reservar nro pedido.', 'error');
+  }
+}
+
+async function loadNextFacturaNumero() {
+  if (!facturaNumeroInput) return;
+  try {
+    const res = await fetchJSON('/api/facturas/next');
+    if (res?.nroFactura) facturaNumeroInput.value = res.nroFactura;
+  } catch (error) {
+    setStatusMessage(facturaNuevaStatus, error.message || 'Error al cargar nro factura.');
+  }
+}
+
+async function loadVendedoras(selectEl, statusEl) {
+  try {
+    const res = await fetchJSON('/api/config/vendedoras');
+    const data = Array.isArray(res.data) ? res.data : [];
+    const options = [{ value: '', label: 'Seleccionar' }].concat(
+      data.map((row) => ({ value: row.nombre, label: row.nombre }))
+    );
+    fillSelectOptions(selectEl, options);
+  } catch (error) {
+    setStatusMessage(statusEl, error.message || 'Error al cargar vendedoras.');
+  }
+}
+
+async function loadTipoPagos(selectEl, statusEl) {
+  try {
+    const res = await fetchJSON('/api/facturacion/tipo-pagos');
+    const data = Array.isArray(res.data) ? res.data : [];
+    const options = [{ value: '', label: 'Seleccionar' }].concat(
+      data.map((row) => ({ value: row.id, label: row.tipo_pago }))
+    );
+    fillSelectOptions(selectEl, options);
+  } catch (error) {
+    setStatusMessage(statusEl, error.message || 'Error al cargar tipos de pago.');
+  }
+}
+
+async function loadFacturaPedidos() {
+  if (!facturaPedidoSelect) return;
+  try {
+    const res = await fetchJSON('/api/facturacion/pedidos');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    facturaPedidoSelect.innerHTML = '';
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = 'Sin pedido';
+    facturaPedidoSelect.appendChild(emptyOption);
+    rows.forEach((row) => {
+      const option = document.createElement('option');
+      option.value = row.nropedido;
+      option.textContent = `${row.nropedido} - ${row.cliente}`;
+      option.dataset.clienteId = row.id_cliente;
+      option.dataset.clienteNombre = row.cliente;
+      option.dataset.vendedora = row.vendedora || '';
+      option.dataset.total = row.total || 0;
+      facturaPedidoSelect.appendChild(option);
+    });
+  } catch (error) {
+    setStatusMessage(facturaNuevaStatus, error.message || 'Error al cargar pedidos.');
+  }
+}
+
+async function addPedidoNuevoItem() {
+  const articulo = (pedidoItemArticuloInput?.value || '').split(' - ')[0].trim();
+  const cantidad = Number(pedidoItemCantidadInput?.value) || 0;
+  if (!articulo || cantidad <= 0) {
+    setStatusMessage(pedidoNuevoStatus, 'Completa articulo y cantidad.', 'error');
+    return;
+  }
+  const stockDisponible = Number(pedidoItemStockInput?.value);
+  if (Number.isFinite(stockDisponible) && stockDisponible <= 0) {
+    setStatusMessage(pedidoNuevoStatus, 'Stock insuficiente.', 'error');
+    return;
+  }
+  if (Number.isFinite(stockDisponible) && stockDisponible > 0 && cantidad > stockDisponible) {
+    setStatusMessage(pedidoNuevoStatus, 'Cantidad supera el stock disponible.', 'error');
+    return;
+  }
+  const existente = pedidoNuevoItems.find((item) => item.articulo === articulo);
+  const acumulado = (existente?.cantidad || 0) + cantidad;
+  if (Number.isFinite(stockDisponible) && stockDisponible > 0 && acumulado > stockDisponible) {
+    setStatusMessage(pedidoNuevoStatus, 'Cantidad total supera el stock disponible.', 'error');
+    return;
+  }
+  let manualPrecio = Number(pedidoItemPrecioInput?.value) || 0;
+  let detalle = pedidoItemDetalleInput?.value || '';
+  let precioBase = manualPrecio;
+  if (!manualPrecio) {
+    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+    if (!data?.data) {
+      setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+      return;
+    }
+    detalle = detalle || data.data.detalle || '';
+    precioBase = Number(data.data.precioVenta) || 0;
+  }
+  const precioUnitario = manualPrecio > 0 ? manualPrecio : precioBase;
+  if (!precioUnitario) {
+    setStatusMessage(pedidoNuevoStatus, 'Precio invalido.', 'error');
+    return;
+  }
+  const total = precioUnitario * cantidad;
+  const existing = pedidoNuevoItems.find((item) => item.articulo === articulo);
+  if (existing) {
+    existing.cantidad += cantidad;
+    existing.total = existing.cantidad * existing.precioUnitario;
+  } else {
+    pedidoNuevoItems.push({
+      articulo,
+      detalle,
+      cantidad,
+      precioUnitario,
+      precioArgen: 0,
+      total,
+    });
+  }
+  if (pedidoItemCantidadInput) pedidoItemCantidadInput.value = '1';
+  if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = '';
+  if (pedidoItemArticuloInput) pedidoItemArticuloInput.value = '';
+  if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = '';
+  if (pedidoItemStockInput) pedidoItemStockInput.value = '';
+  renderPedidoNuevoItems();
+  setStatusMessage(pedidoNuevoStatus, '');
+}
+
+async function addFacturaNuevaItem() {
+  const articulo = (facturaItemArticuloInput?.value || '').split(' - ')[0].trim();
+  const cantidad = Number(facturaItemCantidadInput?.value) || 0;
+  if (!articulo || cantidad <= 0) {
+    setStatusMessage(facturaNuevaStatus, 'Completa articulo y cantidad.');
+    return;
+  }
+  const stockDisponible = Number(facturaItemStockInput?.value);
+  if (Number.isFinite(stockDisponible) && stockDisponible <= 0) {
+    setStatusMessage(facturaNuevaStatus, 'Stock insuficiente.');
+    return;
+  }
+  if (Number.isFinite(stockDisponible) && stockDisponible > 0 && cantidad > stockDisponible) {
+    setStatusMessage(facturaNuevaStatus, 'Cantidad supera el stock disponible.');
+    return;
+  }
+  const existente = facturaNuevaItems.find((item) => item.articulo === articulo);
+  const acumulado = (existente?.cantidad || 0) + cantidad;
+  if (Number.isFinite(stockDisponible) && stockDisponible > 0 && acumulado > stockDisponible) {
+    setStatusMessage(facturaNuevaStatus, 'Cantidad total supera el stock disponible.');
+    return;
+  }
+  let manualPrecio = Number(facturaItemPrecioInput?.value) || 0;
+  let detalle = facturaItemDetalleInput?.value || '';
+  let precioBase = manualPrecio;
+  if (!manualPrecio) {
+    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+    if (!data?.data) {
+      setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.');
+      return;
+    }
+    detalle = detalle || data.data.detalle || '';
+    precioBase = Number(data.data.precioVenta) || 0;
+  }
+  const precioUnitario = manualPrecio > 0 ? manualPrecio : precioBase;
+  if (!precioUnitario) {
+    setStatusMessage(facturaNuevaStatus, 'Precio invalido.');
+    return;
+  }
+  const total = precioUnitario * cantidad;
+  const existing = facturaNuevaItems.find((item) => item.articulo === articulo);
+  if (existing) {
+    existing.cantidad += cantidad;
+    existing.total = existing.cantidad * existing.precioUnitario;
+  } else {
+    facturaNuevaItems.push({
+      articulo,
+      detalle,
+      cantidad,
+      precioUnitario,
+      precioArgen: 0,
+      total,
+    });
+  }
+  if (facturaItemCantidadInput) facturaItemCantidadInput.value = '1';
+  if (facturaItemPrecioInput) facturaItemPrecioInput.value = '';
+  if (facturaItemArticuloInput) facturaItemArticuloInput.value = '';
+  if (facturaItemDetalleInput) facturaItemDetalleInput.value = '';
+  if (facturaItemStockInput) facturaItemStockInput.value = '';
+  renderFacturaNuevaItems();
+  setStatusMessage(facturaNuevaStatus, '');
+}
+
+async function loadFacturaPedidoDetalle(nroPedido) {
+  if (!nroPedido) return;
+  try {
+    const itemsRes = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(nroPedido)}`);
+    facturaNuevaItems = (itemsRes.data || []).map((row) => {
+      const precioUnitario = Number(row.precio_unitario) || 0;
+      const cantidad = Number(row.cantidad) || 0;
+      return {
+        articulo: row.articulo,
+        detalle: row.detalle,
+        cantidad,
+        precioUnitario,
+        precioArgen: 0,
+        total: precioUnitario * cantidad,
+      };
+    });
+    renderFacturaNuevaItems();
+  } catch (error) {
+    setStatusMessage(facturaNuevaStatus, error.message || 'Error al cargar pedido.');
+  }
+}
+
+function openFacturaCalculadora() {
+  if (!facturaCalcOverlay) return;
+  updateFacturaNuevaTotals();
+  facturaCalcOverlay.classList.add('open');
+  facturaCalcOverlay.style.display = 'flex';
+  if (facturaCalcPago) facturaCalcPago.focus();
+}
+
+function closeFacturaCalculadora() {
+  if (!facturaCalcOverlay) return;
+  facturaCalcOverlay.classList.remove('open');
+  facturaCalcOverlay.style.display = '';
+}
+
+function openFacturacionClientesModal(target) {
+  if (!facturacionClientesOverlay) return;
+  facturacionClientesTarget = target;
+  facturacionClientesOverlay.classList.add('open');
+  facturacionClientesOverlay.style.display = 'flex';
+  if (facturacionClientesSearch) {
+    facturacionClientesSearch.value = '';
+    facturacionClientesSearch.focus();
+  }
+  loadFacturacionClientesTable('');
+}
+
+function closeFacturacionClientesModal() {
+  if (!facturacionClientesOverlay) return;
+  facturacionClientesOverlay.classList.remove('open');
+  facturacionClientesOverlay.style.display = '';
+}
+
+function openFacturacionArticulosModal(target) {
+  if (!facturacionArticulosOverlay) return;
+  facturacionArticulosTarget = target;
+  facturacionArticulosOverlay.classList.add('open');
+  facturacionArticulosOverlay.style.display = 'flex';
+  if (facturacionArticulosSearch) {
+    facturacionArticulosSearch.value = '';
+    facturacionArticulosSearch.focus();
+  }
+  loadFacturacionArticulosTable('');
+}
+
+function closeFacturacionArticulosModal() {
+  if (!facturacionArticulosOverlay) return;
+  facturacionArticulosOverlay.classList.remove('open');
+  facturacionArticulosOverlay.style.display = '';
+}
+
+function clearPedidoCliente() {
+  if (pedidoClienteInput) pedidoClienteInput.value = '';
+  if (pedidoClienteId) pedidoClienteId.value = '';
+}
+
+function clearFacturaCliente() {
+  if (facturaClienteInput) facturaClienteInput.value = '';
+  if (facturaClienteId) facturaClienteId.value = '';
+}
+
+function clearPedidoArticulo() {
+  if (pedidoItemArticuloInput) pedidoItemArticuloInput.value = '';
+  if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = '';
+  if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = '';
+  if (pedidoItemStockInput) pedidoItemStockInput.value = '';
+  if (pedidoItemCantidadInput) pedidoItemCantidadInput.value = '1';
+  if (pedidoArticuloFoto) pedidoArticuloFoto.src = '';
+}
+
+function resetPedidoEdicion() {
+  pedidoEditandoNumero = null;
+  if (pedidoNumeroInput) pedidoNumeroInput.value = '';
+}
+
+function resetPedidoNuevoForm() {
+  clearPedidoArticulo();
+  clearPedidoCliente();
+  pedidoNuevoItems = [];
+  renderPedidoNuevoItems();
+  if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = '';
+  if (pedidoOrdenWebInput) pedidoOrdenWebInput.value = '';
+  if (pedidoDescuentoCheck) pedidoDescuentoCheck.checked = false;
+  if (pedidoDescuentoSelect) pedidoDescuentoSelect.value = '0';
+  if (pedidoRecargoSelect) pedidoRecargoSelect.value = '0';
+  if (pedidoCorreoInput) pedidoCorreoInput.value = '';
+  if (pedidoTotalCorreoInput) pedidoTotalCorreoInput.value = '';
+  if (pedidoTotalInput) pedidoTotalInput.value = '';
+  if (pedidoDescuentoTotalInput) pedidoDescuentoTotalInput.value = '0';
+  if (pedidoItemCantidadInput) pedidoItemCantidadInput.value = '1';
+  updatePedidoNuevoTotals();
+  setStatusMessage(pedidoNuevoStatus, '');
+}
+
+function clearFacturaArticulo() {
+  if (facturaItemArticuloInput) facturaItemArticuloInput.value = '';
+  if (facturaItemDetalleInput) facturaItemDetalleInput.value = '';
+  if (facturaItemPrecioInput) facturaItemPrecioInput.value = '';
+  if (facturaItemStockInput) facturaItemStockInput.value = '';
+  if (facturaItemCantidadInput) facturaItemCantidadInput.value = '1';
+}
+
+async function loadFacturacionClientesTable(query) {
+  if (!facturacionClientesTableBody) return;
+  setStatusMessage(facturacionClientesStatus, 'Cargando...');
+  try {
+    const rows = await loadFacturacionClientes(query);
+    facturacionClientesTableBody.innerHTML = rows
+      .map(
+        (row) => `
+        <tr>
+          <td>${row.id}</td>
+          <td>${row.nombre || ''}</td>
+          <td>${row.apellido || ''}</td>
+          <td>${row.mail || ''}</td>
+          <td><button type="button" class="btn-icon" data-id="${row.id}" data-nombre="${row.nombre || ''}" data-apellido="${row.apellido || ''}">Elegir</button></td>
+        </tr>`
+      )
+      .join('');
+    setStatusMessage(facturacionClientesStatus, rows.length ? '' : 'Sin resultados.');
+  } catch (error) {
+    setStatusMessage(facturacionClientesStatus, error.message || 'Error al cargar clientes.');
+  }
+}
+
+async function loadFacturacionArticulosTable(query) {
+  if (!facturacionArticulosTableBody) return;
+  setStatusMessage(facturacionArticulosStatus, 'Cargando...');
+  try {
+    const res = await fetchJSON(`/api/facturacion/articulos?q=${encodeURIComponent(query || '')}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    facturacionArticulosTableBody.innerHTML = rows
+      .map(
+        (row) => `
+        <tr>
+          <td>${row.articulo}</td>
+          <td>${row.detalle || ''}</td>
+          <td>${formatMoney(row.precioVenta || 0)}</td>
+          <td>${row.cantidad ?? 0}</td>
+          <td>
+            <button
+              type="button"
+              class="btn-icon"
+              data-articulo="${row.articulo}"
+              data-detalle="${row.detalle || ''}"
+              data-stock="${row.cantidad ?? 0}"
+              data-precio="${row.precioVenta || 0}"
+            >Elegir</button>
+          </td>
+        </tr>`
+      )
+      .join('');
+    setStatusMessage(facturacionArticulosStatus, rows.length ? '' : 'Sin resultados.');
+  } catch (error) {
+    setStatusMessage(facturacionArticulosStatus, error.message || 'Error al cargar articulos.');
+  }
+}
+
+async function initPedidoNuevo() {
+  if (!pedidoNuevoSaveBtn) return;
+  await loadVendedoras(pedidoVendedoraSelect, pedidoNuevoStatus);
+
+  if (pedidoClienteInput) {
+    pedidoClienteInput.addEventListener('input', () => {
+      clearTimeout(pedidoNuevoClientesTimer);
+      const value = pedidoClienteInput.value;
+      pedidoNuevoClientesTimer = setTimeout(() => refreshClientesDatalist(value, pedidoClientesList), 300);
+    });
+    pedidoClienteInput.addEventListener('change', () => {
+      if (pedidoClienteId) pedidoClienteId.value = parseIdFromInput(pedidoClienteInput.value);
+    });
+  }
+
+  if (pedidoItemArticuloInput) {
+    pedidoItemArticuloInput.addEventListener('input', () => {
+      clearTimeout(pedidoNuevoArticulosTimer);
+      const value = pedidoItemArticuloInput.value;
+      pedidoNuevoArticulosTimer = setTimeout(() => refreshArticulosDatalist(value, pedidoArticulosList), 300);
+    });
+    pedidoItemArticuloInput.addEventListener('change', async () => {
+      const articulo = (pedidoItemArticuloInput.value || '').split(' - ')[0].trim();
+      if (!articulo) return;
+      try {
+        const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+        if (data?.data) {
+          if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = data.data.detalle || '';
+          if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = String(data.data.precioVenta || '');
+          if (pedidoItemStockInput) pedidoItemStockInput.value = String(data.data.cantidad ?? '');
+          await loadPedidoArticuloFoto(articulo);
+        }
+      } catch (_error) {
+        /* ignore */
+      }
+    });
+  }
+  if (pedidoItemCantidadInput) {
+    pedidoItemCantidadInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addPedidoNuevoItem();
+    });
+  }
+
+  if (pedidoItemAddBtn) pedidoItemAddBtn.addEventListener('click', addPedidoNuevoItem);
+  if (pedidoClienteSearchBtn) pedidoClienteSearchBtn.addEventListener('click', () => openFacturacionClientesModal('pedido'));
+  if (pedidoArticuloSearchBtn) pedidoArticuloSearchBtn.addEventListener('click', () => openFacturacionArticulosModal('pedido'));
+  if (pedidoArticuloSearchTextBtn)
+    pedidoArticuloSearchTextBtn.addEventListener('click', () => openFacturacionArticulosModal('pedido'));
+  if (pedidoClienteClearBtn) pedidoClienteClearBtn.addEventListener('click', clearPedidoCliente);
+  if (pedidoArticuloClearBtn) pedidoArticuloClearBtn.addEventListener('click', clearPedidoArticulo);
+  if (pedidoArticuloFoto) {
+    pedidoArticuloFoto.addEventListener('click', () => {
+      if (!pedidoArticuloFoto.src) return;
+      const isZoomed = pedidoArticuloFoto.classList.toggle('zoomed');
+      document.body.classList.toggle('pedido-foto-open', isZoomed);
+    });
+  }
+  document.addEventListener('click', (event) => {
+    if (!document.body.classList.contains('pedido-foto-open')) return;
+    if (event.target === pedidoArticuloFoto) return;
+    pedidoArticuloFoto?.classList.remove('zoomed');
+    document.body.classList.remove('pedido-foto-open');
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (!document.body.classList.contains('pedido-foto-open')) return;
+    pedidoArticuloFoto?.classList.remove('zoomed');
+    document.body.classList.remove('pedido-foto-open');
+  });
+  if (pedidoBuscarOpenBtn) pedidoBuscarOpenBtn.addEventListener('click', openPedidoBuscarModal);
+  if (pedidoBuscarClose) pedidoBuscarClose.addEventListener('click', closePedidoBuscarModal);
+  if (pedidoBuscarOverlay) {
+    pedidoBuscarOverlay.addEventListener('click', (event) => {
+      if (event.target === pedidoBuscarOverlay) closePedidoBuscarModal();
+    });
+  }
+  if (pedidoBuscarSearch) {
+    pedidoBuscarSearch.addEventListener('input', () => {
+      loadPedidosBuscarTable(pedidoBuscarSearch.value);
+    });
+    pedidoBuscarSearch.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const rows = pedidoBuscarTableBody?.querySelectorAll('tr') || [];
+      if (rows.length !== 1) return;
+      const button = rows[0].querySelector('button[data-nro]');
+      if (button) button.click();
+    });
+  }
+  if (pedidoBuscarTableBody) {
+    pedidoBuscarTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-nro]');
+      if (!button) return;
+      const nro = button.dataset.nro;
+      await loadPedidoExistente(nro);
+      closePedidoBuscarModal();
+    });
+  }
+  if (pedidoDescuentoCheck) pedidoDescuentoCheck.addEventListener('change', updatePedidoNuevoTotals);
+  if (pedidoDescuentoSelect) pedidoDescuentoSelect.addEventListener('change', updatePedidoNuevoTotals);
+  if (pedidoRecargoSelect) pedidoRecargoSelect.addEventListener('change', updatePedidoNuevoTotals);
+  if (pedidoCorreoInput) pedidoCorreoInput.addEventListener('input', updatePedidoNuevoTotals);
+  if (pedidoImprimirBtn) pedidoImprimirBtn.addEventListener('click', printPedidoNuevoPdf);
+  if (pedidoNuevoReservarBtn) pedidoNuevoReservarBtn.addEventListener('click', reservarPedidoNumero);
+  if (pedidoNuevoAddBtn)
+    pedidoNuevoAddBtn.addEventListener('click', () => pedidoItemArticuloInput?.focus());
+
+  if (pedidoItemsTableBody) {
+    pedidoItemsTableBody.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-index]');
+      if (!btn) return;
+      const index = Number(btn.dataset.index);
+      if (!Number.isFinite(index)) return;
+      pedidoNuevoItems.splice(index, 1);
+      renderPedidoNuevoItems();
+    });
+  }
+
+  if (pedidoNuevoSaveBtn) {
+    pedidoNuevoSaveBtn.addEventListener('click', async () => {
+      const clienteId = Number(pedidoClienteId?.value) || 1;
+      const nroPedido = Number(pedidoNumeroInput?.value) || 0;
+      const vendedora = pedidoVendedoraSelect?.value || '';
+      const ordenWeb = Number(pedidoOrdenWebInput?.value) || 0;
+      if (!vendedora) {
+        setStatusMessage(pedidoNuevoStatus, 'Vendedora obligatoria.', 'error');
+        return;
+      }
+      if (!nroPedido) {
+        setStatusMessage(pedidoNuevoStatus, 'Debes generar un nuevo pedido.', 'error');
+        return;
+      }
+      if (!pedidoNuevoItems.length) {
+        setStatusMessage(pedidoNuevoStatus, 'Agrega al menos un articulo.', 'error');
+        return;
+      }
+      setStatusMessage(pedidoNuevoStatus, 'Guardando...');
+      try {
+        const payload = {
+          cliente_id: clienteId,
+          nroPedido,
+          vendedora,
+          ordenWeb,
+          items: pedidoNuevoItems,
+        };
+        const isEdit = Boolean(pedidoEditandoNumero);
+        const targetNumero = isEdit ? pedidoEditandoNumero : nroPedido;
+        const res = await fetchJSON(isEdit ? `/api/pedidos/${encodeURIComponent(targetNumero)}` : '/api/pedidos', {
+          method: isEdit ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payload, nroPedido: targetNumero }),
+        });
+        setStatusMessage(pedidoNuevoStatus, `Pedido ${res?.nroPedido || ''} guardado.`, 'ok');
+        pedidoNuevoItems = [];
+        pedidoEditandoNumero = null;
+        renderPedidoNuevoItems();
+        if (pedidoClienteInput) pedidoClienteInput.value = '';
+        if (pedidoClienteId) pedidoClienteId.value = '';
+        if (pedidoOrdenWebInput) pedidoOrdenWebInput.value = '';
+        if (pedidoNumeroInput) pedidoNumeroInput.value = '';
+        if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = '';
+      } catch (error) {
+        setStatusMessage(pedidoNuevoStatus, error.message || 'Error al guardar pedido.', 'error');
+      }
+    });
+  }
+}
+
+async function initFacturaNueva() {
+  if (!facturaNuevaSaveBtn) return;
+  await loadVendedoras(facturaVendedoraSelect, facturaNuevaStatus);
+  await loadTipoPagos(facturaTipoPagoSelect, facturaNuevaStatus);
+  await loadNextFacturaNumero();
+  await loadFacturaPedidos();
+
+  try {
+    const res = await fetchJSON('/api/facturacion/autorizacion');
+    facturaNuevaAutorizado = !!res?.autorizado;
+  } catch (_err) {
+    facturaNuevaAutorizado = true;
+  }
+
+  if (!facturaNuevaAutorizado) {
+    setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.');
+    if (facturaNuevaSaveBtn) facturaNuevaSaveBtn.disabled = true;
+  }
+
+  if (facturaClienteInput) {
+    facturaClienteInput.addEventListener('input', () => {
+      clearTimeout(facturaNuevaClientesTimer);
+      const value = facturaClienteInput.value;
+      facturaNuevaClientesTimer = setTimeout(() => refreshClientesDatalist(value, facturaClientesList), 300);
+    });
+    facturaClienteInput.addEventListener('change', () => {
+      if (facturaClienteId) facturaClienteId.value = parseIdFromInput(facturaClienteInput.value);
+    });
+  }
+
+  if (facturaItemArticuloInput) {
+    facturaItemArticuloInput.addEventListener('input', () => {
+      clearTimeout(facturaNuevaArticulosTimer);
+      const value = facturaItemArticuloInput.value;
+      facturaNuevaArticulosTimer = setTimeout(() => refreshArticulosDatalist(value, facturaArticulosList), 300);
+    });
+  }
+  if (facturaItemCantidadInput) {
+    facturaItemCantidadInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addFacturaNuevaItem();
+    });
+  }
+
+  if (facturaItemAddBtn) facturaItemAddBtn.addEventListener('click', addFacturaNuevaItem);
+  if (facturaClienteSearchBtn)
+    facturaClienteSearchBtn.addEventListener('click', () => openFacturacionClientesModal('factura'));
+  if (facturaArticuloSearchBtn)
+    facturaArticuloSearchBtn.addEventListener('click', () => openFacturacionArticulosModal('factura'));
+  if (facturaClienteClearBtn) facturaClienteClearBtn.addEventListener('click', clearFacturaCliente);
+  if (facturaArticuloClearBtn) facturaArticuloClearBtn.addEventListener('click', clearFacturaArticulo);
+  if (facturaNuevaAddBtn)
+    facturaNuevaAddBtn.addEventListener('click', () => facturaItemArticuloInput?.focus());
+
+  if (facturaItemsTableBody) {
+    facturaItemsTableBody.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-index]');
+      if (!btn) return;
+      const index = Number(btn.dataset.index);
+      if (!Number.isFinite(index)) return;
+      facturaNuevaItems.splice(index, 1);
+      renderFacturaNuevaItems();
+    });
+  }
+
+  if (facturaPedidoSelect) {
+    facturaPedidoSelect.addEventListener('change', async () => {
+      const selected = facturaPedidoSelect.options[facturaPedidoSelect.selectedIndex];
+      const nroPedido = facturaPedidoSelect.value;
+      if (!nroPedido) {
+        facturaNuevaItems = [];
+        renderFacturaNuevaItems();
+        return;
+      }
+      if (facturaClienteId) facturaClienteId.value = selected.dataset.clienteId || '';
+      if (facturaClienteInput) {
+        const label = selected.dataset.clienteNombre || '';
+        const id = selected.dataset.clienteId || '';
+        facturaClienteInput.value = id ? `${id} - ${label}` : label;
+      }
+      if (facturaVendedoraSelect) facturaVendedoraSelect.value = selected.dataset.vendedora || '';
+      await loadFacturaPedidoDetalle(nroPedido);
+    });
+  }
+
+  if (facturaDescuentoPctInput) facturaDescuentoPctInput.addEventListener('input', updateFacturaNuevaTotals);
+  if (facturaEnvioInput) facturaEnvioInput.addEventListener('input', updateFacturaNuevaTotals);
+
+  if (facturaNuevaCalcBtn) facturaNuevaCalcBtn.addEventListener('click', openFacturaCalculadora);
+  if (facturaCalcClose) facturaCalcClose.addEventListener('click', closeFacturaCalculadora);
+  if (facturaCalcOverlay) {
+    facturaCalcOverlay.addEventListener('click', (event) => {
+      if (event.target === facturaCalcOverlay) closeFacturaCalculadora();
+    });
+  }
+  if (facturaCalcPago) {
+    facturaCalcPago.addEventListener('input', () => {
+      const total = Number(facturaCalcTotal?.value) || 0;
+      const pago = Number(facturaCalcPago.value) || 0;
+      if (facturaCalcVuelto) facturaCalcVuelto.value = (pago - total).toFixed(2);
+    });
+  }
+
+  if (facturacionClientesClose)
+    facturacionClientesClose.addEventListener('click', closeFacturacionClientesModal);
+  if (facturacionClientesOverlay) {
+    facturacionClientesOverlay.addEventListener('click', (event) => {
+      if (event.target === facturacionClientesOverlay) closeFacturacionClientesModal();
+    });
+  }
+  if (facturacionClientesSearch) {
+    facturacionClientesSearch.addEventListener('input', () => {
+      const value = facturacionClientesSearch.value;
+      loadFacturacionClientesTable(value);
+    });
+  }
+  if (facturacionClientesTableBody) {
+    facturacionClientesTableBody.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-id]');
+      if (!button) return;
+      const id = button.dataset.id || '';
+      const nombre = button.dataset.nombre || '';
+      const apellido = button.dataset.apellido || '';
+      const label = `${id} - ${nombre} ${apellido}`.trim();
+      if (facturacionClientesTarget === 'pedido') {
+        if (pedidoClienteId) pedidoClienteId.value = id;
+        if (pedidoClienteInput) pedidoClienteInput.value = label;
+      } else {
+        if (facturaClienteId) facturaClienteId.value = id;
+        if (facturaClienteInput) facturaClienteInput.value = label;
+      }
+      closeFacturacionClientesModal();
+    });
+  }
+
+  if (facturacionArticulosClose)
+    facturacionArticulosClose.addEventListener('click', closeFacturacionArticulosModal);
+  if (facturacionArticulosOverlay) {
+    facturacionArticulosOverlay.addEventListener('click', (event) => {
+      if (event.target === facturacionArticulosOverlay) closeFacturacionArticulosModal();
+    });
+  }
+  if (facturacionArticulosSearch) {
+    facturacionArticulosSearch.addEventListener('input', () => {
+      const value = facturacionArticulosSearch.value;
+      loadFacturacionArticulosTable(value);
+    });
+    facturacionArticulosSearch.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const rows = facturacionArticulosTableBody?.querySelectorAll('tr') || [];
+      if (rows.length !== 1) return;
+      const button = rows[0].querySelector('button[data-articulo]');
+      if (button) button.click();
+    });
+  }
+  if (facturacionArticulosTableBody) {
+    facturacionArticulosTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-articulo]');
+      if (!button) return;
+      const articulo = button.dataset.articulo || '';
+      const detalle = button.dataset.detalle || '';
+      const stock = button.dataset.stock || '';
+      const precioVenta = Number(button.dataset.precio) || 0;
+      if (facturacionArticulosTarget === 'pedido') {
+        if (pedidoItemArticuloInput) pedidoItemArticuloInput.value = articulo;
+        if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = detalle;
+        if (pedidoItemPrecioInput && precioVenta) pedidoItemPrecioInput.value = String(precioVenta);
+        if (pedidoItemStockInput) pedidoItemStockInput.value = String(stock);
+        await loadPedidoArticuloFoto(articulo);
+        if (pedidoItemCantidadInput) {
+          pedidoItemCantidadInput.value = '1';
+          pedidoItemCantidadInput.focus();
+          pedidoItemCantidadInput.select();
+        }
+      } else {
+        if (facturaItemArticuloInput) facturaItemArticuloInput.value = articulo;
+        if (facturaItemDetalleInput) facturaItemDetalleInput.value = detalle;
+        if (facturaItemPrecioInput && precioVenta) facturaItemPrecioInput.value = String(precioVenta);
+        if (facturaItemStockInput) facturaItemStockInput.value = String(stock);
+        if (facturaItemCantidadInput) {
+          facturaItemCantidadInput.value = '1';
+          facturaItemCantidadInput.focus();
+          facturaItemCantidadInput.select();
+        }
+      }
+      closeFacturacionArticulosModal();
+    });
+  }
+
+  if (facturaNuevaSaveBtn) {
+    facturaNuevaSaveBtn.addEventListener('click', async () => {
+      if (!facturaNuevaAutorizado) return;
+      const clienteId = Number(facturaClienteId?.value) || 0;
+      const vendedora = facturaVendedoraSelect?.value || '';
+      const tipoPagoId = Number(facturaTipoPagoSelect?.value) || 0;
+      if (!clienteId || !vendedora || !tipoPagoId) {
+        setStatusMessage(facturaNuevaStatus, 'Cliente, vendedora y tipo de pago son obligatorios.');
+        return;
+      }
+  if (!facturaNuevaItems.length) {
+    setStatusMessage(facturaNuevaStatus, 'Agrega al menos un articulo.');
+    return;
+  }
+      const totals = updateFacturaNuevaTotals();
+      const payload = {
+        cliente_id: clienteId,
+        vendedora,
+        tipo_pago_id: tipoPagoId,
+        items: facturaNuevaItems,
+        porcentajeDescuento: Number(facturaDescuentoPctInput?.value) || 0,
+        envio: Number(facturaEnvioInput?.value) || 0,
+        pagoMixto: Number(facturaPagoMixtoInput?.value) || 0,
+        total: totals.subtotal,
+        totalConDescuento: totals.totalConDescuento,
+        totalConEnvio: totals.totalConEnvio,
+        esPedido: facturaPedidoSelect?.value ? 'SI' : 'NO',
+        nroPedido: facturaPedidoSelect?.value || '',
+        listoParaEnvio: facturaListoEnvioInput?.checked ? 1 : 0,
+      };
+      setStatusMessage(facturaNuevaStatus, 'Guardando...');
+      try {
+        const res = await fetchJSON('/api/facturas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        setStatusMessage(facturaNuevaStatus, `Factura ${res?.nroFactura || ''} guardada.`);
+        facturaNuevaItems = [];
+        renderFacturaNuevaItems();
+        if (facturaClienteInput) facturaClienteInput.value = '';
+        if (facturaClienteId) facturaClienteId.value = '';
+        if (facturaPedidoSelect) facturaPedidoSelect.value = '';
+        if (facturaPagoMixtoInput) facturaPagoMixtoInput.value = '0';
+        if (facturaDescuentoPctInput) facturaDescuentoPctInput.value = '0';
+        if (facturaEnvioInput) facturaEnvioInput.value = '0';
+        if (facturaListoEnvioInput) facturaListoEnvioInput.checked = false;
+        await loadNextFacturaNumero();
+        await loadFacturaPedidos();
+      } catch (error) {
+        setStatusMessage(facturaNuevaStatus, error.message || 'Error al guardar factura.');
+      }
+    });
+  }
 }
 
 function initPedidosResumen() {
@@ -5385,8 +6590,8 @@ function closeOverlay(el) {
   el.classList.remove('open');
 }
 
-async function fetchJSON(url) {
-  const response = await fetch(url, { credentials: 'include' });
+async function fetchJSON(url, options = {}) {
+  const response = await fetch(url, { credentials: 'include', ...options });
   if (!response.ok) throw new Error(`Error ${response.status}`);
   return response.json();
 }
@@ -9473,23 +10678,30 @@ function getFirstAllowedView(perms = {}) {
       'empleados',
       'clientes',
       'ia',
-    'salon',
-    'pedidos',
-    'pedidos-todos',
-    'mercaderia',
-    'abm',
-    'control-ordenes',
-    'ecommerce-imagenweb',
-    'ecommerce-panel',
-    'cajas',
-    'cajas-cierre',
-    'facturas',
+      'salon',
+      'pedidos',
+      'pedidos-todos',
+      'pedidos-nuevo',
+      'mercaderia',
+      'abm',
+      'control-ordenes',
+      'ecommerce-imagenweb',
+      'ecommerce-panel',
+      'cajas',
+      'cajas-cierre',
+      'cajas-nueva-factura',
+      'facturas',
     'comisiones',
     'configuracion',
   ];
-  if (perms['pedidos-menu'] === true && !perms.pedidos && !perms['pedidos-todos']) {
-    return 'pedidos';
-  }
+    if (
+      perms['pedidos-menu'] === true &&
+      !perms.pedidos &&
+      !perms['pedidos-todos'] &&
+      !perms['pedidos-nuevo']
+    ) {
+      return 'pedidos';
+    }
   return order.find((key) => perms[key] === true) || '';
 }
 
@@ -10541,12 +11753,14 @@ const permissionGroups = [
         { key: 'empleados', label: 'Empleados' },
       { key: 'clientes', label: 'Clientes' },
       { key: 'ia', label: 'IA' },
-      { key: 'salon', label: 'Salon' },
-      { key: 'cajas', label: 'Cajas' },
-      { key: 'cajas-cierre', label: 'Cajas - Cierre' },
-      { key: 'pedidos-menu', label: 'Menu Pedidos' },
+        { key: 'salon', label: 'Salon' },
+        { key: 'cajas', label: 'Cajas' },
+        { key: 'cajas-cierre', label: 'Cajas - Cierre' },
+        { key: 'cajas-nueva-factura', label: 'Cajas - Nueva Factura' },
+        { key: 'pedidos-menu', label: 'Menu Pedidos' },
       { key: 'pedidos', label: 'Pedidos - Informe' },
       { key: 'pedidos-todos', label: 'Pedidos - Todos' },
+      { key: 'pedidos-nuevo', label: 'Pedidos - Nuevo' },
     ],
   },
   {
@@ -10665,8 +11879,8 @@ function renderPermissions() {
     });
   });
   const submenuMap = {
-    'pedidos-menu': ['pedidos', 'pedidos-todos'],
-    cajas: ['cajas-cierre'],
+    'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
+    cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
   };
   const submenuKeys = new Set(Object.values(submenuMap).flat());
@@ -11852,15 +13066,17 @@ function switchView(target) {
       viewSalon,
       viewPedidos,
       viewPedidosTodos,
+      viewPedidosNuevo,
       viewMercaderia,
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
-      viewCajas,
-      viewCajasCierre,
-      viewConfiguracion,
+        viewCajas,
+        viewCajasCierre,
+        viewCajasNuevaFactura,
+        viewConfiguracion,
       viewFacturas,
       viewComisiones,
     ];
@@ -11875,25 +13091,27 @@ function switchView(target) {
     }
     return;
   }
-  const views = [
-    viewDashboard,
-    viewPanelControl,
-    viewCargarTicket,
-    viewEmpleados,
-    viewClientes,
-    viewIa,
-    viewSalon,
-    viewPedidos,
-    viewPedidosTodos,
-      viewMercaderia,
-      viewAbm,
-      viewControlOrdenes,
-      viewEcommerceImagenweb,
+    const views = [
+      viewDashboard,
+      viewPanelControl,
+      viewCargarTicket,
+      viewEmpleados,
+      viewClientes,
+      viewIa,
+      viewSalon,
+      viewPedidos,
+      viewPedidosTodos,
+      viewPedidosNuevo,
+        viewMercaderia,
+        viewAbm,
+        viewControlOrdenes,
+        viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
       viewCajas,
       viewCajasCierre,
-    viewConfiguracion,
+      viewCajasNuevaFactura,
+      viewConfiguracion,
     viewFacturas,
     viewComisiones,
   ];
@@ -11911,15 +13129,18 @@ function switchView(target) {
   } else if (target === 'salon') {
     viewSalon.classList.remove('hidden');
     loadSalonResumen();
-  } else if (target === 'pedidos') {
-    viewPedidos.classList.remove('hidden');
-    loadPedidosResumen();
-  } else if (target === 'pedidos-todos') {
-    viewPedidosTodos.classList.remove('hidden');
-    loadPedidosTodosSummary();
+    } else if (target === 'pedidos') {
+      viewPedidos.classList.remove('hidden');
+      loadPedidosResumen();
+    } else if (target === 'pedidos-todos') {
+      viewPedidosTodos.classList.remove('hidden');
+      loadPedidosTodosSummary();
+  } else if (target === 'pedidos-nuevo') {
+    viewPedidosNuevo.classList.remove('hidden');
+    renderPedidoNuevoItems();
   } else if (target === 'mercaderia') {
-    viewMercaderia.classList.remove('hidden');
-    loadMercaderia();
+      viewMercaderia.classList.remove('hidden');
+      loadMercaderia();
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     loadAbmDataTable();
@@ -11938,6 +13159,11 @@ function switchView(target) {
   } else if (target === 'cajas-cierre') {
     viewCajasCierre.classList.remove('hidden');
     loadCajasCierre();
+  } else if (target === 'cajas-nueva-factura') {
+    viewCajasNuevaFactura.classList.remove('hidden');
+    renderFacturaNuevaItems();
+    loadNextFacturaNumero();
+    loadFacturaPedidos();
   } else if (target === 'panel-control') {
     viewPanelControl.classList.remove('hidden');
   } else if (target === 'cargar-ticket') {
@@ -11984,6 +13210,8 @@ initEcommerceImagenweb();
 initEcommercePanel();
 initEcommercePanelDetail();
 initCajasCierre();
+initPedidoNuevo();
+initFacturaNueva();
 initFacturas();
 initComisiones();
 initRolesModule();
