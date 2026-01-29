@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const express = require('express');
 const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = require('./lib/abmBatch');
+const { computePedidoSubtotal } = require('./lib/pedidosNuevo');
 const { processAbmCreate } = require('./lib/abmCreateService');
 const { processAbmBatch } = require('./lib/abmBatchService');
 const cors = require('cors');
@@ -111,6 +112,13 @@ function formatDateTimeLocal(dateObj) {
   const mi = String(dateObj.getMinutes()).padStart(2, '0');
   const ss = String(dateObj.getSeconds()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+}
+
+function formatDateLocal(dateObj) {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function getTnubeConnection(storeId) {
@@ -239,6 +247,28 @@ function getRequestIp(req) {
   if (forwarded) return forwarded.split(',')[0].trim();
   const raw = req.socket?.remoteAddress || req.ip || '';
   return raw.replace('::ffff:', '');
+}
+
+function buildIpCandidates(ip) {
+  const trimmed = String(ip || '').trim();
+  if (!trimmed) return [];
+  const candidates = new Set([trimmed]);
+  const normalized = trimmed.replace('::ffff:', '');
+  candidates.add(normalized);
+  const isLoopback = normalized === '::1' || normalized === '127.0.0.1';
+  if (normalized === '::1') candidates.add('127.0.0.1');
+  if (normalized === '127.0.0.1') candidates.add('::1');
+  if (isLoopback) {
+    const nets = os.networkInterfaces();
+    Object.values(nets).forEach((list) => {
+      list.forEach((net) => {
+        if (net.family === 'IPv4' && !net.internal) {
+          candidates.add(net.address);
+        }
+      });
+    });
+  }
+  return Array.from(candidates);
 }
 
 function verificoStock(cantidad, artiCant) {
@@ -4369,9 +4399,12 @@ app.get('/api/pedidos/clientes', async (req, res) => {
 app.get('/api/facturacion/autorizacion', requireAuth, async (req, res) => {
   try {
     const ip = getRequestIp(req);
+    const candidates = buildIpCandidates(ip);
+    const values = candidates.length ? candidates : [ip];
+    const placeholders = values.map(() => '?').join(',');
     const [rows] = await pool.query(
-      `SELECT 1 FROM ${DB_NAME}.autorizacion_facturaweb WHERE ip_autorizada = ? LIMIT 1`,
-      [ip]
+      `SELECT 1 FROM ${DB_NAME}.autorizacion_facturaweb WHERE ip_autorizada IN (${placeholders}) LIMIT 1`,
+      values
     );
     res.json({ autorizado: rows.length > 0, ip });
   } catch (error) {
@@ -4736,7 +4769,6 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
       const precioUnitario = Number(item.precioUnitario) || precioVenta || 0;
       const totalItem = precioUnitario * cantidad;
       const ganancia = (precioUnitario - precioArgen) * cantidad;
-      total += totalItem;
       processedItems.push({
         articulo,
         detalle: art.Detalle,
@@ -4752,6 +4784,7 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
       await connection.rollback();
       return res.status(400).json({ message: 'items invalidos' });
     }
+    total = computePedidoSubtotal(processedItems);
     const totalWeb = Number(ordenWeb) ? total : 0;
     await connection.query(
       `UPDATE ${DB_NAME}.controlpedidos
@@ -4843,7 +4876,6 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
     const cajera = req.user?.name || '';
     const local = Number(ordenWeb) ? process.env.LOCAL || null : null;
     const instancia = Number(ordenWeb) ? 2 : 0;
-    const totalWeb = Number(ordenWeb) ? total : 0;
     const processedItems = [];
     let total = 0;
     for (const item of items) {
@@ -4865,21 +4897,23 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
       const totalItem = precioUnitario * cantidad;
       const ganancia = (precioUnitario - precioArgen) * cantidad;
       total += totalItem;
-        processedItems.push({
-          articulo,
-          detalle: art.Detalle,
-          cantidad,
-          precioArgen,
-          precioUnitario,
-          precioVenta: precioUnitario,
-          total: totalItem,
-          ganancia,
-        });
+      processedItems.push({
+        articulo,
+        detalle: art.Detalle,
+        cantidad,
+        precioArgen,
+        precioUnitario,
+        precioVenta: precioUnitario,
+        total: totalItem,
+        ganancia,
+      });
     }
     if (!processedItems.length) {
       await connection.rollback();
       return res.status(400).json({ message: 'items invalidos' });
     }
+    total = computePedidoSubtotal(processedItems);
+    const totalWeb = Number(ordenWeb) ? total : 0;
     await connection.query(
       `INSERT INTO ${DB_NAME}.controlpedidos
        (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, totalweb, instancia)
@@ -4965,7 +4999,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         nroFactura += 1;
       }
     }
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fecha = formatDateLocal(new Date());
     const cajera = req.user?.name || '';
     const processedItems = [];
     let subtotal = 0;
@@ -4999,7 +5033,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         cantidad,
         precioArgen,
         precioUnitario,
-        precioVenta: precioUnitario,
+        precioVenta: totalItem,
         ganancia,
       });
       await connection.query(
@@ -5038,10 +5072,11 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         ]
       );
     }
+    const nowStamp = formatDateTimeLocal(new Date());
     await connection.query(
       `INSERT INTO ${DB_NAME}.facturah
-       (NroFactura, Total, Porcentaje, Descuento, Ganancia, Fecha, Estado, id_clientes, envio, totalEnvio, id_tipo_pago, vendedora, pagomixto)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
+       (NroFactura, Total, Porcentaje, Descuento, Ganancia, Fecha, Estado, id_clientes, envio, totalEnvio, id_tipo_pago, vendedora, pagomixto, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         nroFactura,
         subtotal,
@@ -5055,6 +5090,8 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         tipo_pago_id,
         vendedora,
         Number(pagoMixto) || 0,
+        nowStamp,
+        nowStamp,
       ]
     );
     await connection.query(`UPDATE ${DB_NAME}.nrofactura SET NroFactura = ?`, [nroFactura + 1]);

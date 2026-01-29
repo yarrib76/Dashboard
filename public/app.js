@@ -281,7 +281,10 @@ let controlOrdenesOrdenTimer = null;
 let controlOrdenesFilterTimer = null;
 let cajasCierreRows = [];
 let pedidoNuevoItems = [];
+let pedidoItemsFilterTerm = { articulo: '', detalle: '' };
 let facturaNuevaItems = [];
+let facturaPedidosCache = [];
+let facturaItemsFilterTerm = { articulo: '', detalle: '' };
 let pedidoNuevoClientesTimer = null;
 let facturaNuevaClientesTimer = null;
 let pedidoNuevoArticulosTimer = null;
@@ -289,6 +292,7 @@ let facturaNuevaArticulosTimer = null;
 let facturaNuevaAutorizado = true;
 let facturacionClientesTarget = 'pedido';
 let facturacionArticulosTarget = 'pedido';
+let abmEditContext = null;
 let pedidoEditandoNumero = null;
 const controlOrdenesFilters = {
   orden: '',
@@ -414,12 +418,22 @@ const pedidoTotalCorreoInput = document.getElementById('pedido-total-correo');
 const pedidoImprimirBtn = document.getElementById('pedido-imprimir');
 const pedidoItemAddBtn = document.getElementById('pedido-item-add');
 const pedidoItemsTableBody = document.querySelector('#pedido-items-table tbody');
+const pedidoItemsFilterArticulo = document.getElementById('pedido-items-filter-articulo');
+const pedidoItemsFilterDetalle = document.getElementById('pedido-items-filter-detalle');
 const pedidoSubtotalEl = document.getElementById('pedido-subtotal');
 const pedidoNuevoStatus = document.getElementById('pedido-nuevo-status');
 const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
 const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
 const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
 const facturaPedidoSelect = document.getElementById('factura-pedido-select');
+const facturaPedidoInput = document.getElementById('factura-pedido-input');
+const facturaPedidoSearchBtn = document.getElementById('factura-pedido-search');
+const facturaPedidoCheck = document.getElementById('factura-pedido-check');
+const facturaPedidoOverlay = document.getElementById('factura-pedido-overlay');
+const facturaPedidoClose = document.getElementById('factura-pedido-close');
+const facturaPedidoSearchInput = document.getElementById('factura-pedido-search-input');
+const facturaPedidoTableBody = document.querySelector('#factura-pedido-table tbody');
+const facturaPedidoStatus = document.getElementById('factura-pedido-status');
 const facturaClienteInput = document.getElementById('factura-cliente-input');
 const facturaClienteId = document.getElementById('factura-cliente-id');
 const facturaClientesList = document.getElementById('factura-clientes-list');
@@ -427,9 +441,15 @@ const facturaVendedoraSelect = document.getElementById('factura-vendedora');
 const facturaTipoPagoSelect = document.getElementById('factura-tipo-pago');
 const facturaNumeroInput = document.getElementById('factura-numero');
 const facturaDescuentoPctInput = document.getElementById('factura-descuento-pct');
+const facturaDescuentoCheck = document.getElementById('factura-descuento-check');
+const facturaDescuentoSelect = document.getElementById('factura-descuento-select');
+const facturaRecargoSelect = document.getElementById('factura-recargo-select');
 const facturaEnvioInput = document.getElementById('factura-envio');
 const facturaPagoMixtoInput = document.getElementById('factura-pago-mixto');
 const facturaListoEnvioInput = document.getElementById('factura-listo-envio');
+const facturaOrdenarPrecioCheck = document.getElementById('factura-ordenar-precio');
+const facturaImprimirBtn = document.getElementById('factura-imprimir');
+const facturaDownloadXlsxBtn = document.getElementById('factura-download-xlsx');
 const facturaItemArticuloInput = document.getElementById('factura-item-articulo');
 const facturaArticulosList = document.getElementById('factura-articulos-list');
 const facturaItemDetalleInput = document.getElementById('factura-item-detalle');
@@ -438,9 +458,12 @@ const facturaItemCantidadInput = document.getElementById('factura-item-cantidad'
 const facturaItemPrecioInput = document.getElementById('factura-item-precio');
 const facturaItemAddBtn = document.getElementById('factura-item-add');
 const facturaItemsTableBody = document.querySelector('#factura-items-table tbody');
+const facturaItemsFilterArticulo = document.getElementById('factura-items-filter-articulo');
+const facturaItemsFilterDetalle = document.getElementById('factura-items-filter-detalle');
 const facturaSubtotalEl = document.getElementById('factura-subtotal');
 const facturaTotalDescuentoEl = document.getElementById('factura-total-descuento');
 const facturaTotalEnvioEl = document.getElementById('factura-total-envio');
+const facturaArticuloFoto = document.getElementById('factura-articulo-foto');
 const facturaNuevaStatus = document.getElementById('factura-nueva-status');
 const facturaCalcOverlay = document.getElementById('factura-calculadora-overlay');
 const facturaCalcClose = document.getElementById('factura-calculadora-close');
@@ -459,6 +482,7 @@ const pedidoBuscarSearch = document.getElementById('pedido-buscar-search');
 const pedidoBuscarTableBody = document.querySelector('#pedido-buscar-table tbody');
 const pedidoBuscarStatus = document.getElementById('pedido-buscar-status');
 const facturaArticuloSearchBtn = document.getElementById('factura-articulo-search');
+const facturaArticuloSearchTextBtn = document.getElementById('factura-articulo-search-text');
 const pedidoClienteClearBtn = document.getElementById('pedido-cliente-clear');
 const facturaClienteClearBtn = document.getElementById('factura-cliente-clear');
 const pedidoArticuloClearBtn = document.getElementById('pedido-articulo-clear');
@@ -1193,6 +1217,76 @@ function setStatusMessage(el, message, tone) {
   }
 }
 
+function safeOn(el, event, handler, options) {
+  if (!el || !el.addEventListener) return;
+  el.addEventListener(event, handler, options);
+}
+
+function loadScriptOnce(src, dataKey) {
+  return new Promise((resolve) => {
+    const selector = dataKey ? `script[data-local="${dataKey}"]` : `script[src="${src}"]`;
+    const existing = document.querySelector(selector);
+    if (existing) {
+      if (existing.dataset.loaded) {
+        resolve(true);
+        return;
+      }
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', () => resolve(false), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    if (dataKey) script.dataset.local = dataKey;
+    script.onload = () => {
+      if (dataKey) script.dataset.loaded = '1';
+      resolve(true);
+    };
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureJsPdf() {
+  if (window.jspdf?.jsPDF && window.jspdf.jsPDF.API?.autoTable) return true;
+  await loadScriptOnce('/vendor/jspdf.umd.min.js', 'jspdf');
+  if (!window.jspdf?.jsPDF) return false;
+  await loadScriptOnce('/vendor/jspdf.plugin.autotable.min.js', 'jspdf-autotable');
+  return !!window.jspdf?.jsPDF?.API?.autoTable;
+}
+
+async function ensureJQuery() {
+  if (window.jQuery) return true;
+  await loadScriptOnce('/vendor/jquery-3.7.1.min.js', 'jquery');
+  return !!window.jQuery;
+}
+
+async function ensureDataTable() {
+  if (window.DataTable) return true;
+  await ensureJQuery();
+  if (window.jQuery?.fn?.dataTable) {
+    window.DataTable = window.jQuery.fn.dataTable;
+    return true;
+  }
+  await loadScriptOnce('/vendor/dataTables.min.js', 'datatable');
+  if (window.DataTable) return true;
+  if (window.jQuery?.fn?.dataTable) {
+    window.DataTable = window.jQuery.fn.dataTable;
+    return true;
+  }
+  return false;
+}
+
+function setValueOrText(el, value) {
+  if (!el) return;
+  if ('value' in el) {
+    el.value = value;
+  } else {
+    el.textContent = value;
+  }
+}
+
 function computeSubtotal(items) {
   return items.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
 }
@@ -1220,7 +1314,11 @@ function updatePedidoNuevoTotals() {
 }
 
 async function printPedidoNuevoPdf() {
-  if (!window.jspdf?.jsPDF) return;
+  const ok = await ensureJsPdf();
+  if (!ok) {
+    setStatusMessage(pedidoNuevoStatus, 'PDF no disponible.', 'error');
+    return;
+  }
   if (!pedidoNuevoItems.length) {
     setStatusMessage(pedidoNuevoStatus, 'No hay articulos para imprimir.', 'error');
     return;
@@ -1258,12 +1356,12 @@ async function printPedidoNuevoPdf() {
     body,
     startY: y,
     margin: { left: margin, right: margin },
-    styles: { fontSize: 9, cellPadding: 2 },
+    styles: { fontSize: 8, cellPadding: 1.5 },
     columnStyles: {
-      0: { cellWidth: 15 },
-      1: { cellWidth: 90 },
-      2: { cellWidth: 30 },
-      3: { cellWidth: 30 },
+      0: { cellWidth: 12 },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 22 },
     },
     didParseCell(data) {
       if (data.section === 'head') {
@@ -1308,6 +1406,127 @@ async function printPedidoNuevoPdf() {
   doc.save(`pedido-${pedidoNumero || 'nuevo'}.pdf`);
 }
 
+async function printFacturaPdf() {
+  const ok = await ensureJsPdf();
+  if (!ok) {
+    setStatusMessage(facturaNuevaStatus, 'PDF no disponible.', 'error');
+    return;
+  }
+  if (!facturaNuevaItems.length) {
+    setStatusMessage(facturaNuevaStatus, 'No hay articulos para imprimir.');
+    return;
+  }
+  const wrapDetalle = (text, maxLen = 14) => {
+    const clean = String(text || '').trim();
+    if (!clean) return '';
+    const parts = [];
+    for (let i = 0; i < clean.length; i += maxLen) {
+      parts.push(clean.slice(i, i + maxLen));
+    }
+    return parts.join('\n');
+  };
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: [80, 297] });
+  const margin = 4;
+  const y = 6;
+  const tableWidth = doc.internal.pageSize.getWidth() - margin * 2;
+  const headers = ['Cant', 'Detalle', 'Unitario', 'Total'];
+  const body = facturaNuevaItems.map((item) => [
+    String(item.cantidad),
+    wrapDetalle(item.detalle || item.articulo, 14),
+    item.precioUnitario.toFixed ? item.precioUnitario.toFixed(2) : String(item.precioUnitario || 0),
+    item.total.toFixed ? item.total.toFixed(2) : String(item.total || 0),
+  ]);
+  doc.autoTable({
+    head: [headers],
+    body,
+    startY: y,
+    tableWidth,
+    margin: { left: margin, right: margin },
+    styles: { fontSize: 8, cellPadding: 1 },
+    columnStyles: {
+      0: { cellWidth: 8 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 16 },
+    },
+    didParseCell(data) {
+      if (data.section === 'head') {
+        data.cell.styles.fillColor = [223, 233, 240];
+        data.cell.styles.textColor = [33, 33, 33];
+      } else if (data.section === 'body' && data.row.index % 2 === 1) {
+        data.cell.styles.fillColor = [248, 250, 252];
+      }
+    },
+  });
+  const finalY = doc.lastAutoTable?.finalY || y;
+  const totals = updateFacturaNuevaTotals();
+  let fy = finalY + 6;
+  doc.setFontSize(7);
+  if (totals.descuentoPct > 0) {
+    doc.text(
+      `Total: ${totals.subtotal.toFixed(2)}  ${totals.descuentoPct}% Desc = ${totals.totalConDescuento.toFixed(2)}`,
+      margin,
+      fy
+    );
+  } else if (totals.recargoPct > 0) {
+    doc.text(
+      `Total: ${totals.subtotal.toFixed(2)}  Recargo ${totals.recargoPct}% = ${totals.totalConRecargo.toFixed(2)}`,
+      margin,
+      fy
+    );
+  } else {
+    doc.text(`Total: ${totals.subtotal.toFixed(2)}`, margin, fy);
+  }
+  fy += 6;
+  const envio = Number(facturaEnvioInput?.value) || 0;
+  if (envio > 0) {
+    doc.text(`Envio: ${envio.toFixed(2)}  Total Con Envio: ${totals.totalConEnvio.toFixed(2)}`, margin, fy);
+  }
+  const facturaNumero = facturaNumeroInput?.value || 'nueva';
+  doc.save(`factura-${facturaNumero}.pdf`);
+}
+
+function downloadFacturaXlsx() {
+  if (!facturaNuevaItems.length) {
+    setStatusMessage(facturaNuevaStatus, 'No hay articulos para exportar.');
+    return;
+  }
+  const rows = facturaNuevaItems.map((item) => ({
+    Articulo: item.articulo,
+    Detalle: item.detalle,
+    Cantidad: item.cantidad,
+    PrecioUnitario: item.precioUnitario,
+    Total: item.total,
+  }));
+  const numero = facturaNumeroInput?.value || 'nueva';
+  if (window.XLSX?.utils) {
+    const ws = window.XLSX.utils.json_to_sheet(rows);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, 'Factura');
+    window.XLSX.writeFile(wb, `factura-${numero}.xlsx`);
+    return;
+  }
+  const headers = ['Articulo', 'Detalle', 'Cantidad', 'PrecioUnitario', 'Total'];
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) =>
+      headers
+        .map((key) => {
+          const value = row[key] ?? '';
+          const safe = String(value).replace(/\"/g, '\"\"');
+          return `"${safe}"`;
+        })
+        .join(',')
+    ),
+  ].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `factura-${numero}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function openPedidoBuscarModal() {
   if (!pedidoBuscarOverlay) return;
   pedidoBuscarOverlay.classList.add('open');
@@ -1323,6 +1542,70 @@ function closePedidoBuscarModal() {
   if (!pedidoBuscarOverlay) return;
   pedidoBuscarOverlay.classList.remove('open');
   pedidoBuscarOverlay.style.display = '';
+}
+
+function openFacturaPedidoModal() {
+  if (!facturaPedidoOverlay) return;
+  facturaPedidoOverlay.classList.add('open');
+  facturaPedidoOverlay.style.display = 'flex';
+  if (facturaPedidoSearchInput) {
+    facturaPedidoSearchInput.value = '';
+    facturaPedidoSearchInput.focus();
+  }
+  loadFacturaPedidosTable('');
+}
+
+function closeFacturaPedidoModal() {
+  if (!facturaPedidoOverlay) return;
+  facturaPedidoOverlay.classList.remove('open');
+  facturaPedidoOverlay.style.display = '';
+}
+
+async function loadFacturaPedidosTable(query) {
+  if (!facturaPedidoTableBody) return;
+  setStatusMessage(facturaPedidoStatus, 'Cargando...');
+  try {
+    const term = String(query || '').toLowerCase();
+    const rows = facturaPedidosCache.filter((row) => {
+      if (!term) return true;
+      const pedido = String(row.nropedido || '');
+      const cliente = String(row.cliente || '').toLowerCase();
+      return pedido.includes(term) || cliente.includes(term);
+    });
+    facturaPedidoTableBody.innerHTML = rows
+      .map(
+        (row) => `
+        <tr>
+          <td>${row.nropedido}</td>
+          <td>${row.cliente || ''}</td>
+          <td>${formatMoney(row.total || 0)}</td>
+          <td>${row.vendedora || ''}</td>
+          <td><button type="button" class="btn-icon" data-nro="${row.nropedido}">Cargar</button></td>
+        </tr>`
+      )
+      .join('');
+    setStatusMessage(facturaPedidoStatus, rows.length ? '' : 'Sin resultados.');
+  } catch (error) {
+    setStatusMessage(facturaPedidoStatus, error.message || 'Error al cargar pedidos.');
+  }
+}
+
+async function selectFacturaPedidoByNumber(nroPedido) {
+  if (!nroPedido) return;
+  if (!facturaPedidosCache.length) {
+    await loadFacturaPedidos();
+  }
+  const selected = facturaPedidosCache.find((row) => String(row.nropedido) === String(nroPedido));
+  if (!selected) {
+    setStatusMessage(facturaNuevaStatus, 'Pedido no encontrado.');
+    return;
+  }
+  if (facturaPedidoSelect) {
+    facturaPedidoSelect.value = String(selected.nropedido);
+    facturaPedidoSelect.dispatchEvent(new Event('change'));
+  }
+  if (facturaPedidoInput) facturaPedidoInput.value = String(selected.nropedido);
+  if (facturaPedidoCheck) facturaPedidoCheck.checked = true;
 }
 
 async function loadPedidosBuscarTable(query) {
@@ -1384,8 +1667,17 @@ async function loadPedidoExistente(nroPedido) {
 
 function renderPedidoNuevoItems() {
   if (!pedidoItemsTableBody) return;
+  const articuloFilter = (pedidoItemsFilterTerm.articulo || '').toLowerCase();
+  const detalleFilter = (pedidoItemsFilterTerm.detalle || '').toLowerCase();
   const rows = pedidoNuevoItems
     .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      const articuloText = String(item.articulo || '').toLowerCase();
+      const detalleText = String(item.detalle || '').toLowerCase();
+      if (articuloFilter && !articuloText.includes(articuloFilter)) return false;
+      if (detalleFilter && !detalleText.includes(detalleFilter)) return false;
+      return true;
+    })
     .reverse();
   pedidoItemsTableBody.innerHTML = rows
     .map(
@@ -1406,36 +1698,80 @@ function renderPedidoNuevoItems() {
 async function loadPedidoArticuloFoto(articulo) {
   if (!pedidoArticuloFoto) return;
   if (!articulo) {
-    pedidoArticuloFoto.src = '';
+    pedidoArticuloFoto.src = '/sinfoto.png';
     return;
   }
   try {
     const res = await fetchJSON(`/api/pedidos/articulo-foto?nroArticulo=${encodeURIComponent(articulo)}`);
     const src = Array.isArray(res?.data) && res.data[0]?.imagessrc ? res.data[0].imagessrc : '';
-    pedidoArticuloFoto.src = src || '';
+    pedidoArticuloFoto.src = src || '/sinfoto.png';
   } catch (_error) {
-    pedidoArticuloFoto.src = '';
+    pedidoArticuloFoto.src = '/sinfoto.png';
+  }
+}
+
+async function loadFacturaArticuloFoto(articulo) {
+  if (!facturaArticuloFoto) return;
+  if (!articulo) {
+    facturaArticuloFoto.src = '/sinfoto.png';
+    return;
+  }
+  try {
+    const res = await fetchJSON(`/api/pedidos/articulo-foto?nroArticulo=${encodeURIComponent(articulo)}`);
+    const src = Array.isArray(res?.data) && res.data[0]?.imagessrc ? res.data[0].imagessrc : '';
+    facturaArticuloFoto.src = src || '/sinfoto.png';
+  } catch (_error) {
+    facturaArticuloFoto.src = '/sinfoto.png';
   }
 }
 
 function updateFacturaNuevaTotals() {
   const subtotal = computeSubtotal(facturaNuevaItems);
-  const pct = Number(facturaDescuentoPctInput?.value) || 0;
+  const aplicaDescuento = Boolean(facturaDescuentoCheck?.checked);
+  if (facturaDescuentoSelect) facturaDescuentoSelect.disabled = !aplicaDescuento;
+  if (facturaRecargoSelect) facturaRecargoSelect.disabled = aplicaDescuento;
+  const descuentoPct = aplicaDescuento ? Number(facturaDescuentoSelect?.value || 0) : 0;
+  if (facturaDescuentoPctInput) facturaDescuentoPctInput.value = String(descuentoPct);
+  const recargoPct = aplicaDescuento ? 0 : Number(facturaRecargoSelect?.value || 0);
+  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
+  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : 0;
+  const base = descuentoPct > 0 ? totalConDescuento : recargoPct > 0 ? totalConRecargo : subtotal;
   const envio = Number(facturaEnvioInput?.value) || 0;
-  const totalConDescuento = pct > 0 ? subtotal * (1 - pct / 100) : subtotal;
-  const totalConEnvio = totalConDescuento + envio;
-  if (facturaSubtotalEl) facturaSubtotalEl.textContent = formatMoney(subtotal);
-  if (facturaTotalDescuentoEl) facturaTotalDescuentoEl.textContent = formatMoney(totalConDescuento);
-  if (facturaTotalEnvioEl) facturaTotalEnvioEl.textContent = formatMoney(totalConEnvio);
+  const totalConEnvio = base + envio;
+  setValueOrText(facturaSubtotalEl, subtotal ? subtotal.toFixed(2) : '0');
+  setValueOrText(facturaTotalDescuentoEl, descuentoPct > 0 ? totalConDescuento.toFixed(2) : '0');
+  setValueOrText(facturaTotalEnvioEl, totalConEnvio ? totalConEnvio.toFixed(2) : '0');
   if (facturaCalcTotal) facturaCalcTotal.value = totalConEnvio ? totalConEnvio.toFixed(2) : '';
-  return { subtotal, totalConDescuento, totalConEnvio };
+  return { subtotal, totalConDescuento, totalConEnvio, totalConRecargo, descuentoPct, recargoPct };
+}
+
+function updateFacturaPagoMixtoState() {
+  if (!facturaTipoPagoSelect || !facturaPagoMixtoInput) return;
+  const selected = facturaTipoPagoSelect.options[facturaTipoPagoSelect.selectedIndex];
+  const label = String(selected?.textContent || '').toLowerCase();
+  const isMixto = label.includes('mixto');
+  facturaPagoMixtoInput.disabled = !isMixto;
+  if (!isMixto) facturaPagoMixtoInput.value = '0';
 }
 
 function renderFacturaNuevaItems() {
   if (!facturaItemsTableBody) return;
-  facturaItemsTableBody.innerHTML = facturaNuevaItems
+  const articuloFilter = (facturaItemsFilterTerm.articulo || '').toLowerCase();
+  const detalleFilter = (facturaItemsFilterTerm.detalle || '').toLowerCase();
+  let rows = facturaNuevaItems.map((item, index) => ({ item, index })).reverse();
+  if (facturaOrdenarPrecioCheck?.checked) {
+    rows = rows.slice().sort((a, b) => (b.item.precioUnitario || 0) - (a.item.precioUnitario || 0));
+  }
+  rows = rows.filter(({ item }) => {
+    const articuloText = String(item.articulo || '').toLowerCase();
+    const detalleText = String(item.detalle || '').toLowerCase();
+    if (articuloFilter && !articuloText.includes(articuloFilter)) return false;
+    if (detalleFilter && !detalleText.includes(detalleFilter)) return false;
+    return true;
+  });
+  facturaItemsTableBody.innerHTML = rows
     .map(
-      (item, index) => `
+      ({ item, index }) => `
         <tr>
           <td>${item.articulo}</td>
           <td>${item.detalle}</td>
@@ -1447,6 +1783,51 @@ function renderFacturaNuevaItems() {
     )
     .join('');
   updateFacturaNuevaTotals();
+}
+
+function resetFacturaNuevaForm() {
+  facturaNuevaItems = [];
+  renderFacturaNuevaItems();
+  if (facturaClienteInput) facturaClienteInput.value = '';
+  if (facturaClienteId) facturaClienteId.value = '';
+  if (facturaItemArticuloInput) facturaItemArticuloInput.value = '';
+  if (facturaItemDetalleInput) facturaItemDetalleInput.value = '';
+  if (facturaItemStockInput) facturaItemStockInput.value = '';
+  if (facturaItemPrecioInput) facturaItemPrecioInput.value = '';
+  if (facturaItemCantidadInput) facturaItemCantidadInput.value = '1';
+  if (facturaArticuloFoto) facturaArticuloFoto.src = '/sinfoto.png';
+  if (facturaPedidoSelect) facturaPedidoSelect.value = '';
+  if (facturaPedidoInput) facturaPedidoInput.value = '';
+  if (facturaPedidoCheck) facturaPedidoCheck.checked = false;
+  if (facturaPedidoInput) facturaPedidoInput.disabled = true;
+  if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = true;
+  if (facturaVendedoraSelect) facturaVendedoraSelect.value = '';
+  if (facturaTipoPagoSelect) facturaTipoPagoSelect.value = '';
+  if (facturaPagoMixtoInput) facturaPagoMixtoInput.value = '0';
+  if (facturaDescuentoPctInput) facturaDescuentoPctInput.value = '0';
+  if (facturaDescuentoCheck) facturaDescuentoCheck.checked = false;
+  if (facturaDescuentoSelect) facturaDescuentoSelect.value = '0';
+  if (facturaRecargoSelect) facturaRecargoSelect.value = '0';
+  if (facturaEnvioInput) facturaEnvioInput.value = '0';
+  if (facturaListoEnvioInput) facturaListoEnvioInput.checked = false;
+  if (facturaItemsFilterArticulo) facturaItemsFilterArticulo.value = '';
+  if (facturaItemsFilterDetalle) facturaItemsFilterDetalle.value = '';
+  facturaItemsFilterTerm = { articulo: '', detalle: '' };
+  updateFacturaPagoMixtoState();
+  updateFacturaNuevaTotals();
+  if (!facturaNuevaAutorizado) {
+    setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
+  } else {
+    setStatusMessage(facturaNuevaStatus, '');
+  }
+}
+
+function setFacturaNuevaDisabled(disabled) {
+  if (!viewCajasNuevaFactura) return;
+  const controls = viewCajasNuevaFactura.querySelectorAll('input, select, button, textarea');
+  controls.forEach((el) => {
+    el.disabled = disabled;
+  });
 }
 
 async function refreshClientesDatalist(inputValue, listEl) {
@@ -1519,27 +1900,95 @@ async function loadTipoPagos(selectEl, statusEl) {
 }
 
 async function loadFacturaPedidos() {
-  if (!facturaPedidoSelect) return;
   try {
     const res = await fetchJSON('/api/facturacion/pedidos');
     const rows = Array.isArray(res.data) ? res.data : [];
-    facturaPedidoSelect.innerHTML = '';
-    const emptyOption = document.createElement('option');
-    emptyOption.value = '';
-    emptyOption.textContent = 'Sin pedido';
-    facturaPedidoSelect.appendChild(emptyOption);
-    rows.forEach((row) => {
-      const option = document.createElement('option');
-      option.value = row.nropedido;
-      option.textContent = `${row.nropedido} - ${row.cliente}`;
-      option.dataset.clienteId = row.id_cliente;
-      option.dataset.clienteNombre = row.cliente;
-      option.dataset.vendedora = row.vendedora || '';
-      option.dataset.total = row.total || 0;
-      facturaPedidoSelect.appendChild(option);
-    });
+    facturaPedidosCache = rows;
+    if (facturaPedidoSelect) {
+      facturaPedidoSelect.innerHTML = '';
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = 'Sin pedido';
+      facturaPedidoSelect.appendChild(emptyOption);
+      rows.forEach((row) => {
+        const option = document.createElement('option');
+        option.value = row.nropedido;
+        option.textContent = `${row.nropedido} - ${row.cliente}`;
+        option.dataset.clienteId = row.id_cliente;
+        option.dataset.clienteNombre = row.cliente;
+        option.dataset.vendedora = row.vendedora || '';
+        option.dataset.total = row.total || 0;
+        facturaPedidoSelect.appendChild(option);
+      });
+    }
   } catch (error) {
     setStatusMessage(facturaNuevaStatus, error.message || 'Error al cargar pedidos.');
+  }
+}
+
+async function loadPedidoArticuloBySku(rawValue) {
+  const articulo = String(rawValue || '').split(' - ')[0].trim();
+  if (!articulo) {
+    setStatusMessage(pedidoNuevoStatus, 'Ingresa un articulo para buscar.', 'error');
+    return;
+  }
+  try {
+    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+    if (!data?.data) {
+      setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+      return;
+    }
+    if (pedidoItemArticuloInput) pedidoItemArticuloInput.value = articulo;
+    if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = data.data.detalle || '';
+    if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = String(data.data.precioVenta || '');
+    if (pedidoItemStockInput) pedidoItemStockInput.value = String(data.data.cantidad ?? '');
+    await loadPedidoArticuloFoto(articulo);
+    if (pedidoItemCantidadInput) {
+      pedidoItemCantidadInput.value = '1';
+      pedidoItemCantidadInput.focus();
+      pedidoItemCantidadInput.select();
+    }
+    setStatusMessage(pedidoNuevoStatus, '');
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (msg.includes('404')) {
+      setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+    } else {
+      setStatusMessage(pedidoNuevoStatus, error.message || 'Error al buscar articulo.', 'error');
+    }
+  }
+}
+
+async function loadFacturaArticuloBySku(rawValue) {
+  const articulo = String(rawValue || '').split(' - ')[0].trim();
+  if (!articulo) {
+    setStatusMessage(facturaNuevaStatus, 'Ingresa un articulo para buscar.', 'error');
+    return;
+  }
+  try {
+    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+    if (!data?.data) {
+      setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.', 'error');
+      return;
+    }
+    if (facturaItemArticuloInput) facturaItemArticuloInput.value = articulo;
+    if (facturaItemDetalleInput) facturaItemDetalleInput.value = data.data.detalle || '';
+    if (facturaItemPrecioInput) facturaItemPrecioInput.value = String(data.data.precioVenta || '');
+    if (facturaItemStockInput) facturaItemStockInput.value = String(data.data.cantidad ?? '');
+    await loadFacturaArticuloFoto(articulo);
+    if (facturaItemCantidadInput) {
+      facturaItemCantidadInput.value = '1';
+      facturaItemCantidadInput.focus();
+      facturaItemCantidadInput.select();
+    }
+    setStatusMessage(facturaNuevaStatus, '');
+  } catch (error) {
+    const msg = String(error?.message || '');
+    if (msg.includes('404')) {
+      setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.', 'error');
+    } else {
+      setStatusMessage(facturaNuevaStatus, error.message || 'Error al buscar articulo.', 'error');
+    }
   }
 }
 
@@ -1569,13 +2018,23 @@ async function addPedidoNuevoItem() {
   let detalle = pedidoItemDetalleInput?.value || '';
   let precioBase = manualPrecio;
   if (!manualPrecio) {
-    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
-    if (!data?.data) {
-      setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+    try {
+      const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+      if (!data?.data) {
+        setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+        return;
+      }
+      detalle = detalle || data.data.detalle || '';
+      precioBase = Number(data.data.precioVenta) || 0;
+    } catch (error) {
+      const msg = String(error?.message || '');
+      if (msg.includes('404')) {
+        setStatusMessage(pedidoNuevoStatus, 'Articulo no encontrado.', 'error');
+      } else {
+        setStatusMessage(pedidoNuevoStatus, error.message || 'Error al buscar articulo.', 'error');
+      }
       return;
     }
-    detalle = detalle || data.data.detalle || '';
-    precioBase = Number(data.data.precioVenta) || 0;
   }
   const precioUnitario = manualPrecio > 0 ? manualPrecio : precioBase;
   if (!precioUnitario) {
@@ -1610,39 +2069,49 @@ async function addFacturaNuevaItem() {
   const articulo = (facturaItemArticuloInput?.value || '').split(' - ')[0].trim();
   const cantidad = Number(facturaItemCantidadInput?.value) || 0;
   if (!articulo || cantidad <= 0) {
-    setStatusMessage(facturaNuevaStatus, 'Completa articulo y cantidad.');
+    setStatusMessage(facturaNuevaStatus, 'Completa articulo y cantidad.', 'error');
     return;
   }
   const stockDisponible = Number(facturaItemStockInput?.value);
   if (Number.isFinite(stockDisponible) && stockDisponible <= 0) {
-    setStatusMessage(facturaNuevaStatus, 'Stock insuficiente.');
+    setStatusMessage(facturaNuevaStatus, 'Stock insuficiente.', 'error');
     return;
   }
   if (Number.isFinite(stockDisponible) && stockDisponible > 0 && cantidad > stockDisponible) {
-    setStatusMessage(facturaNuevaStatus, 'Cantidad supera el stock disponible.');
+    setStatusMessage(facturaNuevaStatus, 'Cantidad supera el stock disponible.', 'error');
     return;
   }
   const existente = facturaNuevaItems.find((item) => item.articulo === articulo);
   const acumulado = (existente?.cantidad || 0) + cantidad;
   if (Number.isFinite(stockDisponible) && stockDisponible > 0 && acumulado > stockDisponible) {
-    setStatusMessage(facturaNuevaStatus, 'Cantidad total supera el stock disponible.');
+    setStatusMessage(facturaNuevaStatus, 'Cantidad total supera el stock disponible.', 'error');
     return;
   }
   let manualPrecio = Number(facturaItemPrecioInput?.value) || 0;
   let detalle = facturaItemDetalleInput?.value || '';
   let precioBase = manualPrecio;
   if (!manualPrecio) {
-    const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
-    if (!data?.data) {
-      setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.');
+    try {
+      const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+      if (!data?.data) {
+        setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.', 'error');
+        return;
+      }
+      detalle = detalle || data.data.detalle || '';
+      precioBase = Number(data.data.precioVenta) || 0;
+    } catch (error) {
+      const msg = String(error?.message || '');
+      if (msg.includes('404')) {
+        setStatusMessage(facturaNuevaStatus, 'Articulo no encontrado.', 'error');
+      } else {
+        setStatusMessage(facturaNuevaStatus, error.message || 'Error al buscar articulo.', 'error');
+      }
       return;
     }
-    detalle = detalle || data.data.detalle || '';
-    precioBase = Number(data.data.precioVenta) || 0;
   }
   const precioUnitario = manualPrecio > 0 ? manualPrecio : precioBase;
   if (!precioUnitario) {
-    setStatusMessage(facturaNuevaStatus, 'Precio invalido.');
+    setStatusMessage(facturaNuevaStatus, 'Precio invalido.', 'error');
     return;
   }
   const total = precioUnitario * cantidad;
@@ -1686,6 +2155,16 @@ async function loadFacturaPedidoDetalle(nroPedido) {
       };
     });
     renderFacturaNuevaItems();
+    if (facturaTipoPagoSelect) facturaTipoPagoSelect.value = '';
+    if (facturaRecargoSelect) facturaRecargoSelect.value = '0';
+    if (facturaDescuentoCheck) facturaDescuentoCheck.checked = false;
+    if (facturaDescuentoSelect) facturaDescuentoSelect.value = '0';
+    if (facturaPagoMixtoInput) facturaPagoMixtoInput.value = '0';
+    updateFacturaPagoMixtoState();
+    updateFacturaNuevaTotals();
+    if (facturaItemsFilterArticulo) facturaItemsFilterArticulo.value = '';
+    if (facturaItemsFilterDetalle) facturaItemsFilterDetalle.value = '';
+    facturaItemsFilterTerm = { articulo: '', detalle: '' };
   } catch (error) {
     setStatusMessage(facturaNuevaStatus, error.message || 'Error al cargar pedido.');
   }
@@ -1757,7 +2236,7 @@ function clearPedidoArticulo() {
   if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = '';
   if (pedidoItemStockInput) pedidoItemStockInput.value = '';
   if (pedidoItemCantidadInput) pedidoItemCantidadInput.value = '1';
-  if (pedidoArticuloFoto) pedidoArticuloFoto.src = '';
+  if (pedidoArticuloFoto) pedidoArticuloFoto.src = '/sinfoto.png';
 }
 
 function resetPedidoEdicion() {
@@ -1780,6 +2259,9 @@ function resetPedidoNuevoForm() {
   if (pedidoTotalInput) pedidoTotalInput.value = '';
   if (pedidoDescuentoTotalInput) pedidoDescuentoTotalInput.value = '0';
   if (pedidoItemCantidadInput) pedidoItemCantidadInput.value = '1';
+  if (pedidoItemsFilterArticulo) pedidoItemsFilterArticulo.value = '';
+  if (pedidoItemsFilterDetalle) pedidoItemsFilterDetalle.value = '';
+  pedidoItemsFilterTerm = { articulo: '', detalle: '' };
   updatePedidoNuevoTotals();
   setStatusMessage(pedidoNuevoStatus, '');
 }
@@ -1790,6 +2272,7 @@ function clearFacturaArticulo() {
   if (facturaItemPrecioInput) facturaItemPrecioInput.value = '';
   if (facturaItemStockInput) facturaItemStockInput.value = '';
   if (facturaItemCantidadInput) facturaItemCantidadInput.value = '1';
+  if (facturaArticuloFoto) facturaArticuloFoto.src = '/sinfoto.png';
 }
 
 async function loadFacturacionClientesTable(query) {
@@ -1801,7 +2284,6 @@ async function loadFacturacionClientesTable(query) {
       .map(
         (row) => `
         <tr>
-          <td>${row.id}</td>
           <td>${row.nombre || ''}</td>
           <td>${row.apellido || ''}</td>
           <td>${row.mail || ''}</td>
@@ -1833,11 +2315,18 @@ async function loadFacturacionArticulosTable(query) {
             <button
               type="button"
               class="btn-icon"
+              data-action="select"
               data-articulo="${row.articulo}"
               data-detalle="${row.detalle || ''}"
               data-stock="${row.cantidad ?? 0}"
               data-precio="${row.precioVenta || 0}"
             >Elegir</button>
+            <button
+              type="button"
+              class="btn-icon"
+              data-action="edit"
+              data-articulo="${row.articulo}"
+            >Modificar</button>
           </td>
         </tr>`
       )
@@ -1845,6 +2334,52 @@ async function loadFacturacionArticulosTable(query) {
     setStatusMessage(facturacionArticulosStatus, rows.length ? '' : 'Sin resultados.');
   } catch (error) {
     setStatusMessage(facturacionArticulosStatus, error.message || 'Error al cargar articulos.');
+  }
+}
+
+async function refreshFacturacionArticuloRow(articulo) {
+  if (!articulo) return;
+  try {
+    const res = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
+    const row = res?.data;
+    if (!row) return;
+    const stockValue = row.cantidad ?? row.Cantidad ?? 0;
+    const detalleValue = row.detalle || row.Detalle || '';
+    const precioValue = row.precioVenta ?? row.PrecioVenta ?? 0;
+
+    if (facturacionArticulosTableBody) {
+      const rows = Array.from(facturacionArticulosTableBody.querySelectorAll('tr'));
+      rows.forEach((tr) => {
+        const cell = tr.querySelector('td');
+        if (!cell || cell.textContent?.trim() !== String(articulo)) return;
+        const cols = tr.querySelectorAll('td');
+        if (cols[1]) cols[1].textContent = detalleValue;
+        if (cols[2]) cols[2].textContent = formatMoney(precioValue || 0);
+        if (cols[3]) cols[3].textContent = stockValue;
+        const selectBtn = tr.querySelector('button[data-action="select"]');
+        if (selectBtn) {
+          selectBtn.dataset.detalle = detalleValue;
+          selectBtn.dataset.stock = stockValue;
+          selectBtn.dataset.precio = precioValue || 0;
+        }
+      });
+    }
+
+    if (facturacionArticulosTarget === 'pedido') {
+      if (pedidoItemArticuloInput && pedidoItemArticuloInput.value === String(articulo)) {
+        if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = detalleValue;
+        if (pedidoItemStockInput) pedidoItemStockInput.value = String(stockValue);
+        if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = String(precioValue || '');
+      }
+    } else if (facturacionArticulosTarget === 'factura') {
+      if (facturaItemArticuloInput && facturaItemArticuloInput.value === String(articulo)) {
+        if (facturaItemDetalleInput) facturaItemDetalleInput.value = detalleValue;
+        if (facturaItemStockInput) facturaItemStockInput.value = String(stockValue);
+        if (facturaItemPrecioInput) facturaItemPrecioInput.value = String(precioValue || '');
+      }
+    }
+  } catch (_error) {
+    /* ignore */
   }
 }
 
@@ -1865,24 +2400,15 @@ async function initPedidoNuevo() {
 
   if (pedidoItemArticuloInput) {
     pedidoItemArticuloInput.addEventListener('input', () => {
+      if (pedidoItemArticuloInput.value.length > 13) {
+        pedidoItemArticuloInput.value = pedidoItemArticuloInput.value.slice(0, 13);
+      }
       clearTimeout(pedidoNuevoArticulosTimer);
       const value = pedidoItemArticuloInput.value;
       pedidoNuevoArticulosTimer = setTimeout(() => refreshArticulosDatalist(value, pedidoArticulosList), 300);
     });
     pedidoItemArticuloInput.addEventListener('change', async () => {
-      const articulo = (pedidoItemArticuloInput.value || '').split(' - ')[0].trim();
-      if (!articulo) return;
-      try {
-        const data = await fetchJSON(`/api/facturacion/articulo?articulo=${encodeURIComponent(articulo)}`);
-        if (data?.data) {
-          if (pedidoItemDetalleInput) pedidoItemDetalleInput.value = data.data.detalle || '';
-          if (pedidoItemPrecioInput) pedidoItemPrecioInput.value = String(data.data.precioVenta || '');
-          if (pedidoItemStockInput) pedidoItemStockInput.value = String(data.data.cantidad ?? '');
-          await loadPedidoArticuloFoto(articulo);
-        }
-      } catch (_error) {
-        /* ignore */
-      }
+      await loadPedidoArticuloBySku(pedidoItemArticuloInput.value);
     });
   }
   if (pedidoItemCantidadInput) {
@@ -1897,7 +2423,7 @@ async function initPedidoNuevo() {
   if (pedidoClienteSearchBtn) pedidoClienteSearchBtn.addEventListener('click', () => openFacturacionClientesModal('pedido'));
   if (pedidoArticuloSearchBtn) pedidoArticuloSearchBtn.addEventListener('click', () => openFacturacionArticulosModal('pedido'));
   if (pedidoArticuloSearchTextBtn)
-    pedidoArticuloSearchTextBtn.addEventListener('click', () => openFacturacionArticulosModal('pedido'));
+    pedidoArticuloSearchTextBtn.addEventListener('click', () => loadPedidoArticuloBySku(pedidoItemArticuloInput?.value));
   if (pedidoClienteClearBtn) pedidoClienteClearBtn.addEventListener('click', clearPedidoCliente);
   if (pedidoArticuloClearBtn) pedidoArticuloClearBtn.addEventListener('click', clearPedidoArticulo);
   if (pedidoArticuloFoto) {
@@ -1909,14 +2435,16 @@ async function initPedidoNuevo() {
   }
   document.addEventListener('click', (event) => {
     if (!document.body.classList.contains('pedido-foto-open')) return;
-    if (event.target === pedidoArticuloFoto) return;
+    if (event.target === pedidoArticuloFoto || event.target === facturaArticuloFoto) return;
     pedidoArticuloFoto?.classList.remove('zoomed');
+    facturaArticuloFoto?.classList.remove('zoomed');
     document.body.classList.remove('pedido-foto-open');
   });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (!document.body.classList.contains('pedido-foto-open')) return;
     pedidoArticuloFoto?.classList.remove('zoomed');
+    facturaArticuloFoto?.classList.remove('zoomed');
     document.body.classList.remove('pedido-foto-open');
   });
   if (pedidoBuscarOpenBtn) pedidoBuscarOpenBtn.addEventListener('click', openPedidoBuscarModal);
@@ -1956,6 +2484,18 @@ async function initPedidoNuevo() {
   if (pedidoNuevoReservarBtn) pedidoNuevoReservarBtn.addEventListener('click', reservarPedidoNumero);
   if (pedidoNuevoAddBtn)
     pedidoNuevoAddBtn.addEventListener('click', () => pedidoItemArticuloInput?.focus());
+  if (pedidoItemsFilterArticulo) {
+    pedidoItemsFilterArticulo.addEventListener('input', () => {
+      pedidoItemsFilterTerm.articulo = pedidoItemsFilterArticulo.value || '';
+      renderPedidoNuevoItems();
+    });
+  }
+  if (pedidoItemsFilterDetalle) {
+    pedidoItemsFilterDetalle.addEventListener('input', () => {
+      pedidoItemsFilterTerm.detalle = pedidoItemsFilterDetalle.value || '';
+      renderPedidoNuevoItems();
+    });
+  }
 
   if (pedidoItemsTableBody) {
     pedidoItemsTableBody.addEventListener('click', (event) => {
@@ -2024,6 +2564,7 @@ async function initFacturaNueva() {
   await loadTipoPagos(facturaTipoPagoSelect, facturaNuevaStatus);
   await loadNextFacturaNumero();
   await loadFacturaPedidos();
+  updateFacturaPagoMixtoState();
 
   try {
     const res = await fetchJSON('/api/facturacion/autorizacion');
@@ -2033,9 +2574,14 @@ async function initFacturaNueva() {
   }
 
   if (!facturaNuevaAutorizado) {
-    setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.');
-    if (facturaNuevaSaveBtn) facturaNuevaSaveBtn.disabled = true;
+    setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
+    setFacturaNuevaDisabled(true);
+  } else {
+    setFacturaNuevaDisabled(false);
   }
+
+  if (facturaPedidoInput) facturaPedidoInput.disabled = !facturaPedidoCheck?.checked;
+  if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = !facturaPedidoCheck?.checked;
 
   if (facturaClienteInput) {
     facturaClienteInput.addEventListener('input', () => {
@@ -2050,9 +2596,15 @@ async function initFacturaNueva() {
 
   if (facturaItemArticuloInput) {
     facturaItemArticuloInput.addEventListener('input', () => {
+      if (facturaItemArticuloInput.value.length > 13) {
+        facturaItemArticuloInput.value = facturaItemArticuloInput.value.slice(0, 13);
+      }
       clearTimeout(facturaNuevaArticulosTimer);
       const value = facturaItemArticuloInput.value;
       facturaNuevaArticulosTimer = setTimeout(() => refreshArticulosDatalist(value, facturaArticulosList), 300);
+    });
+    facturaItemArticuloInput.addEventListener('change', async () => {
+      await loadFacturaArticuloBySku(facturaItemArticuloInput.value);
     });
   }
   if (facturaItemCantidadInput) {
@@ -2068,10 +2620,41 @@ async function initFacturaNueva() {
     facturaClienteSearchBtn.addEventListener('click', () => openFacturacionClientesModal('factura'));
   if (facturaArticuloSearchBtn)
     facturaArticuloSearchBtn.addEventListener('click', () => openFacturacionArticulosModal('factura'));
+  if (facturaArticuloSearchTextBtn)
+    facturaArticuloSearchTextBtn.addEventListener('click', () => loadFacturaArticuloBySku(facturaItemArticuloInput?.value));
   if (facturaClienteClearBtn) facturaClienteClearBtn.addEventListener('click', clearFacturaCliente);
   if (facturaArticuloClearBtn) facturaArticuloClearBtn.addEventListener('click', clearFacturaArticulo);
   if (facturaNuevaAddBtn)
     facturaNuevaAddBtn.addEventListener('click', () => facturaItemArticuloInput?.focus());
+  if (facturaDescuentoCheck) {
+    facturaDescuentoCheck.addEventListener('change', updateFacturaNuevaTotals);
+    facturaDescuentoSelect && (facturaDescuentoSelect.disabled = !facturaDescuentoCheck.checked);
+  }
+  if (facturaDescuentoSelect) facturaDescuentoSelect.addEventListener('change', updateFacturaNuevaTotals);
+  if (facturaRecargoSelect) facturaRecargoSelect.addEventListener('change', updateFacturaNuevaTotals);
+  if (facturaEnvioInput) facturaEnvioInput.addEventListener('input', updateFacturaNuevaTotals);
+  if (facturaTipoPagoSelect) facturaTipoPagoSelect.addEventListener('change', updateFacturaPagoMixtoState);
+  if (facturaItemsFilterArticulo) {
+    facturaItemsFilterArticulo.addEventListener('input', () => {
+      facturaItemsFilterTerm.articulo = facturaItemsFilterArticulo.value || '';
+      renderFacturaNuevaItems();
+    });
+  }
+  if (facturaItemsFilterDetalle) {
+    facturaItemsFilterDetalle.addEventListener('input', () => {
+      facturaItemsFilterTerm.detalle = facturaItemsFilterDetalle.value || '';
+      renderFacturaNuevaItems();
+    });
+  }
+  if (facturaImprimirBtn) facturaImprimirBtn.addEventListener('click', printFacturaPdf);
+  if (facturaDownloadXlsxBtn) facturaDownloadXlsxBtn.addEventListener('click', downloadFacturaXlsx);
+  if (facturaArticuloFoto) {
+    facturaArticuloFoto.addEventListener('click', () => {
+      if (!facturaArticuloFoto.src) return;
+      const isZoomed = facturaArticuloFoto.classList.toggle('zoomed');
+      document.body.classList.toggle('pedido-foto-open', isZoomed);
+    });
+  }
 
   if (facturaItemsTableBody) {
     facturaItemsTableBody.addEventListener('click', (event) => {
@@ -2093,6 +2676,8 @@ async function initFacturaNueva() {
         renderFacturaNuevaItems();
         return;
       }
+      if (facturaPedidoInput) facturaPedidoInput.value = nroPedido;
+      if (facturaPedidoCheck) facturaPedidoCheck.checked = true;
       if (facturaClienteId) facturaClienteId.value = selected.dataset.clienteId || '';
       if (facturaClienteInput) {
         const label = selected.dataset.clienteNombre || '';
@@ -2104,8 +2689,65 @@ async function initFacturaNueva() {
     });
   }
 
-  if (facturaDescuentoPctInput) facturaDescuentoPctInput.addEventListener('input', updateFacturaNuevaTotals);
-  if (facturaEnvioInput) facturaEnvioInput.addEventListener('input', updateFacturaNuevaTotals);
+  if (facturaPedidoCheck) {
+    facturaPedidoCheck.addEventListener('change', () => {
+      const enabled = facturaPedidoCheck.checked;
+      if (facturaPedidoInput) facturaPedidoInput.disabled = !enabled;
+      if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = !enabled;
+      if (!enabled) {
+        if (facturaPedidoInput) facturaPedidoInput.value = '';
+        if (facturaPedidoSelect) facturaPedidoSelect.value = '';
+        facturaNuevaItems = [];
+        renderFacturaNuevaItems();
+        clearFacturaCliente();
+        if (facturaVendedoraSelect) facturaVendedoraSelect.value = '';
+        if (facturaTipoPagoSelect) facturaTipoPagoSelect.value = '';
+        if (facturaRecargoSelect) facturaRecargoSelect.value = '0';
+        if (facturaDescuentoCheck) facturaDescuentoCheck.checked = false;
+        if (facturaDescuentoSelect) facturaDescuentoSelect.value = '0';
+        if (facturaPagoMixtoInput) facturaPagoMixtoInput.value = '0';
+        if (facturaEnvioInput) facturaEnvioInput.value = '0';
+        updateFacturaPagoMixtoState();
+        updateFacturaNuevaTotals();
+      }
+    });
+  }
+  if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.addEventListener('click', openFacturaPedidoModal);
+  if (facturaPedidoInput) {
+    facturaPedidoInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      selectFacturaPedidoByNumber(facturaPedidoInput.value);
+    });
+  }
+  if (facturaPedidoClose) facturaPedidoClose.addEventListener('click', closeFacturaPedidoModal);
+  if (facturaPedidoOverlay) {
+    facturaPedidoOverlay.addEventListener('click', (event) => {
+      if (event.target === facturaPedidoOverlay) closeFacturaPedidoModal();
+    });
+  }
+  if (facturaPedidoSearchInput) {
+    facturaPedidoSearchInput.addEventListener('input', () => {
+      loadFacturaPedidosTable(facturaPedidoSearchInput.value);
+    });
+    facturaPedidoSearchInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const rows = facturaPedidoTableBody?.querySelectorAll('tr') || [];
+      if (rows.length !== 1) return;
+      const button = rows[0].querySelector('button[data-nro]');
+      if (button) button.click();
+    });
+  }
+  if (facturaPedidoTableBody) {
+    facturaPedidoTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-nro]');
+      if (!button) return;
+      const nro = button.dataset.nro;
+      await selectFacturaPedidoByNumber(nro);
+      closeFacturaPedidoModal();
+    });
+  }
 
   if (facturaNuevaCalcBtn) facturaNuevaCalcBtn.addEventListener('click', openFacturaCalculadora);
   if (facturaCalcClose) facturaCalcClose.addEventListener('click', closeFacturaCalculadora);
@@ -2179,7 +2821,13 @@ async function initFacturaNueva() {
     facturacionArticulosTableBody.addEventListener('click', async (event) => {
       const button = event.target.closest('button[data-articulo]');
       if (!button) return;
+      const action = button.dataset.action || 'select';
       const articulo = button.dataset.articulo || '';
+      if (action === 'edit') {
+        abmEditContext = { source: 'facturacion-articulos', articulo, target: facturacionArticulosTarget };
+        openAbmEdit(articulo);
+        return;
+      }
       const detalle = button.dataset.detalle || '';
       const stock = button.dataset.stock || '';
       const precioVenta = Number(button.dataset.precio) || 0;
@@ -2194,16 +2842,19 @@ async function initFacturaNueva() {
           pedidoItemCantidadInput.focus();
           pedidoItemCantidadInput.select();
         }
+        setStatusMessage(pedidoNuevoStatus, '');
       } else {
         if (facturaItemArticuloInput) facturaItemArticuloInput.value = articulo;
         if (facturaItemDetalleInput) facturaItemDetalleInput.value = detalle;
         if (facturaItemPrecioInput && precioVenta) facturaItemPrecioInput.value = String(precioVenta);
         if (facturaItemStockInput) facturaItemStockInput.value = String(stock);
+        await loadFacturaArticuloFoto(articulo);
         if (facturaItemCantidadInput) {
           facturaItemCantidadInput.value = '1';
           facturaItemCantidadInput.focus();
           facturaItemCantidadInput.select();
         }
+        setStatusMessage(facturaNuevaStatus, '');
       }
       closeFacturacionArticulosModal();
     });
@@ -2211,19 +2862,28 @@ async function initFacturaNueva() {
 
   if (facturaNuevaSaveBtn) {
     facturaNuevaSaveBtn.addEventListener('click', async () => {
-      if (!facturaNuevaAutorizado) return;
-      const clienteId = Number(facturaClienteId?.value) || 0;
-      const vendedora = facturaVendedoraSelect?.value || '';
-      const tipoPagoId = Number(facturaTipoPagoSelect?.value) || 0;
-      if (!clienteId || !vendedora || !tipoPagoId) {
-        setStatusMessage(facturaNuevaStatus, 'Cliente, vendedora y tipo de pago son obligatorios.');
+      if (!facturaNuevaAutorizado) {
+        setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
         return;
       }
-  if (!facturaNuevaItems.length) {
-    setStatusMessage(facturaNuevaStatus, 'Agrega al menos un articulo.');
-    return;
-  }
+      const clienteId = Number(facturaClienteId?.value) || 1;
+      const vendedora = facturaVendedoraSelect?.value || '';
+      const tipoPagoId = Number(facturaTipoPagoSelect?.value) || 0;
+      if (!vendedora || !tipoPagoId) {
+        setStatusMessage(facturaNuevaStatus, 'Vendedora y tipo de pago son obligatorios.', 'error');
+        return;
+      }
+      if (!facturaNuevaItems.length) {
+        setStatusMessage(facturaNuevaStatus, 'Agrega al menos un articulo.');
+        return;
+      }
       const totals = updateFacturaNuevaTotals();
+      const esPedido = facturaPedidoCheck?.checked ? 'SI' : 'NO';
+      const nroPedidoValue = esPedido === 'SI' ? facturaPedidoInput?.value || facturaPedidoSelect?.value || '' : '';
+      if (esPedido === 'SI' && !nroPedidoValue) {
+        setStatusMessage(facturaNuevaStatus, 'Selecciona un pedido.');
+        return;
+      }
       const payload = {
         cliente_id: clienteId,
         vendedora,
@@ -2235,8 +2895,8 @@ async function initFacturaNueva() {
         total: totals.subtotal,
         totalConDescuento: totals.totalConDescuento,
         totalConEnvio: totals.totalConEnvio,
-        esPedido: facturaPedidoSelect?.value ? 'SI' : 'NO',
-        nroPedido: facturaPedidoSelect?.value || '',
+        esPedido,
+        nroPedido: nroPedidoValue,
         listoParaEnvio: facturaListoEnvioInput?.checked ? 1 : 0,
       };
       setStatusMessage(facturaNuevaStatus, 'Guardando...');
@@ -2246,20 +2906,34 @@ async function initFacturaNueva() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        setStatusMessage(facturaNuevaStatus, `Factura ${res?.nroFactura || ''} guardada.`);
+        setStatusMessage(facturaNuevaStatus, `Factura ${res?.nroFactura || ''} guardada.`, 'ok');
         facturaNuevaItems = [];
         renderFacturaNuevaItems();
         if (facturaClienteInput) facturaClienteInput.value = '';
         if (facturaClienteId) facturaClienteId.value = '';
         if (facturaPedidoSelect) facturaPedidoSelect.value = '';
+        if (facturaPedidoInput) facturaPedidoInput.value = '';
+        if (facturaPedidoCheck) facturaPedidoCheck.checked = false;
+        if (facturaPedidoInput) facturaPedidoInput.disabled = true;
+        if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = true;
+        if (facturaVendedoraSelect) facturaVendedoraSelect.value = '';
+        if (facturaTipoPagoSelect) facturaTipoPagoSelect.value = '';
         if (facturaPagoMixtoInput) facturaPagoMixtoInput.value = '0';
         if (facturaDescuentoPctInput) facturaDescuentoPctInput.value = '0';
+        if (facturaDescuentoCheck) facturaDescuentoCheck.checked = false;
+        if (facturaDescuentoSelect) facturaDescuentoSelect.value = '0';
+        if (facturaRecargoSelect) facturaRecargoSelect.value = '0';
         if (facturaEnvioInput) facturaEnvioInput.value = '0';
         if (facturaListoEnvioInput) facturaListoEnvioInput.checked = false;
+        if (facturaItemsFilterArticulo) facturaItemsFilterArticulo.value = '';
+        if (facturaItemsFilterDetalle) facturaItemsFilterDetalle.value = '';
+        facturaItemsFilterTerm = { articulo: '', detalle: '' };
+        updateFacturaPagoMixtoState();
+        updateFacturaNuevaTotals();
         await loadNextFacturaNumero();
         await loadFacturaPedidos();
       } catch (error) {
-        setStatusMessage(facturaNuevaStatus, error.message || 'Error al guardar factura.');
+        setStatusMessage(facturaNuevaStatus, error.message || 'Error al guardar factura.', 'error');
       }
     });
   }
@@ -3475,7 +4149,7 @@ function loadXlsxLibrary() {
       return;
     }
     const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    script.src = '/vendor/xlsx.full.min.js';
     script.async = true;
     script.dataset.xlsx = '1';
     script.onload = () => resolve();
@@ -4701,7 +5375,8 @@ async function checkPedidoTicketItems() {
 
 async function printPedidoTicketPdf() {
   if (!pedidoTicketCurrentPedido) return;
-  if (!window.jspdf || !window.jspdf.jsPDF) {
+  const ok = await ensureJsPdf();
+  if (!ok) {
     if (pedidoTicketStatus) pedidoTicketStatus.textContent = 'PDF no disponible.';
     return;
   }
@@ -5709,57 +6384,60 @@ async function loadAbmDataTable(force = false) {
       abmDataTable.clear();
       abmDataTable.rows.add(rows);
       abmDataTable.draw();
-    } else if (window.DataTable) {
-      abmDataTable = new DataTable('#abm-table', {
-        data: rows,
-        columns: [
-          { data: 'articulo' },
-          { data: 'detalle' },
-          { data: 'proveedorSku' },
-          { data: 'cantidad' },
-          {
-            data: 'enPedido',
-            render: (data, type, row) => {
-              if (type !== 'display') return data;
-              const value = Number(data) || 0;
-              if (value <= 0) return value;
-              return `
-                <button type="button" class="abm-link-btn abm-pedido-link" data-articulo="${escapeAttr(row.articulo)}">
-                  ${value}
-                </button>
-              `;
-            },
-          },
-          {
-            data: 'precioVenta',
-            render: (data) => formatMoney(data || 0),
-          },
-          {
-            data: null,
-            orderable: false,
-            render: (_data, _type, row) => `
-              <div class="abm-actions">
-                <button type="button" class="abm-action" data-action="barcode" data-articulo="${escapeAttr(row.articulo)}" data-detalle="${escapeAttr(row.detalle)}">
-                  Codigo Barras
-                </button>
-                <button type="button" class="abm-action" data-action="edit" data-articulo="${escapeAttr(row.articulo)}">
-                  Modificar
-                </button>
-                <button type="button" class="abm-action" data-action="photo" data-articulo="${escapeAttr(row.articulo)}">
-                  Foto
-                </button>
-              </div>
-            `,
-          },
-        ],
-        pageLength: 10,
-        lengthMenu: [10, 25, 50, 100],
-        deferRender: true,
-        order: [[0, 'asc']],
-        autoWidth: false,
-      });
     } else {
-      renderAbmTable(rows);
+      const dtAvailable = window.DataTable || (await ensureDataTable());
+      if (dtAvailable) {
+        abmDataTable = new DataTable('#abm-table', {
+          data: rows,
+          columns: [
+            { data: 'articulo' },
+            { data: 'detalle' },
+            { data: 'proveedorSku' },
+            { data: 'cantidad' },
+            {
+              data: 'enPedido',
+              render: (data, type, row) => {
+                if (type !== 'display') return data;
+                const value = Number(data) || 0;
+                if (value <= 0) return value;
+                return `
+                  <button type="button" class="abm-link-btn abm-pedido-link" data-articulo="${escapeAttr(row.articulo)}">
+                    ${value}
+                  </button>
+                `;
+              },
+            },
+            {
+              data: 'precioVenta',
+              render: (data) => formatMoney(data || 0),
+            },
+            {
+              data: null,
+              orderable: false,
+              render: (_data, _type, row) => `
+                <div class="abm-actions">
+                  <button type="button" class="abm-action" data-action="barcode" data-articulo="${escapeAttr(row.articulo)}" data-detalle="${escapeAttr(row.detalle)}">
+                    Codigo Barras
+                  </button>
+                  <button type="button" class="abm-action" data-action="edit" data-articulo="${escapeAttr(row.articulo)}">
+                    Modificar
+                  </button>
+                  <button type="button" class="abm-action" data-action="photo" data-articulo="${escapeAttr(row.articulo)}">
+                    Foto
+                  </button>
+                </div>
+              `,
+            },
+          ],
+          pageLength: 10,
+          lengthMenu: [10, 25, 50, 100],
+          deferRender: true,
+          order: [[0, 'asc']],
+          autoWidth: false,
+        });
+      } else {
+        renderAbmTable(rows);
+      }
     }
     abmLoaded = true;
     if (abmStatus) {
@@ -6428,6 +7106,10 @@ function initAbm() {
           });
           abmDataTable.draw(false);
         }
+        if (abmEditContext?.source === 'facturacion-articulos') {
+          await refreshFacturacionArticuloRow(abmCurrentArticulo);
+          abmEditContext = null;
+        }
         closeAbmEdit();
       } catch (error) {
         if (abmEditStatus) abmEditStatus.textContent = error.message || 'No se pudo guardar';
@@ -6631,6 +7313,9 @@ function setAlpha(color, alpha) {
 }
 
 function renderEncuestas(data, breakdown = []) {
+  if (!window.Chart) return;
+  const canvas = document.getElementById('chart-encuestas');
+  if (!canvas) return;
   const porEncuesta = {};
   data.forEach((row) => {
     const label = row.encuesta || 'Sin dato';
@@ -6671,7 +7356,7 @@ function renderEncuestas(data, breakdown = []) {
     });
   });
 
-  const ctx = document.getElementById('chart-encuestas').getContext('2d');
+  const ctx = canvas.getContext('2d');
   if (chartState.encuestas) chartState.encuestas.destroy();
   chartState.encuestas = new Chart(ctx, {
     type: 'bar',
@@ -6726,7 +7411,10 @@ function renderProductividad(rows) {
 }
 
 function renderMensual(rows) {
-  const ctx = document.getElementById('chart-mensual').getContext('2d');
+  if (!window.Chart) return;
+  const canvas = document.getElementById('chart-mensual');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
   const datasets = buildDatasetMensual(rows).map((ds) => ({
     ...ds,
     _baseColor: ds.borderColor,
@@ -6780,7 +7468,10 @@ function renderMensual(rows) {
 }
 
 function renderVentas(rows) {
-  const ctx = document.getElementById('chart-ventas').getContext('2d');
+  if (!window.Chart) return;
+  const canvas = document.getElementById('chart-ventas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
   const datasets = buildDatasetMensual(rows).map((ds) => ({
     ...ds,
     _baseColor: ds.borderColor,
@@ -6840,9 +7531,9 @@ function renderPaqueteria(data) {
   const sinTransporte = data.sinTransporte ?? 0;
   const vencidos = data.vencidos ?? 0;
 
-  statPendientes.textContent = pendientes;
-  statSinTransporte.textContent = sinTransporte;
-  statVencidos.textContent = vencidos;
+  if (statPendientes) statPendientes.textContent = pendientes;
+  if (statSinTransporte) statSinTransporte.textContent = sinTransporte;
+  if (statVencidos) statVencidos.textContent = vencidos;
 
   if (statPendientesControl) statPendientesControl.textContent = pendientes;
   if (statSinTransporteControl) statSinTransporteControl.textContent = sinTransporte;
@@ -7412,6 +8103,7 @@ function renderClientes(rows) {
 }
 
 function renderPedidosClientes(rows) {
+  if (!tablaPedidosClientesBody) return;
   tablaPedidosClientesBody.innerHTML = '';
   const uniqueNuevos = new Set();
   const uniqueRecurrentes = new Set();
@@ -10759,26 +11451,41 @@ async function loadCurrentUser() {
   }
 }
 
-document.getElementById('refresh-encuestas').addEventListener('click', () => {
-  const selectYear = document.getElementById('year-encuestas');
-  loadEncuestas(selectYear?.value);
-});
-document.getElementById('refresh-productividad').addEventListener('click', () => {
-  const desde = document.getElementById('fecha-desde').value;
-  const hasta = document.getElementById('fecha-hasta').value;
-  loadProductividad(desde, hasta);
-});
-document.getElementById('refresh-mensual').addEventListener('click', () => {
-  const selectYear = document.getElementById('year-mensual');
-  loadMensual(selectYear?.value);
-});
-document.getElementById('refresh-ventas').addEventListener('click', () => {
-  const selectYear = document.getElementById('year-ventas');
-  loadVentas(selectYear?.value);
-});
-document.getElementById('refresh-paqueteria').addEventListener('click', () => {
-  loadPaqueteria();
-});
+const refreshEncuestasBtn = document.getElementById('refresh-encuestas');
+if (refreshEncuestasBtn) {
+  refreshEncuestasBtn.addEventListener('click', () => {
+    const selectYear = document.getElementById('year-encuestas');
+    loadEncuestas(selectYear?.value);
+  });
+}
+const refreshProductividadBtn = document.getElementById('refresh-productividad');
+if (refreshProductividadBtn) {
+  refreshProductividadBtn.addEventListener('click', () => {
+    const desde = document.getElementById('fecha-desde').value;
+    const hasta = document.getElementById('fecha-hasta').value;
+    loadProductividad(desde, hasta);
+  });
+}
+const refreshMensualBtn = document.getElementById('refresh-mensual');
+if (refreshMensualBtn) {
+  refreshMensualBtn.addEventListener('click', () => {
+    const selectYear = document.getElementById('year-mensual');
+    loadMensual(selectYear?.value);
+  });
+}
+const refreshVentasBtn = document.getElementById('refresh-ventas');
+if (refreshVentasBtn) {
+  refreshVentasBtn.addEventListener('click', () => {
+    const selectYear = document.getElementById('year-ventas');
+    loadVentas(selectYear?.value);
+  });
+}
+const refreshPaqueteriaBtn = document.getElementById('refresh-paqueteria');
+if (refreshPaqueteriaBtn) {
+  refreshPaqueteriaBtn.addEventListener('click', () => {
+    loadPaqueteria();
+  });
+}
 if (refreshPaqueteriaControl) {
   refreshPaqueteriaControl.addEventListener('click', () => {
     loadPaqueteria();
@@ -11290,18 +11997,25 @@ if (pedidosTodosGrid) {
       if (pedidoNotasStatus) pedidoNotasStatus.textContent = 'Editando nota.';
     });
   }
-  document.getElementById('refresh-empleados').addEventListener('click', () => {
-    const [year, month] = mesEmpleados.value.split('-');
-    loadEmpleados(`${year}-${month}-01`);
-  });
-filtroRoles.addEventListener('change', () => {
-  const [year, month] = mesEmpleados.value.split('-');
-  loadEmpleados(`${year}-${month}-01`);
-});
-buscarEmpleados.addEventListener('input', () => {
-  const [year, month] = mesEmpleados.value.split('-');
-  loadEmpleados(`${year}-${month}-01`);
-});
+  const refreshEmpleadosBtn = document.getElementById('refresh-empleados');
+  if (refreshEmpleadosBtn) {
+    refreshEmpleadosBtn.addEventListener('click', () => {
+      const [year, month] = mesEmpleados.value.split('-');
+      loadEmpleados(`${year}-${month}-01`);
+    });
+  }
+  if (filtroRoles) {
+    filtroRoles.addEventListener('change', () => {
+      const [year, month] = mesEmpleados.value.split('-');
+      loadEmpleados(`${year}-${month}-01`);
+    });
+  }
+  if (buscarEmpleados) {
+    buscarEmpleados.addEventListener('input', () => {
+      const [year, month] = mesEmpleados.value.split('-');
+      loadEmpleados(`${year}-${month}-01`);
+    });
+  }
 
 async function handleLogout() {
   try {
@@ -11337,6 +12051,7 @@ function initIdleTimeout() {
 
 function initYearSelect(elementId, onChange) {
   const select = document.getElementById(elementId);
+  if (!select) return null;
   const current = new Date().getFullYear();
   const years = [];
   for (let y = current; y >= current - 20; y -= 1) {
@@ -11382,6 +12097,7 @@ function initCollapsibles() {
 function initDateRange() {
   const desde = document.getElementById('fecha-desde');
   const hasta = document.getElementById('fecha-hasta');
+  if (!desde || !hasta) return;
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -11397,6 +12113,7 @@ function initFechaEmpleados() {
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
+  if (!mesEmpleados) return;
   mesEmpleados.value = `${yyyy}-${mm}`;
   mesEmpleados.addEventListener('change', () => {
     const [year, month] = (mesEmpleados.value || `${yyyy}-${mm}`).split('-');
@@ -12222,6 +12939,10 @@ function initMenu() {
   const parentButtons = document.querySelectorAll('.menu-parent');
   const groups = document.querySelectorAll('.menu-group');
   const mqMobile = window.matchMedia('(max-width: 960px)');
+  if (!menu) {
+    loadCurrentUser();
+    return;
+  }
 
   const toggleMenu = (force) => {
     const shouldOpen = typeof force === 'boolean' ? force : !menu.classList.contains('open');
@@ -12267,6 +12988,13 @@ function initMenu() {
       }
       if (btn.classList.contains('logout')) return;
       const target = btn.dataset.target;
+      if (
+        viewCajasNuevaFactura &&
+        !viewCajasNuevaFactura.classList.contains('hidden') &&
+        target !== 'cajas-nueva-factura'
+      ) {
+        resetFacturaNuevaForm();
+      }
       if (target === 'ecommerce-panel') {
         const url = `${window.location.origin}/?view=ecommerce-panel`;
         window.open(url, '_blank', 'noopener');
@@ -12277,12 +13005,14 @@ function initMenu() {
       if (mqMobile.matches) toggleMenu(false);
     });
   });
-  logoutBtn.addEventListener('click', handleLogout);
+  if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
   loadCurrentUser();
 }
 
 function initPaqueteriaModal() {
   const statButtons = document.querySelectorAll('.stat-click');
+  if (!modalOverlay || !modalClose || !modalSearch || !modalTableBody || !modalTitle) return;
+  if (!calendarClose || !calendarOverlay || !tablaEmpleadosBody) return;
   statButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const tipo = btn.dataset.tipo;
@@ -12296,14 +13026,14 @@ function initPaqueteriaModal() {
       loadPaqueteriaLista(tipo);
     });
   });
-  modalClose.addEventListener('click', () => modalOverlay.classList.remove('open'));
-  modalOverlay.addEventListener('click', (e) => {
+  safeOn(modalClose, 'click', () => modalOverlay.classList.remove('open'));
+  safeOn(modalOverlay, 'click', (e) => {
     if (e.target === modalOverlay) {
       modalOverlay.classList.remove('open');
     }
   });
-  modalSearch.addEventListener('input', applyModalFilter);
-  modalTableBody.addEventListener('click', (e) => {
+  safeOn(modalSearch, 'input', applyModalFilter);
+  safeOn(modalTableBody, 'click', (e) => {
     const btn = e.target.closest('.transport-btn');
     if (!btn) return;
     const id = Number(btn.dataset.id);
@@ -12311,12 +13041,12 @@ function initPaqueteriaModal() {
     openTransportEditor(btn, id, current);
   });
 
-  calendarClose.addEventListener('click', () => calendarOverlay.classList.remove('open'));
-  calendarOverlay.addEventListener('click', (e) => {
+  safeOn(calendarClose, 'click', () => calendarOverlay.classList.remove('open'));
+  safeOn(calendarOverlay, 'click', (e) => {
     if (e.target === calendarOverlay) calendarOverlay.classList.remove('open');
   });
 
-  tablaEmpleadosBody.addEventListener('click', async (e) => {
+  safeOn(tablaEmpleadosBody, 'click', async (e) => {
     const btnCal = e.target.closest('.transport-btn');
     if (btnCal) {
       const userId = Number(btnCal.dataset.user);
@@ -13143,7 +13873,8 @@ function switchView(target) {
       loadMercaderia();
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
-    loadAbmDataTable();
+    abmLoaded = false;
+    loadAbmDataTable(true);
   } else if (target === 'control-ordenes') {
     viewControlOrdenes.classList.remove('hidden');
     loadControlOrdenes();
@@ -13164,6 +13895,10 @@ function switchView(target) {
     renderFacturaNuevaItems();
     loadNextFacturaNumero();
     loadFacturaPedidos();
+    if (!facturaNuevaAutorizado) {
+      setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
+      setFacturaNuevaDisabled(true);
+    }
   } else if (target === 'panel-control') {
     viewPanelControl.classList.remove('hidden');
   } else if (target === 'cargar-ticket') {
@@ -13232,17 +13967,31 @@ initConfigTabs();
 initUsersModule();
 initUserTabs();
 loadTransportes();
-loadEncuestas(defaultYearEncuestas);
+if (document.getElementById('chart-encuestas') && defaultYearEncuestas) {
+  loadEncuestas(defaultYearEncuestas);
+}
 initDateRange();
-loadProductividad(document.getElementById('fecha-desde').value, document.getElementById('fecha-hasta').value);
-loadMensual(defaultYearMensual);
-loadVentas(defaultYearVentas);
-loadPaqueteria();
+const fechaDesdeInit = document.getElementById('fecha-desde');
+const fechaHastaInit = document.getElementById('fecha-hasta');
+if (fechaDesdeInit && fechaHastaInit) {
+  loadProductividad(fechaDesdeInit.value, fechaHastaInit.value);
+}
+if (document.getElementById('chart-mensual') && defaultYearMensual) {
+  loadMensual(defaultYearMensual);
+}
+if (document.getElementById('chart-ventas') && defaultYearVentas) {
+  loadVentas(defaultYearVentas);
+}
+if (statPendientes || statSinTransporte || statVencidos) {
+  loadPaqueteria();
+}
 loadCarritosAbandonados();
 loadPedidosControl();
 loadOperativos();
 startPanelControlAutoRefresh();
-loadPedidosClientes();
+if (tablaPedidosClientesBody) {
+  loadPedidosClientes();
+}
 
 
 
