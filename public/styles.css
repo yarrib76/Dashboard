@@ -635,6 +635,7 @@ input[type='month'] {
   gap: 12px;
   flex-wrap: nowrap;
   justify-content: flex-start;
+  flex-direction: row;
 }
 
 .clients-controls label.inline {
@@ -643,9 +644,6 @@ input[type='month'] {
   gap: 8px;
 }
 
-.clients-controls button {
-  order: -1;
-}
 
 .client-inline {
   display: flex;
@@ -937,6 +935,10 @@ input[type='month'] {
 
 .modal-overlay.open {
   display: flex;
+}
+
+#clientes-new-overlay {
+  z-index: 70;
 }
 
 .modal {
@@ -2626,6 +2628,22 @@ body.theme-light .pedido-notas-badge {
   resize: vertical;
 }
 
+.input-like {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  min-height: 42px;
+  outline: none;
+}
+
+.input-like:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+}
+
 .abm-inline-group {
   display: flex;
   gap: 8px;
@@ -3849,6 +3867,14 @@ body.theme-light select:focus {
   .pedido-cards {
     display: block;
   }
+
+  #tabla-clientes {
+    display: none;
+  }
+
+  #clientes-cards {
+    display: grid;
+  }
 }
 
 .is-mobile #abm-table,
@@ -3863,6 +3889,14 @@ body.theme-light select:focus {
 .is-mobile #pedidos-vendedora-lista-table,
 .is-mobile #pedidos-vendedora-lista-table_wrapper {
   display: none;
+}
+
+.is-mobile #tabla-clientes {
+  display: none;
+}
+
+.is-mobile #clientes-cards {
+  display: grid;
 }
 
 .is-mobile .pedido-cards-toolbar,

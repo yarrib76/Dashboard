@@ -440,6 +440,7 @@
           <span>Buscar</span>
           <input type="search" id="buscar-clientes" placeholder="Nombre, email o teléfono" />
         </label>
+        <button id="clientes-new" type="button">Nuevo Cliente</button>
         <button id="refresh-clientes" type="button">Actualizar</button>
       </div>
       </div>
@@ -459,6 +460,7 @@
           </thead>
           <tbody></tbody>
         </table>
+        <div class="abm-cards" id="clientes-cards"></div>
       </div>
       <div class="pagination" id="clientes-pagination">
         <button id="clientes-prev" type="button">Anterior</button>
@@ -1428,6 +1430,84 @@
     </article>
   </section>
 
+  <div class="modal-overlay" id="clientes-new-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="clientes-new-title">Nuevo Cliente</h3>
+        <button id="clientes-new-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <form id="clientes-new-form" class="abm-form-grid" autocomplete="new-password">
+          <input type="text" name="fake-username" autocomplete="username" style="display:none" />
+          <input type="password" name="fake-password" autocomplete="new-password" style="display:none" />
+          <input type="text" name="address" autocomplete="street-address" style="display:none" />
+          <input type="text" name="street-address" autocomplete="street-address" style="display:none" />
+          <label>
+            <span>Nombre</span>
+            <input type="text" id="clientes-new-nombre" required autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Apellido</span>
+            <input type="text" id="clientes-new-apellido" required autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Apodo</span>
+            <input type="text" id="clientes-new-apodo" autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Cuit</span>
+            <input type="number" id="clientes-new-cuit" autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Direccion</span>
+            <div id="clientes-new-dir-line" class="input-like" contenteditable="true" role="textbox" spellcheck="false" data-placeholder="Direccion"></div>
+          </label>
+          <label>
+            <span>Localidad</span>
+            <input type="text" id="clientes-new-town" name="town_x" autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Provincia</span>
+            <select id="clientes-new-region" name="region_x" autocomplete="new-password"></select>
+          </label>
+          <label>
+            <span>Codigo Postal</span>
+            <input type="text" id="clientes-new-zip" name="zip_x" required autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Mail</span>
+            <input type="email" id="clientes-new-mail" required autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Telefono</span>
+            <input type="text" id="clientes-new-telefono" autocomplete="new-password" />
+          </label>
+          <label>
+            <span>Encuesta</span>
+            <select id="clientes-new-encuesta">
+              <option value="Ninguna">Ninguna</option>
+              <option value="Google">Google</option>
+              <option value="Instagram">Instagram</option>
+              <option value="FaceBook">FaceBook</option>
+              <option value="TikTok">TikTok</option>
+              <option value="Reels(Tips a la Vista)">Reels(Tips a la Vista)</option>
+              <option value="Recomendado">Recomendado</option>
+              <option value="Volante">Volante</option>
+              <option value="Caminando">Caminando</option>
+              <option value="Vivo">Vivo</option>
+              <option value="No Responde">No Responde</option>
+            </select>
+          </label>
+          <div class="actions inline">
+            <button type="submit">Guardar</button>
+            <button type="button" id="clientes-new-cancel">Cancelar</button>
+          </div>
+          <p class="status" id="clientes-new-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="factura-calculadora-overlay">
     <div class="modal calc-modal">
       <div class="modal-header calc-header">
@@ -1457,10 +1537,11 @@
         <h3>Seleccionar Cliente</h3>
         <button id="facturacion-clientes-close" class="close-btn" type="button">x</button>
       </div>
-      <div class="modal-body">
-        <div class="modal-controls">
-          <input type="search" id="facturacion-clientes-search" placeholder="Buscar cliente..." />
-        </div>
+        <div class="modal-body">
+          <div class="modal-controls">
+            <input type="search" id="facturacion-clientes-search" placeholder="Buscar cliente..." />
+            <button id="facturacion-clientes-new" type="button">Nuevo Cliente</button>
+          </div>
         <div class="table-wrap">
           <table class="table" id="facturacion-clientes-table">
             <thead>

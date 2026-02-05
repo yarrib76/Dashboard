@@ -4445,6 +4445,7 @@ app.post('/api/facturacion/clientes', requireAuth, async (req, res) => {
     const {
       nombre = '',
       apellido = '',
+      apodo = '',
       cuit = null,
       direccion = '',
       localidad = '',
@@ -4454,8 +4455,10 @@ app.post('/api/facturacion/clientes', requireAuth, async (req, res) => {
       telefono = '',
       encuesta = 'Ninguna',
     } = req.body || {};
-    if (!nombre || !apellido || !mail) {
-      return res.status(400).json({ message: 'Nombre, apellido y mail son requeridos' });
+    if (!nombre || !apellido || !mail || !cod_postal) {
+      return res
+        .status(400)
+        .json({ message: 'Nombre, apellido, mail y codigo postal son requeridos' });
     }
     const [existsRows] = await pool.query(
       `SELECT mail FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
@@ -4466,13 +4469,160 @@ app.post('/api/facturacion/clientes', requireAuth, async (req, res) => {
     }
     await pool.query(
       `INSERT INTO ${DB_NAME}.clientes
-       (nombre, apellido, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nombre, apellido, direccion, mail, telefono, cuit, localidad, cod_postal, provincia_id, encuesta]
+       (nombre, apellido, apodo, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        nombre,
+        apellido,
+        apodo,
+        direccion,
+        mail,
+        telefono,
+        cuit,
+        localidad,
+        cod_postal,
+        provincia_id,
+        encuesta,
+      ]
     );
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al crear cliente', error: error.message });
+  }
+});
+
+app.post('/api/clientes', requireAuth, async (req, res) => {
+  try {
+    const {
+      nombre = '',
+      apellido = '',
+      apodo = '',
+      cuit = null,
+      direccion = '',
+      localidad = '',
+      provincia_id = null,
+      cod_postal = '',
+      mail = '',
+      telefono = '',
+      encuesta = 'Ninguna',
+    } = req.body || {};
+    if (!nombre || !apellido || !mail || !cod_postal) {
+      return res
+        .status(400)
+        .json({ message: 'Nombre, apellido, mail y codigo postal son requeridos' });
+    }
+    const [existsRows] = await pool.query(
+      `SELECT mail FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
+      [mail]
+    );
+    if (existsRows.length) {
+      return res.status(409).json({ message: 'El cliente ya existe' });
+    }
+    await pool.query(
+      `INSERT INTO ${DB_NAME}.clientes
+       (nombre, apellido, apodo, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        nombre,
+        apellido,
+        apodo,
+        direccion,
+        mail,
+        telefono,
+        cuit,
+        localidad,
+        cod_postal,
+        provincia_id,
+        encuesta,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al crear cliente', error: error.message });
+  }
+});
+
+app.get('/api/clientes/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Cliente invalido' });
+    const [rows] = await pool.query(
+      `SELECT id_clientes, nombre, apellido, apodo, cuit, direccion, localidad, id_provincia,
+              CodigoPostal, mail, telefono, encuesta
+       FROM ${DB_NAME}.clientes
+       WHERE id_clientes = ? LIMIT 1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ message: 'Cliente no encontrado' });
+    res.json({ data: rows[0] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar cliente', error: error.message });
+  }
+});
+
+app.patch('/api/clientes/:id', requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Cliente invalido' });
+    const {
+      nombre = '',
+      apellido = '',
+      apodo = '',
+      cuit = null,
+      direccion = '',
+      localidad = '',
+      provincia_id = null,
+      cod_postal = '',
+      mail = '',
+      telefono = '',
+      encuesta = 'Ninguna',
+    } = req.body || {};
+    if (!nombre || !apellido || !mail || !cod_postal) {
+      return res
+        .status(400)
+        .json({ message: 'Nombre, apellido, mail y codigo postal son requeridos' });
+    }
+    const [mailRows] = await pool.query(
+      `SELECT id_clientes FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
+      [mail]
+    );
+    if (mailRows.length && Number(mailRows[0].id_clientes) !== id) {
+      return res.status(409).json({ message: 'El cliente ya existe' });
+    }
+    await pool.query(
+      `UPDATE ${DB_NAME}.clientes
+       SET nombre = ?, apellido = ?, apodo = ?, cuit = ?, direccion = ?, localidad = ?,
+           id_provincia = ?, CodigoPostal = ?, mail = ?, telefono = ?, encuesta = ?, updated_at = NOW()
+       WHERE id_clientes = ? LIMIT 1`,
+      [
+        nombre,
+        apellido,
+        apodo,
+        cuit,
+        direccion,
+        localidad,
+        provincia_id,
+        cod_postal,
+        mail,
+        telefono,
+        encuesta,
+        id,
+      ]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar cliente', error: error.message });
+  }
+});
+
+app.get('/api/provinciasSelect', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, nombre FROM ${DB_NAME}.provincias ORDER BY nombre`
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar provincias', error: error.message });
   }
 });
 
@@ -5176,7 +5326,7 @@ app.put('/api/facturas/:id', async (req, res) => {
 
     const updates = [];
     const params = [];
-    const { tipoPagoId, estadoId, comentario } = req.body || {};
+    const { tipoPagoId, estadoId, comentario, pagoMixto } = req.body || {};
 
     if (tipoPagoId !== undefined) {
       if (!Number.isFinite(Number(tipoPagoId))) {
@@ -5195,6 +5345,14 @@ app.put('/api/facturas/:id', async (req, res) => {
     if (comentario !== undefined) {
       updates.push('comentario = ?');
       params.push(comentario || '');
+    }
+    if (pagoMixto !== undefined) {
+      const val = pagoMixto === '' || pagoMixto === null ? null : Number(pagoMixto);
+      if (val !== null && !Number.isFinite(val)) {
+        return res.status(400).json({ message: 'pagoMixto debe ser num‚rico' });
+      }
+      updates.push('pagomixto = ?');
+      params.push(val);
     }
 
     if (!updates.length) {

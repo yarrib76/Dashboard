@@ -173,12 +173,31 @@ const iaSqlResultEl = document.getElementById('ia-sql-result');
 const statusClientes = document.getElementById('status-clientes');
 const tablaClientesBody = document.querySelector('#tabla-clientes tbody');
 const tablaClientesHead = document.querySelector('#tabla-clientes thead');
+const clientesCards = document.getElementById('clientes-cards');
 const buscarClientes = document.getElementById('buscar-clientes');
 const clientesPageSizeSelect = document.getElementById('clientes-page-size');
 const clientesPrev = document.getElementById('clientes-prev');
 const clientesNext = document.getElementById('clientes-next');
 const clientesPageInfo = document.getElementById('clientes-page-info');
 const refreshClientesBtn = document.getElementById('refresh-clientes');
+const clientesNewBtn = document.getElementById('clientes-new');
+const clientesNewOverlay = document.getElementById('clientes-new-overlay');
+const clientesNewClose = document.getElementById('clientes-new-close');
+const clientesNewCancel = document.getElementById('clientes-new-cancel');
+const clientesNewForm = document.getElementById('clientes-new-form');
+const clientesNewStatus = document.getElementById('clientes-new-status');
+const clientesNewTitle = document.getElementById('clientes-new-title');
+const clientesNewNombre = document.getElementById('clientes-new-nombre');
+const clientesNewApellido = document.getElementById('clientes-new-apellido');
+const clientesNewApodo = document.getElementById('clientes-new-apodo');
+const clientesNewMail = document.getElementById('clientes-new-mail');
+const clientesNewTelefono = document.getElementById('clientes-new-telefono');
+let clientesNewDireccion = document.getElementById('clientes-new-dir-line');
+const clientesNewLocalidad = document.getElementById('clientes-new-town');
+const clientesNewProvincia = document.getElementById('clientes-new-region');
+const clientesNewCodPostal = document.getElementById('clientes-new-zip');
+const clientesNewCuit = document.getElementById('clientes-new-cuit');
+const clientesNewEncuesta = document.getElementById('clientes-new-encuesta');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -258,6 +277,8 @@ let pedidoTicketCurrentPedido = '';
 let pedidoTicketCurrentCliente = '';
 let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
+let clientesNewMode = 'create';
+let clientesEditId = null;
 let ecommerceImageDataUrl = '';
 let ecommerceImageBaseResult = '';
 let ecommerceWatermarkTarget = 'result';
@@ -490,6 +511,7 @@ const facturaArticuloClearBtn = document.getElementById('factura-articulo-clear'
 const facturacionClientesOverlay = document.getElementById('facturacion-clientes-overlay');
 const facturacionClientesClose = document.getElementById('facturacion-clientes-close');
 const facturacionClientesSearch = document.getElementById('facturacion-clientes-search');
+const facturacionClientesNewBtn = document.getElementById('facturacion-clientes-new');
 const facturacionClientesTableBody = document.querySelector('#facturacion-clientes-table tbody');
 const facturacionClientesStatus = document.getElementById('facturacion-clientes-status');
 const facturacionArticulosOverlay = document.getElementById('facturacion-articulos-overlay');
@@ -946,7 +968,7 @@ let facturasLoaded = false;
 let facturasPage = 1;
 let facturasPageSize = 10;
 let facturasTotalPages = 1;
-const facturasColumnWidths = [160, 110];
+const facturasColumnWidths = [160, 110, 0, 0, 0, 0, 0, 0, 0, 90];
 const facturasFilters = {
   cliente: '',
   fecha: '',
@@ -2287,7 +2309,12 @@ async function loadFacturacionClientesTable(query) {
           <td>${row.nombre || ''}</td>
           <td>${row.apellido || ''}</td>
           <td>${row.mail || ''}</td>
-          <td><button type="button" class="btn-icon" data-id="${row.id}" data-nombre="${row.nombre || ''}" data-apellido="${row.apellido || ''}">Elegir</button></td>
+          <td>
+            <button type="button" class="btn-icon" data-action="select" data-id="${row.id}" data-nombre="${row.nombre || ''}" data-apellido="${row.apellido || ''}">Elegir</button>
+            <button type="button" class="btn-icon" data-action="edit" data-id="${row.id}" title="Editar cliente">
+              <i class="fa fa-pencil"></i>
+            </button>
+          </td>
         </tr>`
       )
       .join('');
@@ -2781,7 +2808,12 @@ async function initFacturaNueva() {
     facturacionClientesTableBody.addEventListener('click', (event) => {
       const button = event.target.closest('button[data-id]');
       if (!button) return;
+      const action = button.dataset.action || 'select';
       const id = button.dataset.id || '';
+      if (action === 'edit') {
+        openClientesEditModal(Number(id));
+        return;
+      }
       const nombre = button.dataset.nombre || '';
       const apellido = button.dataset.apellido || '';
       const label = `${id} - ${nombre} ${apellido}`.trim();
@@ -2795,6 +2827,13 @@ async function initFacturaNueva() {
       closeFacturacionClientesModal();
     });
   }
+  safeOn(facturacionClientesNewBtn, 'click', () => {
+    resetClientesNewForm();
+    setClientesNewMode('create');
+    clientesEditId = null;
+    loadClientesNewProvincias();
+    openClientesNewModal();
+  });
 
   if (facturacionArticulosClose)
     facturacionArticulosClose.addEventListener('click', closeFacturacionArticulosModal);
@@ -7274,8 +7313,22 @@ function closeOverlay(el) {
 
 async function fetchJSON(url, options = {}) {
   const response = await fetch(url, { credentials: 'include', ...options });
-  if (!response.ok) throw new Error(`Error ${response.status}`);
-  return response.json();
+  const contentType = response.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    data = await response.text();
+  }
+  if (!response.ok) {
+    const message =
+      (data && data.message) ||
+      (data && data.error) ||
+      (typeof data === 'string' && data) ||
+      `Error ${response.status}`;
+    throw new Error(message);
+  }
+  return data;
 }
 
 function buildDatasetMensual(rows) {
@@ -8096,9 +8149,67 @@ function renderClientes(rows) {
       <td>${formatDate(row.ultimaCompra)}</td>
       <td>${row.cantFacturas ?? 0}</td>
       <td>${Number(row.ticketPromedio ?? 0).toFixed(2)}</td>
-      <td><button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(clienteLabel)}" title="IA cliente">&#129302;</button></td>
+      <td>
+        <button type="button" class="abm-link-btn cliente-edit-btn" data-id="${row.id || ''}" title="Editar cliente">
+          <i class="fa fa-pencil"></i>
+        </button>
+        <button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(clienteLabel)}" title="IA cliente">&#129302;</button>
+      </td>
     `;
     tablaClientesBody.appendChild(tr);
+  });
+  renderClientesCards(rows);
+}
+
+function renderClientesCards(rows) {
+  if (!clientesCards) return;
+  clientesCards.innerHTML = '';
+  rows.forEach((row) => {
+    const card = document.createElement('div');
+    card.className = 'abm-card';
+    const nombre = `${row.nombre || ''} ${row.apellido || ''}`.trim();
+    const telefono = row.telefono || '-';
+    const actualizado = row.updated_at ? formatDate(row.updated_at) : '-';
+    const ultima = row.ultimaCompra ? formatDate(row.ultimaCompra) : '-';
+    const compras = row.cantFacturas ?? 0;
+    const ticket = Number(row.ticketPromedio ?? 0).toFixed(2);
+    card.innerHTML = `
+      <div class="abm-card-header">
+        <div>
+          <p class="abm-card-title">${nombre || 'Cliente'}</p>
+          <p class="abm-card-sub">${row.mail || '-'}</p>
+        </div>
+        <div class="abm-card-actions">
+          <button type="button" class="abm-link-btn cliente-edit-btn" data-id="${row.id || ''}" title="Editar cliente">
+            <i class="fa fa-pencil"></i>
+          </button>
+          <button type="button" class="abm-link-btn cliente-ia-btn" data-id="${row.id || ''}" data-cliente="${escapeAttr(nombre)}" title="IA cliente">&#129302;</button>
+        </div>
+      </div>
+      <div class="abm-card-grid">
+        <div>
+          <span class="abm-card-label">Telefono</span>
+          <span class="abm-card-value">${telefono}</span>
+        </div>
+        <div>
+          <span class="abm-card-label">Actualizado</span>
+          <span class="abm-card-value">${actualizado}</span>
+        </div>
+        <div>
+          <span class="abm-card-label">Ultima compra</span>
+          <span class="abm-card-value">${ultima}</span>
+        </div>
+        <div>
+          <span class="abm-card-label">Compras</span>
+          <span class="abm-card-value">${compras}</span>
+        </div>
+        <div>
+          <span class="abm-card-label">Ticket promedio</span>
+          <span class="abm-card-value">${ticket}</span>
+        </div>
+      </div>
+    `;
+    clientesCards.appendChild(card);
   });
 }
 
@@ -12175,6 +12286,199 @@ function initPedidosClientes() {
   }
 }
 
+function openClientesNewModal() {
+  if (!clientesNewOverlay) return;
+  blockClientesAutofill();
+  clientesNewOverlay.classList.add('open');
+  clientesNewOverlay.style.display = 'flex';
+  setStatusMessage(clientesNewStatus, '');
+  clientesNewNombre?.focus();
+}
+
+function closeClientesNewModal() {
+  if (!clientesNewOverlay) return;
+  clientesNewOverlay.classList.remove('open');
+  clientesNewOverlay.style.display = '';
+  setStatusMessage(clientesNewStatus, '');
+}
+
+function resetClientesNewForm() {
+  if (clientesNewForm) clientesNewForm.reset();
+  if (clientesNewEncuesta) clientesNewEncuesta.value = 'Ninguna';
+  if (clientesNewDireccion) clientesNewDireccion.textContent = '';
+  setClientesNewProvinciaDefault();
+}
+
+function blockClientesAutofill() {
+  if (!clientesNewForm) return;
+  const fields = clientesNewForm.querySelectorAll('input, textarea');
+  fields.forEach((field) => {
+    if (field.dataset.autofillBlocked) return;
+    const type = (field.getAttribute('type') || '').toLowerCase();
+    if (['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(type)) return;
+    field.setAttribute('readonly', 'readonly');
+    field.dataset.autofillBlocked = '1';
+    field.addEventListener(
+      'focus',
+      () => {
+        field.removeAttribute('readonly');
+      },
+      { once: true }
+    );
+  });
+  // Direccion ahora es contenteditable, no aplicar clone/readonly.
+}
+
+function setClientesNewMode(mode) {
+  clientesNewMode = mode;
+  if (clientesNewTitle) {
+    clientesNewTitle.textContent = mode === 'edit' ? 'Editar Cliente' : 'Nuevo Cliente';
+  }
+}
+
+function cleanDireccionValue() {
+  if (!clientesNewDireccion) return '';
+  return (clientesNewDireccion.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+async function loadClientesNewProvincias() {
+  if (!clientesNewProvincia) return;
+  if (clientesNewProvincia.options.length) {
+    setClientesNewProvinciaDefault();
+    return;
+  }
+  try {
+    const res = await fetchJSON('/api/provinciasSelect');
+    const rows = Array.isArray(res?.data) ? res.data : res;
+    clientesNewProvincia.innerHTML = '';
+    (rows || []).forEach((row) => {
+      const opt = document.createElement('option');
+      opt.value = row.id;
+      opt.textContent = row.nombre;
+      clientesNewProvincia.appendChild(opt);
+    });
+    setClientesNewProvinciaDefault();
+  } catch (error) {
+    setStatusMessage(
+      clientesNewStatus,
+      error.message || 'Error al cargar provincias.',
+      'error'
+    );
+  }
+}
+
+function setClientesNewProvinciaDefault() {
+  if (!clientesNewProvincia) return;
+  let defaultValue = '';
+  Array.from(clientesNewProvincia.options).forEach((opt) => {
+    if (String(opt.textContent || '').trim().toLowerCase() === 'otro') {
+      defaultValue = opt.value;
+    }
+  });
+  if (defaultValue) clientesNewProvincia.value = defaultValue;
+}
+
+async function loadClienteDetalle(id) {
+  const res = await fetchJSON(`/api/clientes/${encodeURIComponent(id)}`);
+  return res?.data || res;
+}
+
+async function openClientesEditModal(id) {
+  clientesEditId = id;
+  setClientesNewMode('edit');
+  resetClientesNewForm();
+  await loadClientesNewProvincias();
+  try {
+    const data = await loadClienteDetalle(id);
+    if (clientesNewNombre) clientesNewNombre.value = data.nombre || '';
+    if (clientesNewApellido) clientesNewApellido.value = data.apellido || '';
+    if (clientesNewTitle) {
+      const nombreLabel = `${data.nombre || ''} ${data.apellido || ''}`.trim();
+      clientesNewTitle.textContent = nombreLabel
+        ? `Editar Cliente: ${nombreLabel}`
+        : 'Editar Cliente';
+    }
+    if (clientesNewApodo) clientesNewApodo.value = data.apodo || '';
+    if (clientesNewCuit) clientesNewCuit.value = data.cuit || '';
+    if (clientesNewDireccion) clientesNewDireccion.textContent = data.direccion || '';
+    if (clientesNewLocalidad) clientesNewLocalidad.value = data.localidad || '';
+    if (clientesNewProvincia && data.id_provincia) {
+      clientesNewProvincia.value = String(data.id_provincia);
+    }
+    if (clientesNewCodPostal) clientesNewCodPostal.value = data.CodigoPostal || '';
+    if (clientesNewMail) clientesNewMail.value = data.mail || '';
+    if (clientesNewTelefono) clientesNewTelefono.value = data.telefono || '';
+    if (clientesNewEncuesta) clientesNewEncuesta.value = data.encuesta || 'Ninguna';
+  } catch (error) {
+    setStatusMessage(
+      clientesNewStatus,
+      error.message || 'Error al cargar cliente.',
+      'error'
+    );
+  }
+  openClientesNewModal();
+}
+
+async function submitClientesNewForm(event) {
+  event.preventDefault();
+  const payload = {
+    nombre: clientesNewNombre?.value?.trim() || '',
+    apellido: clientesNewApellido?.value?.trim() || '',
+    apodo: clientesNewApodo?.value?.trim() || '',
+    mail: clientesNewMail?.value?.trim() || '',
+    telefono: clientesNewTelefono?.value?.trim() || '',
+    direccion: cleanDireccionValue(),
+    localidad: clientesNewLocalidad?.value?.trim() || '',
+    provincia_id: clientesNewProvincia?.value
+      ? Number(clientesNewProvincia.value)
+      : null,
+    cod_postal: clientesNewCodPostal?.value?.trim() || '',
+    cuit: clientesNewCuit?.value?.trim() || null,
+    encuesta: clientesNewEncuesta?.value || 'Ninguna',
+  };
+  if (!payload.nombre || !payload.apellido || !payload.mail || !payload.cod_postal) {
+    setStatusMessage(
+      clientesNewStatus,
+      'Nombre, apellido, mail y codigo postal son requeridos.',
+      'error'
+    );
+    return;
+  }
+  setStatusMessage(clientesNewStatus, 'Guardando...');
+  try {
+    const url =
+      clientesNewMode === 'edit' && clientesEditId
+        ? `/api/clientes/${encodeURIComponent(clientesEditId)}`
+        : '/api/clientes';
+    const method = clientesNewMode === 'edit' && clientesEditId ? 'PATCH' : 'POST';
+    await fetchJSON(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    setStatusMessage(
+      clientesNewStatus,
+      clientesNewMode === 'edit' ? 'Cliente actualizado.' : 'Cliente creado.',
+      'ok'
+    );
+    setClientesNewMode('create');
+    clientesEditId = null;
+    resetClientesNewForm();
+    closeClientesNewModal();
+    loadClientes(1);
+    if (facturacionClientesOverlay?.classList.contains('open')) {
+      const query = facturacionClientesSearch?.value || '';
+      loadFacturacionClientesTable(query);
+    }
+  } catch (error) {
+    setStatusMessage(
+      clientesNewStatus,
+      error.message || 'Error al crear cliente.',
+      'error'
+    );
+  }
+}
+
 function initClientes() {
   if (clientesPageSizeSelect) {
     clientesPageSize = Number(clientesPageSizeSelect.value) || clientesPageSize;
@@ -12213,6 +12517,36 @@ function initClientes() {
       loadPedidoIaHistory(null);
     });
   }
+  if (clientesCards) {
+    clientesCards.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.cliente-edit-btn');
+      if (editBtn) {
+        const id = Number(editBtn.dataset.id);
+        if (id) openClientesEditModal(id);
+        return;
+      }
+      const iaBtn = e.target.closest('.cliente-ia-btn');
+      if (!iaBtn) return;
+      pedidoIaMode = 'cliente';
+      pedidoIaControlId = null;
+      pedidoIaClienteId = Number(iaBtn.dataset.id) || null;
+      if (pedidoIaTitle) {
+        const label = iaBtn.dataset.cliente || 'Cliente';
+        pedidoIaTitle.textContent = `Cliente ${label}`;
+      }
+      pedidoIaOverlay?.classList.add('open');
+      loadPedidoIaHistory(null);
+    });
+  }
+  if (tablaClientesBody) {
+    tablaClientesBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cliente-edit-btn');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      if (!id) return;
+      openClientesEditModal(id);
+    });
+  }
   if (tablaClientesBody) {
     tablaClientesBody.addEventListener('click', (e) => {
       const btn = e.target.closest('.cliente-ia-btn');
@@ -12247,6 +12581,41 @@ function initClientes() {
       loadClientes(1);
     });
   }
+  safeOn(clientesNewBtn, 'click', () => {
+    resetClientesNewForm();
+    setClientesNewMode('create');
+    clientesEditId = null;
+    loadClientesNewProvincias();
+    openClientesNewModal();
+  });
+  safeOn(clientesNewClose, 'click', () => {
+    closeClientesNewModal();
+    resetClientesNewForm();
+    setClientesNewMode('create');
+    clientesEditId = null;
+  });
+  safeOn(clientesNewCancel, 'click', () => {
+    closeClientesNewModal();
+    resetClientesNewForm();
+    setClientesNewMode('create');
+    clientesEditId = null;
+  });
+  safeOn(clientesNewOverlay, 'click', (event) => {
+    if (event.target === clientesNewOverlay) {
+      closeClientesNewModal();
+      resetClientesNewForm();
+    }
+  });
+  safeOn(clientesNewForm, 'submit', submitClientesNewForm);
+  safeOn(clientesNewDireccion, 'keydown', (event) => {
+    if (event.key === 'Enter') event.preventDefault();
+  });
+  safeOn(clientesNewDireccion, 'paste', (event) => {
+    event.preventDefault();
+    const text = (event.clipboardData || window.clipboardData).getData('text') || '';
+    const clean = text.replace(/\s+/g, ' ').trim();
+    document.execCommand('insertText', false, clean);
+  });
 }
 
 function initIaChat() {
@@ -13376,11 +13745,20 @@ function renderFacturasTabla(rows) {
       <td>${formatMoney(row.cobrar)}</td>
       <td class="factura-select-cell"></td>
       <td class="factura-select-cell"></td>
-      <td>${row.pagoMixto || ''}</td>
+      <td class="factura-pagomixto-cell"></td>
       <td class="factura-comment-cell"></td>
     `;
     tr.querySelector('.factura-select-cell:nth-child(8)').appendChild(selectPago);
     tr.querySelector('.factura-select-cell:nth-child(9)').appendChild(selectEstado);
+    const pagoMixtoInput = document.createElement('input');
+    pagoMixtoInput.type = 'number';
+    pagoMixtoInput.step = '0.01';
+    pagoMixtoInput.className = 'factura-input';
+    pagoMixtoInput.dataset.id = row.id;
+    pagoMixtoInput.dataset.field = 'pagoMixto';
+    pagoMixtoInput.value = row.pagoMixto ?? '';
+    const pagoMixtoCell = tr.querySelector('.factura-pagomixto-cell');
+    if (pagoMixtoCell) pagoMixtoCell.appendChild(pagoMixtoInput);
     const commentInput = document.createElement('input');
     commentInput.type = 'text';
     commentInput.className = 'factura-input';
@@ -13482,6 +13860,8 @@ async function updateFacturaField(id, field, value) {
       row.estadoId = Number(value);
       const match = facturasEstados.find((o) => String(o.value) === String(value)) || {};
       row.estado = match.label || row.estado || '';
+    } else if (field === 'pagoMixto') {
+      row.pagoMixto = value === '' ? '' : Number(value);
     } else if (field === 'comentario') {
       row.comentario = value || '';
     }
