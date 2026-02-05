@@ -279,6 +279,7 @@ let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
 let clientesNewMode = 'create';
 let clientesEditId = null;
+let currentView = '';
 let ecommerceImageDataUrl = '';
 let ecommerceImageBaseResult = '';
 let ecommerceWatermarkTarget = 'result';
@@ -14166,6 +14167,10 @@ function initComisiones() {
 }
 
 function switchView(target) {
+  if (currentView === 'pedidos-nuevo' && target !== 'pedidos-nuevo') {
+    resetPedidoEdicion();
+    resetPedidoNuevoForm();
+  }
   if (target === 'no-permission' && viewNoPermission) {
     const views = [
       viewDashboard,
@@ -14301,6 +14306,7 @@ function switchView(target) {
     viewDashboard.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+  currentView = target;
 }
 
 const defaultYearEncuestas = initYearSelect('year-encuestas', (y) => loadEncuestas(y));
