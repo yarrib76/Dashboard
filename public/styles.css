@@ -596,6 +596,35 @@ input[type='month'] {
   gap: 8px;
 }
 
+.form-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.form-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-reset-btn {
+  background: #dc2626;
+  border: 1px solid #b91c1c;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.form-reset-btn:hover {
+  background: #b91c1c;
+}
+
 .inline select,
 .inline input[type='date'],
 .inline input[type='month'],
@@ -4350,7 +4379,7 @@ body.pedido-foto-open::after {
   margin-top: 0;
   margin-bottom: 6px;
   position: relative;
-  top: -550px;
+  top: -520px;
 }
 
 .factura-legacy-row {

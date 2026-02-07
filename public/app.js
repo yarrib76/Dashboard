@@ -415,8 +415,8 @@ const pedidoNotasList = document.getElementById('pedido-notas-list');
 const pedidoNotasInput = document.getElementById('pedido-notas-input');
 const pedidoNotasSave = document.getElementById('pedido-notas-save');
 const pedidoNotasStatus = document.getElementById('pedido-notas-status');
-const pedidoNuevoAddBtn = document.getElementById('pedido-nuevo-add');
 const pedidoNuevoSaveBtn = document.getElementById('pedido-nuevo-save');
+const pedidoNuevoResetBtn = document.getElementById('pedido-nuevo-reset');
 const pedidoClienteInput = document.getElementById('pedido-cliente-input');
 const pedidoClienteId = document.getElementById('pedido-cliente-id');
 const pedidoClientesList = document.getElementById('pedido-clientes-list');
@@ -447,6 +447,7 @@ const pedidoNuevoStatus = document.getElementById('pedido-nuevo-status');
 const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
 const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
 const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
+const facturaNuevaResetBtn = document.getElementById('factura-nueva-reset');
 const facturaPedidoSelect = document.getElementById('factura-pedido-select');
 const facturaPedidoInput = document.getElementById('factura-pedido-input');
 const facturaPedidoSearchBtn = document.getElementById('factura-pedido-search');
@@ -2086,6 +2087,7 @@ async function addPedidoNuevoItem() {
   if (pedidoItemStockInput) pedidoItemStockInput.value = '';
   renderPedidoNuevoItems();
   setStatusMessage(pedidoNuevoStatus, '');
+  if (pedidoItemArticuloInput) pedidoItemArticuloInput.focus();
 }
 
 async function addFacturaNuevaItem() {
@@ -2159,6 +2161,7 @@ async function addFacturaNuevaItem() {
   if (facturaItemStockInput) facturaItemStockInput.value = '';
   renderFacturaNuevaItems();
   setStatusMessage(facturaNuevaStatus, '');
+  if (facturaItemArticuloInput) facturaItemArticuloInput.focus();
 }
 
 async function loadFacturaPedidoDetalle(nroPedido) {
@@ -2454,6 +2457,12 @@ async function initPedidoNuevo() {
     pedidoArticuloSearchTextBtn.addEventListener('click', () => loadPedidoArticuloBySku(pedidoItemArticuloInput?.value));
   if (pedidoClienteClearBtn) pedidoClienteClearBtn.addEventListener('click', clearPedidoCliente);
   if (pedidoArticuloClearBtn) pedidoArticuloClearBtn.addEventListener('click', clearPedidoArticulo);
+  if (pedidoNuevoResetBtn)
+    pedidoNuevoResetBtn.addEventListener('click', () => {
+      resetPedidoEdicion();
+      resetPedidoNuevoForm();
+      pedidoItemArticuloInput?.focus();
+    });
   if (pedidoArticuloFoto) {
     pedidoArticuloFoto.addEventListener('click', () => {
       if (!pedidoArticuloFoto.src) return;
@@ -2510,8 +2519,6 @@ async function initPedidoNuevo() {
   if (pedidoCorreoInput) pedidoCorreoInput.addEventListener('input', updatePedidoNuevoTotals);
   if (pedidoImprimirBtn) pedidoImprimirBtn.addEventListener('click', printPedidoNuevoPdf);
   if (pedidoNuevoReservarBtn) pedidoNuevoReservarBtn.addEventListener('click', reservarPedidoNumero);
-  if (pedidoNuevoAddBtn)
-    pedidoNuevoAddBtn.addEventListener('click', () => pedidoItemArticuloInput?.focus());
   if (pedidoItemsFilterArticulo) {
     pedidoItemsFilterArticulo.addEventListener('input', () => {
       pedidoItemsFilterTerm.articulo = pedidoItemsFilterArticulo.value || '';
@@ -2652,6 +2659,13 @@ async function initFacturaNueva() {
     facturaArticuloSearchTextBtn.addEventListener('click', () => loadFacturaArticuloBySku(facturaItemArticuloInput?.value));
   if (facturaClienteClearBtn) facturaClienteClearBtn.addEventListener('click', clearFacturaCliente);
   if (facturaArticuloClearBtn) facturaArticuloClearBtn.addEventListener('click', clearFacturaArticulo);
+  if (facturaNuevaResetBtn)
+    facturaNuevaResetBtn.addEventListener('click', () => {
+      resetFacturaNuevaForm();
+      loadNextFacturaNumero();
+      loadFacturaPedidos();
+      facturaItemArticuloInput?.focus();
+    });
   if (facturaNuevaAddBtn)
     facturaNuevaAddBtn.addEventListener('click', () => facturaItemArticuloInput?.focus());
   if (facturaDescuentoCheck) {
