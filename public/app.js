@@ -13345,10 +13345,6 @@ function initMenu() {
 
   menu.addEventListener('mouseenter', () => menu.classList.add('expanded'));
   menu.addEventListener('mouseleave', () => menu.classList.remove('expanded'));
-  groups.forEach((group) => {
-    group.addEventListener('mouseenter', () => group.classList.add('open'));
-    group.addEventListener('mouseleave', () => group.classList.remove('open'));
-  });
   parentButtons.forEach((parent) => {
     parent.addEventListener('click', (e) => {
       e.stopPropagation();

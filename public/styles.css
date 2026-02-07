@@ -3060,7 +3060,7 @@ body.theme-light .pedido-notas-badge {
   backdrop-filter: blur(10px);
   transition: width 0.2s ease;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   z-index: 20;
 }
 
@@ -3074,6 +3074,23 @@ body.theme-light .pedido-notas-badge {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.side-menu .menu-inner::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.side-menu .menu-inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.side-menu .menu-inner::-webkit-scrollbar-thumb {
+  background: transparent;
 }
 
 .user-block {
@@ -3085,6 +3102,7 @@ body.theme-light .pedido-notas-badge {
   background: var(--panel);
   border: 1px solid var(--border);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .avatar {
