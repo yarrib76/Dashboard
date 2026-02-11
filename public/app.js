@@ -5562,29 +5562,9 @@ async function printPedidoTicketPdf() {
   }
 }
 
-// ImagenWeb: cargar imagen, enviar a proveedor, cuadrar a fondo blanco, aplicar marca de agua.
+// ImagenWeb: cargar imagen, enviar a proveedor y cuadrar a fondo blanco.
 function initEcommerceImagenweb() {
   if (!viewEcommerceImagenweb) return;
-  if (ecommerceWatermarkSize && ecommerceWatermarkSizeValue) {
-    const syncSize = () => {
-      ecommerceWatermarkSizeValue.textContent = String(ecommerceWatermarkSize.value || '');
-    };
-    ecommerceWatermarkSize.addEventListener('input', () => {
-      syncSize();
-      if (ecommerceImageBaseResult) renderEcommerceWatermark();
-    });
-    syncSize();
-  }
-  if (ecommerceWatermarkOpacity && ecommerceWatermarkOpacityValue) {
-    const syncOpacity = () => {
-      ecommerceWatermarkOpacityValue.textContent = String(ecommerceWatermarkOpacity.value || '');
-    };
-    ecommerceWatermarkOpacity.addEventListener('input', () => {
-      syncOpacity();
-      if (ecommerceImageBaseResult) renderEcommerceWatermark();
-    });
-    syncOpacity();
-  }
   if (ecommerceImageFile) {
     ecommerceImageFile.addEventListener('change', () => {
       const file = ecommerceImageFile.files?.[0];
@@ -5614,7 +5594,7 @@ function initEcommerceImagenweb() {
       }
       try {
         ecommerceImageSend.disabled = true;
-        const provider = (ecommerceImageProvider?.value || 'clipdrop').toLowerCase();
+        const provider = (ecommerceImageProvider?.value || 'photoroom').toLowerCase();
         if (ecommerceImageStatus) {
           ecommerceImageStatus.textContent =
             provider === 'photoroom' ? 'Enviando a PhotoRoom...' : 'Enviando a Clipdrop...';
@@ -5635,7 +5615,11 @@ function initEcommerceImagenweb() {
         img.onload = () => {
           const squareUrl = buildSquareWhiteFromImage(img);
           ecommerceImageBaseResult = squareUrl;
-          renderEcommerceWatermark();
+          if (ecommerceImageResult) ecommerceImageResult.src = squareUrl;
+          if (ecommerceImageDownload) {
+            ecommerceImageDownload.href = squareUrl;
+            ecommerceImageDownload.hidden = false;
+          }
           if (ecommerceImageStatus) ecommerceImageStatus.textContent = 'Imagen generada.';
           if (ecommerceImageCredits) {
             const remainingRaw = data.remainingCredits;

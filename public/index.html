@@ -903,8 +903,8 @@
           <label class="client-inline">
             <span>Proveedor</span>
             <select id="ecommerce-image-provider">
+              <option value="photoroom" selected>PHOTOROOM</option>
               <option value="clipdrop">CLIPDROP</option>
-              <option value="photoroom">PHOTOROOM</option>
             </select>
           </label>
           <div class="actions inline">
@@ -913,28 +913,6 @@
               <input type="file" id="ecommerce-image-file" accept="image/*" />
             </label>
           </div>
-          <div class="actions inline">
-            <label class="client-inline">
-              <span>Posicion</span>
-              <select id="ecommerce-watermark-position">
-                <option value="center">Centro</option>
-                <option value="bottom-right">Abajo derecha</option>
-                <option value="bottom-left">Abajo izquierda</option>
-                <option value="top-right">Arriba derecha</option>
-                <option value="top-left">Arriba izquierda</option>
-              </select>
-            </label>
-            <label class="client-inline">
-              <span>Tamanio</span>
-              <input type="range" id="ecommerce-watermark-size" min="10" max="100" value="80" />
-              <span class="range-value" id="ecommerce-watermark-size-value">80</span>
-            </label>
-          <label class="client-inline">
-            <span>Opacidad</span>
-            <input type="range" id="ecommerce-watermark-opacity" min="5" max="100" value="54" />
-            <span class="range-value" id="ecommerce-watermark-opacity-value">54</span>
-          </label>
-        </div>
           <div class="actions inline">
             <button id="ecommerce-image-send" type="button">Enviar</button>
             <a id="ecommerce-image-download" class="abm-link-btn" href="#" download="imagen-editada.png" hidden>Descargar</a>
