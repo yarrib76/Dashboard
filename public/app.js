@@ -406,7 +406,7 @@ const pedidoCardsSearchInput = document.getElementById('pedido-cards-search');
 const pedidoItemsOverlay = document.getElementById('pedido-items-overlay');
 const pedidoItemsTitle = document.getElementById('pedido-items-title');
 const pedidoItemsClose = document.getElementById('pedido-items-close');
-const pedidoItemsTableEl = document.getElementById('pedido-items-table');
+const pedidoItemsTableEl = document.getElementById('pedido-items-modal-table');
 const pedidoItemsStatus = document.getElementById('pedido-items-status');
 const pedidoNotasOverlay = document.getElementById('pedido-notas-overlay');
 const pedidoNotasTitle = document.getElementById('pedido-notas-title');
@@ -8929,10 +8929,11 @@ function renderPedidoItems(rows) {
     pedidoItemsTable.clear();
     pedidoItemsTable.rows.add(data);
     pedidoItemsTable.draw();
+    pedidoItemsTable.columns.adjust();
     return;
   }
 
-  pedidoItemsTable = new DataTable('#pedido-items-table', {
+  pedidoItemsTable = new DataTable('#pedido-items-modal-table', {
     data,
     pageLength: 10,
     columns: [
@@ -8940,6 +8941,11 @@ function renderPedidoItems(rows) {
       { data: 'detalle' },
       { data: 'cantidad' },
     ],
+    columnDefs: [
+      { targets: 0, width: '140px' },
+      { targets: 2, width: '90px' },
+    ],
+    autoWidth: false,
     language: {
       search: 'Buscar:',
       lengthMenu: 'Mostrar _MENU_',
