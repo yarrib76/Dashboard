@@ -1486,15 +1486,45 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
       `SELECT COUNT(*) AS total ${countBase} ${searchSql}`,
       searchParams
     );
+    let filteredTotal = Number(filteredRow?.total) || 0;
+    let activeSearchSql = searchSql;
+    let activeSearchParams = searchParams.slice();
+
+    // Fallback acotado a Pedidos->Todos: si la busqueda general no encuentra nada,
+    // probar por tokens de cliente para tolerar orden/espacios sin penalizar el caso normal.
+    if (searchValue && filteredTotal === 0) {
+      const tokens = searchValue
+        .toLowerCase()
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 4);
+      if (tokens.length >= 2) {
+        const tokenSql = `AND (${tokens
+          .map(() => "LOWER(CONCAT_WS(' ', c.nombre, c.apellido)) LIKE ?")
+          .join(' AND ')})`;
+        const tokenParams = tokens.map((t) => `%${t}%`);
+        const [[tokenFilteredRow]] = await pool.query(
+          `SELECT COUNT(*) AS total ${countBase} ${tokenSql}`,
+          tokenParams
+        );
+        const tokenTotal = Number(tokenFilteredRow?.total) || 0;
+        if (tokenTotal > 0) {
+          activeSearchSql = tokenSql;
+          activeSearchParams = tokenParams;
+          filteredTotal = tokenTotal;
+        }
+      }
+    }
 
     const [rows] = await pool.query(
       `${baseSelect}
        WHERE 1=1
          ${extra}
-         ${searchSql}
+         ${activeSearchSql}
        ORDER BY ${orderBy} ${orderDir}
        LIMIT ? OFFSET ?`,
-      [...searchParams, length, start]
+      [...activeSearchParams, length, start]
     );
 
     const data = rows.map((row) => ({
@@ -1527,7 +1557,7 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
       res.json({
         draw,
         recordsTotal: Number(totalRow?.total) || 0,
-        recordsFiltered: Number(filteredRow?.total) || 0,
+        recordsFiltered: filteredTotal,
         data,
       });
     } else {
