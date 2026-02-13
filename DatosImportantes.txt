@@ -1,4 +1,4 @@
-La ruta para el acceso interno es: viamore.local
+La ruta para el acceso interno es: viamore.local de lo contrario no carga los CDN
 Para acceder al Modulo de Factura: Crear cookies en el navegador:
     1. Ingresar en la herramientas de desarrollo (Shift + Ctrl + i) - Aplicaciones - Coockies
     2. Nombre: facturaKey Valor : 123456

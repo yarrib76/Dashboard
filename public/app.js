@@ -1778,6 +1778,15 @@ function updateFacturaPagoMixtoState() {
   if (!isMixto) facturaPagoMixtoInput.value = '0';
 }
 
+function updateFacturaListoEnvioState() {
+  if (!facturaListoEnvioInput) return;
+  const isPedido = Boolean(facturaPedidoCheck?.checked);
+  const nroPedido = String(facturaPedidoInput?.value || facturaPedidoSelect?.value || '').trim();
+  const canEnable = isPedido && Boolean(nroPedido);
+  facturaListoEnvioInput.disabled = !canEnable;
+  if (!canEnable) facturaListoEnvioInput.checked = false;
+}
+
 function renderFacturaNuevaItems() {
   if (!facturaItemsTableBody) return;
   const articuloFilter = (facturaItemsFilterTerm.articulo || '').toLowerCase();
@@ -1838,6 +1847,7 @@ function resetFacturaNuevaForm() {
   if (facturaItemsFilterDetalle) facturaItemsFilterDetalle.value = '';
   facturaItemsFilterTerm = { articulo: '', detalle: '' };
   updateFacturaPagoMixtoState();
+  updateFacturaListoEnvioState();
   updateFacturaNuevaTotals();
   if (!facturaNuevaAutorizado) {
     setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
@@ -2199,6 +2209,8 @@ async function loadFacturaPedidoDetalle(nroPedido) {
 function openFacturaCalculadora() {
   if (!facturaCalcOverlay) return;
   updateFacturaNuevaTotals();
+  if (facturaCalcPago) facturaCalcPago.value = '';
+  if (facturaCalcVuelto) facturaCalcVuelto.value = '';
   facturaCalcOverlay.classList.add('open');
   facturaCalcOverlay.style.display = 'flex';
   if (facturaCalcPago) facturaCalcPago.focus();
@@ -2617,6 +2629,7 @@ async function initFacturaNueva() {
 
   if (facturaPedidoInput) facturaPedidoInput.disabled = !facturaPedidoCheck?.checked;
   if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = !facturaPedidoCheck?.checked;
+  updateFacturaListoEnvioState();
 
   if (facturaClienteInput) {
     facturaClienteInput.addEventListener('input', () => {
@@ -2714,12 +2727,14 @@ async function initFacturaNueva() {
       const selected = facturaPedidoSelect.options[facturaPedidoSelect.selectedIndex];
       const nroPedido = facturaPedidoSelect.value;
       if (!nroPedido) {
+        updateFacturaListoEnvioState();
         facturaNuevaItems = [];
         renderFacturaNuevaItems();
         return;
       }
       if (facturaPedidoInput) facturaPedidoInput.value = nroPedido;
       if (facturaPedidoCheck) facturaPedidoCheck.checked = true;
+      updateFacturaListoEnvioState();
       if (facturaClienteId) facturaClienteId.value = selected.dataset.clienteId || '';
       if (facturaClienteInput) {
         const label = selected.dataset.clienteNombre || '';
@@ -2736,6 +2751,7 @@ async function initFacturaNueva() {
       const enabled = facturaPedidoCheck.checked;
       if (facturaPedidoInput) facturaPedidoInput.disabled = !enabled;
       if (facturaPedidoSearchBtn) facturaPedidoSearchBtn.disabled = !enabled;
+      updateFacturaListoEnvioState();
       if (!enabled) {
         if (facturaPedidoInput) facturaPedidoInput.value = '';
         if (facturaPedidoSelect) facturaPedidoSelect.value = '';
@@ -2951,7 +2967,7 @@ async function initFacturaNueva() {
         totalConEnvio: totals.totalConEnvio,
         esPedido,
         nroPedido: nroPedidoValue,
-        listoParaEnvio: facturaListoEnvioInput?.checked ? 1 : 0,
+        listoParaEnvio: esPedido === 'SI' && facturaListoEnvioInput?.checked ? 1 : 0,
       };
       setStatusMessage(facturaNuevaStatus, 'Guardando...');
       try {
@@ -2979,6 +2995,7 @@ async function initFacturaNueva() {
         if (facturaRecargoSelect) facturaRecargoSelect.value = '0';
         if (facturaEnvioInput) facturaEnvioInput.value = '0';
         if (facturaListoEnvioInput) facturaListoEnvioInput.checked = false;
+        updateFacturaListoEnvioState();
         if (facturaItemsFilterArticulo) facturaItemsFilterArticulo.value = '';
         if (facturaItemsFilterDetalle) facturaItemsFilterDetalle.value = '';
         facturaItemsFilterTerm = { articulo: '', detalle: '' };
