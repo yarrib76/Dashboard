@@ -72,7 +72,33 @@
           <button class="menu-item" data-target="salon">
             <span class="icon">🏬</span>
             <span class="label">Salón</span>
-          </button>          <div class="menu-group" data-group="pedidos">
+          </button>
+          <div class="menu-group" data-group="fidelizacion">
+            <button class="menu-item menu-parent" data-toggle="fidelizacion">
+              <span class="icon">🎯</span>
+              <span class="label">Fidelizacion</span>
+              <span class="caret">></span>
+            </button>
+            <div class="submenu" data-parent="fidelizacion">
+              <button class="menu-item submenu-item" data-target="fidelizacion-panel">
+                <span class="icon">🎯</span>
+                <span class="label">Panel</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="fidelizacion-mis">
+                <span class="icon">📋</span>
+                <span class="label">Mis Fidelizaciones</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="fidelizacion-admin">
+                <span class="icon">🛠️</span>
+                <span class="label">Admin</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="fidelizacion-runs">
+                <span class="icon">🗂️</span>
+                <span class="label">Corridas</span>
+              </button>
+            </div>
+          </div>
+          <div class="menu-group" data-group="pedidos">
             <button class="menu-item menu-parent" data-toggle="pedidos">
               <span class="icon">🧾</span>
               <span class="label">Pedidos</span>
@@ -575,6 +601,344 @@
       <p class="status" id="salon-status"></p>
     </article>
   </section>
+
+  <section class="view hidden" id="view-fidelizacion-panel">
+    <article class="card wide">
+      <div class="actions between">
+        <div>
+          <h2>Fidelizacion Inteligente</h2>
+          <p class="status">Configuracion del scoring y corrida manual semanal.</p>
+        </div>
+        <div class="actions">
+          <button id="fidelizacion-refresh" type="button">Actualizar</button>
+          <button id="fidelizacion-run" type="button" class="btn-danger">Generar corrida</button>
+        </div>
+      </div>
+      <div class="fidelizacion-layout">
+        <form id="fidelizacion-config-form" class="abm-form-grid">
+          <label title="Dias minimos desde la ultima compra para volver a contactar. Ej: 30 = no contactar si compro hace menos de 30 dias.">
+            <span>Cooldown (dias)</span>
+            <input type="number" id="fid-cooldown-days" min="1" step="1" />
+          </label>
+          <label title="Dias posteriores al contacto para medir si funciono. Si compra dentro de este plazo, cuenta como conversion.">
+            <span>Ventana conversion (dias)</span>
+            <input type="number" id="fid-conversion-window-days" min="1" step="1" />
+          </label>
+          <label title="Tope de clientes sugeridos por corrida. Si hay mas, se toman los de mayor score.">
+            <span>Maximo clientes por corrida</span>
+            <input type="number" id="fid-max-clients-run" min="1" step="1" />
+          </label>
+          <label title="Puntos extra si el cliente suele comprar en el mes actual (estacionalidad).">
+            <span>Peso month_match</span>
+            <input type="number" id="fid-w-month-match" min="0" step="1" />
+          </label>
+          <label title="Puntos por frecuencia de compras en los ultimos 12 meses (compra seguido).">
+            <span>Peso frequency</span>
+            <input type="number" id="fid-w-frequency-12m" min="0" step="1" />
+          </label>
+          <label title="Puntos por estar en la ventana ideal de recencia (ej: 30 a 90 dias desde la ultima compra).">
+            <span>Peso recency</span>
+            <input type="number" id="fid-w-recency-30-90" min="0" step="1" />
+          </label>
+          <label title="Puntos por monto total comprado en los ultimos 12 meses (cliente de mayor volumen).">
+            <span>Peso monetary</span>
+            <input type="number" id="fid-w-monetary-12m" min="0" step="1" />
+          </label>
+          <div class="fidelizacion-form-actions">
+            <button id="fidelizacion-config-save" type="submit">Guardar configuracion</button>
+          </div>
+        </form>
+        <div class="fidelizacion-summary">
+          <div class="stat-grid four">
+            <div class="stat">
+              <p class="label">Ultima corrida</p>
+              <p class="value" id="fid-stat-run-id">-</p>
+            </div>
+            <div class="stat">
+              <p class="label">Clientes sugeridos</p>
+              <p class="value" id="fid-stat-total">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Score promedio</p>
+              <p class="value" id="fid-stat-avg-score">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Score maximo</p>
+              <p class="value" id="fid-stat-max-score">0</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="fidelizacion-table">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Score</th>
+                  <th>Vendedora</th>
+                  <th>Oferta</th>
+                  <th>Top afinidad</th>
+                  <th>Ult. compra</th>
+                  <th>Razon</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="fidelizacion-cards" id="fidelizacion-cards"></div>
+        </div>
+      </div>
+      <p class="status" id="fidelizacion-status"></p>
+    </article>
+  </section>
+
+  <section class="view hidden" id="view-fidelizacion-mis">
+    <article class="card wide fidelizacion-ops">
+      <div class="actions between">
+        <h3>Mis Fidelizaciones (corrida actual)</h3>
+        <div class="actions"></div>
+      </div>
+      <div class="actions tabs" id="fid-tabs">
+        <button type="button" class="tab active" data-estado="PENDIENTE">Pendiente</button>
+        <button type="button" class="tab" data-estado="TODOS">Todos</button>
+        <button type="button" class="tab" data-estado="EN_GESTION">En gestion</button>
+        <button type="button" class="tab" data-estado="CONTACTADA">Contactadas</button>
+        <button type="button" class="tab" data-estado="CERRADA">Cerradas</button>
+        <button type="button" class="tab" data-estado="HISTORICO">Historico</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="fid-mis-table">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Estado</th>
+              <th>Score</th>
+              <th>Oferta</th>
+              <th>Vendedora</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="fidelizacion-cards" id="fid-mis-cards"></div>
+      <p class="status" id="fid-mis-status"></p>
+    </article>
+  </section>
+
+  <div class="modal-overlay" id="fid-dashboard-overlay">
+    <div class="modal fid-dashboard-modal">
+      <div class="actions between">
+        <h3 id="fid-dashboard-title">Dashboard Performance</h3>
+        <div class="actions inline">
+          <label>
+            <span>Vista</span>
+            <select id="fid-dashboard-scope">
+              <option value="latest">Ultima corrida</option>
+              <option value="all">Todas (Historico)</option>
+            </select>
+          </label>
+          <button id="fid-reportes-refresh" type="button">Actualizar reportes</button>
+          <button id="fid-dashboard-close" type="button">Cerrar</button>
+        </div>
+      </div>
+      <p class="status" id="fid-dashboard-meta"></p>
+      <div class="stat-grid">
+        <div class="stat">
+          <p class="label">Pendientes</p>
+          <p class="value" id="fid-card-pendientes">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">En gestion</p>
+          <p class="value" id="fid-card-gestion">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Contactadas</p>
+          <p class="value" id="fid-card-contactadas">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Finalizadas</p>
+          <p class="value" id="fid-card-finalizadas">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Convertidas</p>
+          <p class="value" id="fid-card-convertidas">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">Conv. fuera ventana</p>
+          <p class="value" id="fid-card-convertidas-fv">0</p>
+        </div>
+        <div class="stat">
+          <p class="label">No convertidas</p>
+          <p class="value" id="fid-card-no-convertidas">0</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="fid-admin-table">
+          <thead>
+            <tr>
+              <th>Vendedora</th>
+              <th>Total gestionados</th>
+              <th>Finalizados</th>
+              <th>Tasa finalizacion</th>
+              <th>Convertidas (total)</th>
+              <th>Tasa conversion</th>
+              <th>$ conversion</th>
+              <th>Score prom.</th>
+              <th>Hs. a contacto</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="fidelizacion-cards" id="fid-admin-cards"></div>
+      <p class="status" id="fid-reportes-status"></p>
+    </div>
+  </div>
+
+  <section class="view hidden" id="view-fidelizacion-runs">
+    <article class="card wide fidelizacion-reportes">
+      <div class="actions between">
+        <h3>Corridas Fidelizacion</h3>
+        <div class="actions inline">
+          <button id="fid-runs-open-history" type="button">Ver historico</button>
+          <button id="fid-runs-refresh" type="button">Actualizar corridas</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="fid-runs-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Fecha corrida</th>
+              <th>Creada</th>
+              <th>Total</th>
+              <th>Finalizadas</th>
+              <th>Convertidas (total)</th>
+              <th>$ convertido</th>
+              <th>Tasa conversion</th>
+              <th>Accion</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="fidelizacion-cards" id="fid-runs-cards"></div>
+      <p class="status" id="fid-runs-status"></p>
+    </article>
+  </section>
+
+  <section class="view hidden" id="view-fidelizacion-admin">
+    <article class="card wide fidelizacion-ops">
+      <div class="actions between">
+        <h3>Fidelizaciones Admin (todas)</h3>
+        <div class="actions"></div>
+      </div>
+      <div class="actions tabs" id="fid-admin-tabs">
+        <button type="button" class="tab active" data-estado="TODOS">Todos</button>
+        <button type="button" class="tab" data-estado="PENDIENTE">Pendiente</button>
+        <button type="button" class="tab" data-estado="EN_GESTION">En gestion</button>
+        <button type="button" class="tab" data-estado="CONTACTADA">Contactadas</button>
+        <button type="button" class="tab" data-estado="CERRADA">Cerradas</button>
+        <button type="button" class="tab" data-estado="HISTORICO">Historico</button>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="fid-admin-queue-table">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Estado</th>
+              <th>Score</th>
+              <th>Oferta</th>
+              <th>Vendedora</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="fidelizacion-cards" id="fid-admin-queue-cards"></div>
+      <p class="status" id="fid-admin-queue-status"></p>
+    </article>
+  </section>
+
+  <div class="modal-overlay" id="fid-transfer-overlay">
+    <div class="modal fid-transfer-modal">
+      <div class="modal-header">
+        <h3>Transferir Fidelizacion</h3>
+        <button id="fid-transfer-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <form id="fid-transfer-form" class="abm-form-grid">
+          <label>
+            <span>Vendedora destino</span>
+            <select id="fid-transfer-vendedora" required></select>
+          </label>
+          <label>
+            <span>Motivo</span>
+            <textarea id="fid-transfer-motivo" rows="3" maxlength="255" placeholder="Describe brevemente el motivo de la transferencia" required></textarea>
+          </label>
+          <div class="actions inline">
+            <button id="fid-transfer-confirm" type="submit">Transferir</button>
+            <button id="fid-transfer-cancel" type="button">Cancelar</button>
+          </div>
+          <p class="status" id="fid-transfer-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-close-overlay">
+    <div class="modal fid-transfer-modal">
+      <div class="modal-header">
+        <h3>Cerrar Fidelizacion</h3>
+        <button id="fid-close-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <form id="fid-close-form" class="abm-form-grid">
+          <label>
+            <span>Motivo</span>
+            <select id="fid-close-resultado" required></select>
+          </label>
+          <label>
+            <span>Detalle adicional (opcional)</span>
+            <textarea id="fid-close-motivo" rows="3" maxlength="255" placeholder="Detalle libre"></textarea>
+          </label>
+          <div class="actions inline">
+            <button id="fid-close-confirm" type="submit">Cerrar</button>
+            <button id="fid-close-cancel" type="button">Cancelar</button>
+          </div>
+          <p class="status" id="fid-close-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-finalizados-overlay">
+    <div class="modal fid-finalizados-modal">
+      <div class="modal-header">
+        <h3 id="fid-finalizados-title">Finalizados</h3>
+        <button id="fid-finalizados-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="fid-finalizados-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Cliente</th>
+                <th>Resultado</th>
+                <th>Razon cierre</th>
+                <th>Fecha cierre</th>
+                <th>Pedido</th>
+                <th>$ conversion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="fid-finalizados-status"></p>
+      </div>
+    </div>
+  </div>
 
   <section class="view hidden" id="view-pedidos">
     <article class="card wide">

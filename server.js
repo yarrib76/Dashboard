@@ -409,6 +409,11 @@ const ROLE_PERMISSIONS = [
   'clientes',
   'ia',
   'salon',
+  'fidelizacion-menu',
+  'fidelizacion-panel',
+  'fidelizacion-mis',
+  'fidelizacion-admin',
+  'fidelizacion-dashboard',
   'pedidos',
   'pedidos-menu',
   'pedidos-todos',
@@ -426,6 +431,331 @@ const ROLE_PERMISSIONS = [
   'cajas-nueva-factura',
   'configuracion',
 ];
+
+const FIDELIZACION_DEFAULT_CONFIG = {
+  cooldown_days: 30,
+  conversion_window_days: 14,
+  max_clients_per_run: 200,
+  w_month_match: 30,
+  w_frequency_12m: 20,
+  w_recency_30_90: 20,
+  w_monetary_12m: 10,
+};
+const FIDELIZACION_EXCLUDED_SELLER_NAMES = new Set(['pagina', 'pagina web']);
+
+function normalizeFidelizacionSellerName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function isFidelizacionExcludedSellerName(value) {
+  return FIDELIZACION_EXCLUDED_SELLER_NAMES.has(normalizeFidelizacionSellerName(value));
+}
+
+function toSafeInt(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  const intVal = Math.trunc(num);
+  return Math.min(max, Math.max(min, intVal));
+}
+
+function round2(value) {
+  const num = Number(value) || 0;
+  return Number(num.toFixed(2));
+}
+
+function parseMaybeJson(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function buildFidelizacionParamsJson(config) {
+  return {
+    cooldown_days: toSafeInt(config.cooldown_days, FIDELIZACION_DEFAULT_CONFIG.cooldown_days, 1, 365),
+    lookback_months: 12,
+    conversion_window_days: toSafeInt(
+      config.conversion_window_days,
+      FIDELIZACION_DEFAULT_CONFIG.conversion_window_days,
+      1,
+      365
+    ),
+    min_score_to_show: 0,
+    max_clients_per_run: toSafeInt(
+      config.max_clients_per_run,
+      FIDELIZACION_DEFAULT_CONFIG.max_clients_per_run,
+      1,
+      5000
+    ),
+    weights: {
+      month_match: toSafeInt(config.w_month_match, FIDELIZACION_DEFAULT_CONFIG.w_month_match, 0, 1000),
+      frequency_12m: toSafeInt(config.w_frequency_12m, FIDELIZACION_DEFAULT_CONFIG.w_frequency_12m, 0, 1000),
+      recency_30_90: toSafeInt(config.w_recency_30_90, FIDELIZACION_DEFAULT_CONFIG.w_recency_30_90, 0, 1000),
+      monetary_12m: toSafeInt(config.w_monetary_12m, FIDELIZACION_DEFAULT_CONFIG.w_monetary_12m, 0, 1000),
+    },
+  };
+}
+
+function normalizeFidelizacionConfig(row = {}) {
+  return {
+    id: row.id ? Number(row.id) : null,
+    is_active: Number(row.is_active) === 1 ? 1 : 0,
+    cooldown_days: toSafeInt(row.cooldown_days, FIDELIZACION_DEFAULT_CONFIG.cooldown_days, 1, 365),
+    conversion_window_days: toSafeInt(
+      row.conversion_window_days,
+      FIDELIZACION_DEFAULT_CONFIG.conversion_window_days,
+      1,
+      365
+    ),
+    max_clients_per_run: toSafeInt(
+      row.max_clients_per_run,
+      FIDELIZACION_DEFAULT_CONFIG.max_clients_per_run,
+      1,
+      5000
+    ),
+    w_month_match: toSafeInt(row.w_month_match, FIDELIZACION_DEFAULT_CONFIG.w_month_match, 0, 1000),
+    w_frequency_12m: toSafeInt(
+      row.w_frequency_12m,
+      FIDELIZACION_DEFAULT_CONFIG.w_frequency_12m,
+      0,
+      1000
+    ),
+    w_recency_30_90: toSafeInt(
+      row.w_recency_30_90,
+      FIDELIZACION_DEFAULT_CONFIG.w_recency_30_90,
+      0,
+      1000
+    ),
+    w_monetary_12m: toSafeInt(
+      row.w_monetary_12m,
+      FIDELIZACION_DEFAULT_CONFIG.w_monetary_12m,
+      0,
+      1000
+    ),
+    updated_by: row.updated_by || '',
+    updated_at: row.updated_at || null,
+  };
+}
+
+async function getFidelizacionActiveConfig(conn) {
+  const [[row]] = await conn.query(
+    `SELECT id, is_active, cooldown_days, conversion_window_days, max_clients_per_run,
+            w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by, updated_at
+     FROM fidelizacion_config
+     WHERE is_active = 1
+     ORDER BY id DESC
+     LIMIT 1`
+  );
+  if (!row) return normalizeFidelizacionConfig({ ...FIDELIZACION_DEFAULT_CONFIG, is_active: 1 });
+  return normalizeFidelizacionConfig(row);
+}
+
+async function getFidelizacionRunDetail(conn, runId) {
+  const [[summary]] = await conn.query(
+    `SELECT
+       COUNT(*) AS total,
+       ROUND(AVG(score), 2) AS promedio_score,
+       MAX(score) AS max_score,
+       MIN(score) AS min_score
+     FROM fidelizacion_recomendacion
+     LEFT JOIN vendedores v ON v.Id = fidelizacion_recomendacion.vendedora_id
+     WHERE run_id = ?
+       AND (fidelizacion_recomendacion.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))`,
+    [runId]
+  );
+
+  const [rows] = await conn.query(
+    `SELECT
+       r.id,
+       r.run_id,
+       r.cliente_id,
+       CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
+       r.score,
+       r.razones,
+       r.vendedora_id,
+       v.nombre AS vendedora_nombre,
+       r.tag_top_1,
+       r.tag_top_2,
+       r.tag_top_3,
+       r.attr_top_1,
+       r.attr_top_2,
+       r.attr_top_3,
+       r.oferta_tipo,
+       r.oferta_detalle,
+       r.last_purchase_date,
+       r.recency_days,
+       r.frequency_12m,
+       r.monetary_12m,
+       r.avg_ticket_12m
+     FROM fidelizacion_recomendacion r
+     LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+     LEFT JOIN vendedores v ON v.id = r.vendedora_id
+     WHERE r.run_id = ?
+       AND (r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))
+     ORDER BY r.score DESC, r.id ASC
+     LIMIT 400`,
+    [runId]
+  );
+
+  return {
+    resumen: {
+      total: Number(summary?.total) || 0,
+      promedio_score: Number(summary?.promedio_score) || 0,
+      max_score: Number(summary?.max_score) || 0,
+      min_score: Number(summary?.min_score) || 0,
+    },
+    recomendaciones: (rows || []).map((row) => ({
+      id: row.id,
+      run_id: row.run_id,
+      cliente_id: row.cliente_id,
+      cliente: String(row.cliente || '').trim(),
+      score: Number(row.score) || 0,
+      razones: row.razones || '',
+      vendedora_id: row.vendedora_id ? Number(row.vendedora_id) : null,
+      vendedora_nombre: row.vendedora_nombre || '',
+      tag_top_1: row.tag_top_1 || '',
+      tag_top_2: row.tag_top_2 || '',
+      tag_top_3: row.tag_top_3 || '',
+      attr_top_1: row.attr_top_1 || '',
+      attr_top_2: row.attr_top_2 || '',
+      attr_top_3: row.attr_top_3 || '',
+      oferta_tipo: row.oferta_tipo || '',
+      oferta_detalle: row.oferta_detalle || '',
+      last_purchase_date: row.last_purchase_date || null,
+      recency_days: Number(row.recency_days) || 0,
+      frequency_12m: Number(row.frequency_12m) || 0,
+      monetary_12m: Number(row.monetary_12m) || 0,
+      avg_ticket_12m: Number(row.avg_ticket_12m) || 0,
+    })),
+  };
+}
+
+async function resolveFidelizacionUserSeller(conn, userName, preferredSellerId) {
+  const preferredId = Number(preferredSellerId) || null;
+  if (preferredId) {
+    const [[sellerById]] = await conn.query(
+      `SELECT Id, Nombre
+       FROM vendedores
+       WHERE Id = ?
+       LIMIT 1`,
+      [preferredId]
+    );
+    if (sellerById && !isFidelizacionExcludedSellerName(sellerById.Nombre)) {
+      return {
+        id: Number(sellerById.Id),
+        nombre: sellerById.Nombre || '',
+      };
+    }
+  }
+
+  const safeName = String(userName || '').trim();
+  if (!safeName) return { id: null, nombre: '' };
+
+  const [[sellerByName]] = await conn.query(
+    `SELECT Id, Nombre
+     FROM vendedores
+     WHERE LOWER(TRIM(Nombre)) = LOWER(TRIM(?))
+     LIMIT 1`,
+    [safeName]
+  );
+  if (sellerByName && !isFidelizacionExcludedSellerName(sellerByName.Nombre)) {
+    return {
+      id: Number(sellerByName.Id),
+      nombre: sellerByName.Nombre || '',
+    };
+  }
+
+  const [[activeByName]] = await conn.query(
+    `SELECT vendedora_id AS Id, Nombre
+     FROM vw_vendedores_activos
+     WHERE vendedora_id IS NOT NULL
+       AND LOWER(TRIM(Nombre)) = LOWER(TRIM(?))
+     LIMIT 1`,
+    [safeName]
+  );
+  if (activeByName && !isFidelizacionExcludedSellerName(activeByName.Nombre)) {
+    return {
+      id: Number(activeByName.Id),
+      nombre: activeByName.Nombre || '',
+    };
+  }
+
+  return { id: null, nombre: '' };
+}
+
+async function getFidelizacionUserContext(conn, userId) {
+  if (!userId) return null;
+  const [[row]] = await conn.query(
+    `SELECT
+       u.id,
+       u.name,
+       u.id_roles,
+       u.id_vendedoras,
+       COALESCE(r.tipo_role, '') AS role_name,
+       COALESCE(v.Nombre, '') AS vendedora_nombre
+     FROM users u
+     LEFT JOIN RolesWeb r ON r.id_roles = u.id_roles
+     LEFT JOIN vendedores v ON v.Id = u.id_vendedoras
+     WHERE u.id = ?
+     LIMIT 1`,
+    [userId]
+  );
+  if (!row) return null;
+  const roleName = String(row.role_name || '').toLowerCase();
+  const isAdmin = Number(row.id_roles) === 1 || roleName.includes('admin');
+  const seller = await resolveFidelizacionUserSeller(conn, row.name, row.id_vendedoras);
+  return {
+    userId: Number(row.id),
+    userName: row.name || '',
+    roleId: Number(row.id_roles) || 0,
+    roleName: row.role_name || '',
+    isAdmin,
+    vendedoraId: seller.id,
+    vendedoraNombre: seller.nombre || '',
+  };
+}
+
+async function getFidelizacionLatestRun(conn) {
+  const [[runRow]] = await conn.query(
+    `SELECT id, run_date, created_at, params_json, config_id
+     FROM fidelizacion_run
+     ORDER BY id DESC
+     LIMIT 1`
+  );
+  if (!runRow) return null;
+  return {
+    id: Number(runRow.id),
+    run_date: runRow.run_date,
+    created_at: runRow.created_at,
+    config_id: runRow.config_id ? Number(runRow.config_id) : null,
+    params_json: parseMaybeJson(runRow.params_json),
+  };
+}
+
+async function insertFidelizacionTransferLog(conn, payload = {}) {
+  await conn.query(
+    `INSERT INTO fidelizacion_transferencia
+     (recomendacion_id, run_id, cliente_id, action, from_vendedora_id, to_vendedora_id, motivo, actor_user_id, actor_nombre)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      Number(payload.recomendacion_id) || 0,
+      Number(payload.run_id) || 0,
+      Number(payload.cliente_id) || 0,
+      String(payload.action || '').trim().toUpperCase(),
+      payload.from_vendedora_id ? Number(payload.from_vendedora_id) : null,
+      payload.to_vendedora_id ? Number(payload.to_vendedora_id) : null,
+      String(payload.motivo || '').trim() || null,
+      payload.actor_user_id ? Number(payload.actor_user_id) : null,
+      String(payload.actor_nombre || '').trim() || null,
+    ]
+  );
+}
 
 async function safeQuery(sql, params = []) {
   try {
@@ -2763,6 +3093,18 @@ app.get('/api/me', (req, res) => {
         acc[row.permiso] = !!row.habilitado;
         return acc;
       }, {});
+      const hasFidelizacionSubPerms =
+        Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-panel') ||
+        Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-mis') ||
+        Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-admin') ||
+        Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-dashboard');
+      if (!hasFidelizacionSubPerms && permissions.fidelizacion === true) {
+        permissions['fidelizacion-menu'] = true;
+        permissions['fidelizacion-panel'] = true;
+        permissions['fidelizacion-mis'] = true;
+        permissions['fidelizacion-admin'] = true;
+        permissions['fidelizacion-dashboard'] = true;
+      }
     } catch (_err) {
       permissions = {};
     }
@@ -2850,6 +3192,1478 @@ app.put('/api/roles/:id/permissions', async (req, res) => {
     res.status(500).json({ message: 'Error al guardar permisos', error: error.message });
   } finally {
     if (conn) conn.release();
+  }
+});
+
+app.get('/api/fidelizacion/context', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const latestRun = await getFidelizacionLatestRun(pool);
+    res.json({ user: context, latestRun });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar contexto de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/vendedoras', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const [rows] = await pool.query(
+      `SELECT DISTINCT vendedora_id AS id, TRIM(Nombre) AS nombre
+       FROM vw_vendedores_activos
+       WHERE vendedora_id IS NOT NULL
+         AND Nombre IS NOT NULL
+         AND TRIM(Nombre) <> ''
+         AND LOWER(TRIM(Nombre)) NOT IN ('pagina', 'pagina web')
+       ORDER BY Nombre`
+    );
+    res.json({
+      data: (rows || []).map((row) => ({
+        id: Number(row.id) || 0,
+        nombre: String(row.nombre || '').trim(),
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar vendedoras de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/resultados/catalogo', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const [cols] = await pool.query(
+      `SELECT LOWER(COLUMN_NAME) AS col
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'fidelizacion_resultado_catalogo'`
+    );
+    const colSet = new Set((cols || []).map((row) => String(row.col || '').toLowerCase()));
+    const pick = (candidates = []) => candidates.find((c) => colSet.has(c)) || '';
+    const codigoCol = pick(['codigo', 'resultado', 'code', 'id']);
+    const nombreCol = pick(['nombre', 'descripcion', 'detalle', 'label', 'resultado', 'codigo', 'id']);
+    const activoCol = pick(['activo', 'is_active', 'habilitado']);
+    const ordenCol = pick(['orden', 'sort_order', 'id', 'codigo']);
+    if (!codigoCol || !nombreCol) {
+      return res.status(500).json({ message: 'Catalogo de resultados sin columnas compatibles' });
+    }
+    const whereSql = activoCol ? `WHERE ${activoCol} = 1` : '';
+    const orderSql = ordenCol ? `ORDER BY ${ordenCol} ASC, ${nombreCol} ASC` : `ORDER BY ${nombreCol} ASC`;
+    const [rows] = await pool.query(
+      `SELECT ${codigoCol} AS codigo, ${nombreCol} AS nombre
+       FROM fidelizacion_resultado_catalogo
+       ${whereSql}
+       ${orderSql}`
+    );
+    res.json({
+      data: (rows || []).map((row) => ({
+        codigo: String(row.codigo || '').trim(),
+        nombre: String(row.nombre || '').trim(),
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogo de resultados', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/config', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver configuracion' });
+    const config = await getFidelizacionActiveConfig(pool);
+    res.json({ data: config });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar configuracion de fidelizacion', error: error.message });
+  }
+});
+
+app.put('/api/fidelizacion/config', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede editar configuracion' });
+    const payload = req.body || {};
+    const config = normalizeFidelizacionConfig({
+      ...FIDELIZACION_DEFAULT_CONFIG,
+      ...payload,
+      is_active: 1,
+      updated_by: context.userName || req.user?.name || '',
+    });
+    await conn.beginTransaction();
+    await conn.query('UPDATE fidelizacion_config SET is_active = 0 WHERE is_active = 1');
+    const [insert] = await conn.query(
+      `INSERT INTO fidelizacion_config
+       (is_active, cooldown_days, conversion_window_days, max_clients_per_run,
+        w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        config.cooldown_days,
+        config.conversion_window_days,
+        config.max_clients_per_run,
+        config.w_month_match,
+        config.w_frequency_12m,
+        config.w_recency_30_90,
+        config.w_monetary_12m,
+        config.updated_by || '',
+      ]
+    );
+    await conn.commit();
+    const [[saved]] = await pool.query(
+      `SELECT id, is_active, cooldown_days, conversion_window_days, max_clients_per_run,
+              w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by, updated_at
+       FROM fidelizacion_config
+       WHERE id = ?
+       LIMIT 1`,
+      [insert.insertId]
+    );
+    res.json({ ok: true, data: normalizeFidelizacionConfig(saved || config) });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al guardar configuracion de fidelizacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/fidelizacion/run/latest', async (_req, res) => {
+  try {
+    const config = await getFidelizacionActiveConfig(pool);
+    const [[runRow]] = await pool.query(
+      `SELECT id, run_date, created_at, params_json, config_id
+       FROM fidelizacion_run
+       ORDER BY id DESC
+       LIMIT 1`
+    );
+    if (!runRow) {
+      return res.json({ config, run: null, resumen: null, data: [] });
+    }
+    const detail = await getFidelizacionRunDetail(pool, Number(runRow.id));
+    res.json({
+      config,
+      run: {
+        id: Number(runRow.id),
+        run_date: runRow.run_date,
+        created_at: runRow.created_at,
+        config_id: runRow.config_id ? Number(runRow.config_id) : null,
+        params_json: parseMaybeJson(runRow.params_json),
+      },
+      resumen: detail.resumen,
+      data: detail.recomendaciones,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar corrida de fidelizacion', error: error.message });
+  }
+});
+
+app.post('/api/fidelizacion/run', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede generar corridas' });
+    await conn.beginTransaction();
+
+    const config = await getFidelizacionActiveConfig(conn);
+    let configId = config.id ? Number(config.id) : null;
+    if (!configId) {
+      const [insertCfg] = await conn.query(
+        `INSERT INTO fidelizacion_config
+         (is_active, cooldown_days, conversion_window_days, max_clients_per_run,
+          w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          config.cooldown_days,
+          config.conversion_window_days,
+          config.max_clients_per_run,
+          config.w_month_match,
+          config.w_frequency_12m,
+          config.w_recency_30_90,
+          config.w_monetary_12m,
+          context.userName || req.user?.name || '',
+        ]
+      );
+      configId = Number(insertCfg.insertId);
+    }
+
+    const paramsJson = buildFidelizacionParamsJson(config);
+    const runDate = formatDateLocal(new Date());
+    let runId = 0;
+    try {
+      const [insertRun] = await conn.query(
+        `INSERT INTO fidelizacion_run (run_date, params_json, config_id)
+         VALUES (?, ?, ?)`,
+        [runDate, JSON.stringify(paramsJson), configId]
+      );
+      runId = Number(insertRun.insertId) || 0;
+    } catch (error) {
+      if (error?.code === 'ER_DUP_ENTRY') {
+        await conn.rollback();
+        return res.status(409).json({ message: `Ya existe una corrida para la fecha ${runDate}` });
+      }
+      throw error;
+    }
+    if (!runId) throw new Error('No se pudo crear la corrida');
+
+    const [activeSellers] = await conn.query(
+      `SELECT DISTINCT vendedora_id AS id, TRIM(Nombre) AS nombre
+       FROM vw_vendedores_activos
+       WHERE vendedora_id IS NOT NULL
+         AND Nombre IS NOT NULL
+         AND TRIM(Nombre) <> ''
+         AND LOWER(TRIM(Nombre)) NOT IN ('pagina', 'pagina web')
+       ORDER BY vendedora_id`
+    );
+    if (!activeSellers.length) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'No hay vendedores activos para asignacion' });
+    }
+
+    const [featureRows] = await conn.query(
+      `SELECT
+         f.id_clientes AS cliente_id,
+         DATE(MAX(f.Fecha)) AS last_purchase_date,
+         DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) AS recency_days,
+         SUM(
+           CASE
+             WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) THEN 1
+             ELSE 0
+           END
+         ) AS frequency_12m,
+         SUM(
+           CASE
+             WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+               THEN COALESCE(NULLIF(f.totalEnvio, 0), NULLIF(f.Descuento, 0), f.Total, 0)
+             ELSE 0
+           END
+         ) AS monetary_12m,
+         SUM(
+           CASE
+             WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+              AND MONTH(f.Fecha) = MONTH(CURDATE())
+               THEN 1
+             ELSE 0
+           END
+         ) AS month_hits_12m
+       FROM facturah f
+       WHERE f.id_clientes IS NOT NULL
+         AND f.id_clientes <> 1
+       GROUP BY f.id_clientes
+       HAVING DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) >= ?`,
+      [config.cooldown_days]
+    );
+
+    const maxFrequency = Math.max(
+      1,
+      ...featureRows.map((row) => Number(row.frequency_12m) || 0)
+    );
+    const maxMonetary = Math.max(
+      1,
+      ...featureRows.map((row) => Number(row.monetary_12m) || 0)
+    );
+
+    const scoredCandidates = featureRows
+      .map((row) => {
+        const frequency = Number(row.frequency_12m) || 0;
+        const monetary = Number(row.monetary_12m) || 0;
+        const recency = Number(row.recency_days) || 0;
+        const monthMatch = (Number(row.month_hits_12m) || 0) > 0;
+        const recency3090 = recency >= 30 && recency <= 90;
+        const frequencyScore = Math.min(1, frequency / maxFrequency);
+        const monetaryScore = Math.min(1, monetary / maxMonetary);
+        const score =
+          (monthMatch ? config.w_month_match : 0) +
+          frequencyScore * config.w_frequency_12m +
+          (recency3090 ? config.w_recency_30_90 : 0) +
+          monetaryScore * config.w_monetary_12m;
+
+        const razones = [];
+        if (monthMatch) razones.push(`estacionalidad(+${config.w_month_match})`);
+        if (frequency > 0) razones.push(`frecuencia 12m: ${frequency}`);
+        if (recency3090) razones.push(`recencia ideal: ${recency} dias`);
+        if (monetary > 0) razones.push(`monto 12m: ${round2(monetary)}`);
+
+        return {
+          cliente_id: Number(row.cliente_id) || 0,
+          last_purchase_date: row.last_purchase_date || null,
+          recency_days: recency,
+          frequency_12m: frequency,
+          monetary_12m: round2(monetary),
+          avg_ticket_12m: frequency > 0 ? round2(monetary / frequency) : 0,
+          score: round2(score),
+          razones: razones.join(' | '),
+        };
+      })
+      .filter((row) => row.cliente_id > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, config.max_clients_per_run);
+
+    const sellerNameToId = new Map(
+      activeSellers.map((seller) => [String(seller.nombre || '').trim().toLowerCase(), Number(seller.id)])
+    );
+    const sellerLoad = new Map(activeSellers.map((seller) => [Number(seller.id), 0]));
+    let fallbackCursor = 0;
+
+    const pickFallbackSeller = () => {
+      const minLoad = Math.min(...Array.from(sellerLoad.values()));
+      const candidates = activeSellers.filter((seller) => (sellerLoad.get(Number(seller.id)) || 0) === minLoad);
+      if (!candidates.length) return Number(activeSellers[0].id) || null;
+      const selected = candidates[fallbackCursor % candidates.length];
+      fallbackCursor += 1;
+      return Number(selected.id) || null;
+    };
+
+    const rowsToInsert = [];
+    const conversionWindowDays = Math.max(0, Number(config.conversion_window_days) || 0);
+    for (const candidate of scoredCandidates) {
+      const [histRows] = await conn.query(
+        `SELECT LOWER(TRIM(f.vendedora)) AS nombre_lc, COUNT(*) AS cantidad
+         FROM facturah f
+         WHERE f.id_clientes = ?
+           AND f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+           AND f.vendedora IS NOT NULL
+           AND TRIM(f.vendedora) <> ''
+         GROUP BY LOWER(TRIM(f.vendedora))
+         ORDER BY cantidad DESC
+         LIMIT 5`,
+        [candidate.cliente_id]
+      );
+      let vendedoraId = null;
+      for (const hist of histRows || []) {
+        const byName = sellerNameToId.get(String(hist.nombre_lc || '').trim());
+        if (byName) {
+          vendedoraId = byName;
+          break;
+        }
+      }
+      if (!vendedoraId) {
+        vendedoraId = pickFallbackSeller();
+      }
+      if (vendedoraId) {
+        sellerLoad.set(vendedoraId, (sellerLoad.get(vendedoraId) || 0) + 1);
+      }
+
+      const [topFamilias] = await conn.query(
+        `SELECT stw.familia AS valor, COUNT(*) AS cantidad
+         FROM factura fi
+         INNER JOIN facturah fh ON fh.NroFactura = fi.NroFactura
+         INNER JOIN sku_taxonomia_web stw ON TRIM(stw.sku) = TRIM(fi.Articulo)
+         WHERE fh.id_clientes = ?
+           AND fh.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+           AND stw.familia IS NOT NULL
+           AND TRIM(stw.familia) <> ''
+         GROUP BY stw.familia
+         ORDER BY cantidad DESC, stw.familia ASC
+         LIMIT 3`,
+        [candidate.cliente_id]
+      );
+      const [topMateriales] = await conn.query(
+        `SELECT stw.material AS valor, COUNT(*) AS cantidad
+         FROM factura fi
+         INNER JOIN facturah fh ON fh.NroFactura = fi.NroFactura
+         INNER JOIN sku_taxonomia_web stw ON TRIM(stw.sku) = TRIM(fi.Articulo)
+         WHERE fh.id_clientes = ?
+           AND fh.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+           AND stw.material IS NOT NULL
+           AND TRIM(stw.material) <> ''
+         GROUP BY stw.material
+         ORDER BY cantidad DESC, stw.material ASC
+         LIMIT 3`,
+        [candidate.cliente_id]
+      );
+      const [[novedadRow]] = await conn.query(
+        `SELECT 1 AS has_novedad
+         FROM factura fi
+         INNER JOIN facturah fh ON fh.NroFactura = fi.NroFactura
+         INNER JOIN sku_taxonomia_web stw ON TRIM(stw.sku) = TRIM(fi.Articulo)
+         WHERE fh.id_clientes = ?
+           AND fh.Fecha >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+           AND stw.es_novedad = 1
+         LIMIT 1`,
+        [candidate.cliente_id]
+      );
+
+      const familias = (topFamilias || []).map((row) => String(row.valor || '').trim()).filter(Boolean);
+      const materiales = (topMateriales || []).map((row) => String(row.valor || '').trim()).filter(Boolean);
+      const topFam1 = familias[0] || null;
+      const topFam2 = familias[1] || null;
+      const topFam3 = familias[2] || null;
+      const topAttr1 = materiales[0] || null;
+      const topAttr2 = materiales[1] || null;
+      const topAttr3 = materiales[2] || null;
+      const hasNovedad = Number(novedadRow?.has_novedad) === 1;
+
+      let ofertaTipo = 'General';
+      let ofertaDetalle = 'Campana de reactivacion personalizada';
+      if (hasNovedad && topFam1 && topAttr1) {
+        ofertaTipo = 'Novedades';
+        ofertaDetalle = `Novedades de ${topFam1} en ${topAttr1}`;
+      } else if (topFam1 && topFam2) {
+        ofertaTipo = 'Reposicion';
+        ofertaDetalle = `Reposicion sugerida: ${topFam1} + ${topFam2}`;
+      } else if (topFam1 && topAttr1) {
+        ofertaTipo = 'Afinidad';
+        ofertaDetalle = `Seleccion sugerida de ${topFam1} en ${topAttr1}`;
+      } else if (topFam1) {
+        ofertaTipo = 'Afinidad';
+        ofertaDetalle = `Seleccion sugerida de ${topFam1}`;
+      }
+      const createdAt = new Date();
+      const deadlineAt = new Date(createdAt.getTime() + conversionWindowDays * 24 * 60 * 60 * 1000);
+
+      rowsToInsert.push([
+        runId,
+        candidate.cliente_id,
+        candidate.score,
+        candidate.razones || '',
+        vendedoraId,
+        'PENDIENTE',
+        context.userName || req.user?.name || '',
+        topFam1,
+        topFam2,
+        topFam3,
+        topAttr1,
+        topAttr2,
+        topAttr3,
+        ofertaTipo,
+        ofertaDetalle,
+        candidate.last_purchase_date,
+        candidate.recency_days,
+        candidate.frequency_12m,
+        candidate.monetary_12m,
+        candidate.avg_ticket_12m,
+        formatDateTimeLocal(createdAt),
+        formatDateTimeLocal(deadlineAt),
+      ]);
+    }
+
+    if (rowsToInsert.length) {
+      await conn.query(
+        `INSERT INTO fidelizacion_recomendacion
+         (run_id, cliente_id, score, razones, vendedora_id, estado, estado_updated_by,
+          tag_top_1, tag_top_2, tag_top_3,
+          attr_top_1, attr_top_2, attr_top_3,
+          oferta_tipo, oferta_detalle,
+          last_purchase_date, recency_days, frequency_12m, monetary_12m, avg_ticket_12m,
+          created_at, conversion_deadline_at)
+         VALUES ?`,
+        [rowsToInsert]
+      );
+    }
+
+    await conn.commit();
+
+    const [[runRow]] = await pool.query(
+      `SELECT id, run_date, created_at, params_json, config_id
+       FROM fidelizacion_run
+       WHERE id = ?
+       LIMIT 1`,
+      [runId]
+    );
+    const detail = await getFidelizacionRunDetail(pool, runId);
+    res.json({
+      ok: true,
+      run: {
+        id: Number(runRow?.id) || runId,
+        run_date: runRow?.run_date || runDate,
+        created_at: runRow?.created_at || null,
+        config_id: runRow?.config_id ? Number(runRow.config_id) : configId,
+        params_json: parseMaybeJson(runRow?.params_json) || paramsJson,
+      },
+      resumen: detail.resumen,
+      data: detail.recomendaciones,
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al generar corrida de fidelizacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/fidelizacion/mis', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const latestRun = await getFidelizacionLatestRun(pool);
+    if (!latestRun) return res.json({ run: null, counts: {}, counts_mias: {}, counts_todos: {}, data: [] });
+    const estado = String(req.query.estado || '').trim().toUpperCase();
+    const scope = String(req.query.scope || 'MIAS').trim().toUpperCase();
+    const commonFilters = ['r.run_id = ?'];
+    const commonParams = [latestRun.id];
+    commonFilters.push(
+      `(r.vendedora_id IS NULL OR EXISTS (
+         SELECT 1
+         FROM vendedores vf
+         WHERE vf.Id = r.vendedora_id
+           AND LOWER(TRIM(COALESCE(vf.Nombre, ''))) NOT IN ('pagina', 'pagina web')
+       ))`
+    );
+
+    const dataFilters = [...commonFilters];
+    const dataParams = [...commonParams];
+    if (scope !== 'TODOS' && scope !== 'ADMIN') {
+      if (!context.vendedoraId) return res.status(400).json({ message: 'Usuario sin vendedora asociada' });
+      dataFilters.push('r.vendedora_id = ?');
+      dataParams.push(context.vendedoraId);
+    } else if (context.isAdmin && req.query.vendedora_id) {
+      dataFilters.push('r.vendedora_id = ?');
+      dataParams.push(Number(req.query.vendedora_id));
+    }
+    if (scope === 'TODOS') {
+      dataFilters.push(`r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')`);
+    }
+    const filters = [...dataFilters];
+    const params = [...dataParams];
+    if (estado && estado !== 'TODOS') {
+      if (estado === 'HISTORICO') {
+        filters.push(`r.estado IN ('CERRADA', 'CONVERTIDA', 'NO_CONVERTIDA')`);
+      } else {
+        filters.push('r.estado = ?');
+        params.push(estado);
+      }
+    }
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const [rows] = await pool.query(
+      `SELECT
+         r.id,
+         r.run_id,
+         r.cliente_id,
+         CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
+         COALESCE(c.telefono, '') AS telefono,
+         r.score,
+         r.razones,
+         r.vendedora_id,
+         COALESCE(v.Nombre, '') AS vendedora_nombre,
+         r.estado,
+         r.estado_updated_at,
+         r.estado_updated_by,
+         r.created_at,
+         r.conversion_deadline_at,
+         r.resultado,
+         r.pedido_id,
+         r.closed_reason,
+         r.closed_at,
+         r.contactado_at,
+         r.converted_at,
+         r.conversion_amount,
+         r.tag_top_1,
+         r.tag_top_2,
+         r.tag_top_3,
+         r.attr_top_1,
+         r.attr_top_2,
+         r.attr_top_3,
+         r.oferta_tipo,
+         r.oferta_detalle,
+         r.last_purchase_date,
+         r.recency_days,
+         r.frequency_12m,
+         r.monetary_12m,
+         r.avg_ticket_12m,
+         CASE
+           WHEN NOW() > r.conversion_deadline_at
+            AND r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+             THEN 1
+           ELSE 0
+         END AS is_expired
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${where}
+      ORDER BY FIELD(r.estado, 'EN_GESTION', 'PENDIENTE', 'CONTACTADA', 'CERRADA', 'CONVERTIDA', 'NO_CONVERTIDA'), r.score DESC, r.id DESC
+       LIMIT 600`,
+      params
+    );
+
+    const miasFilters = [...commonFilters];
+    const miasParams = [...commonParams];
+    if (context.vendedoraId) {
+      miasFilters.push('r.vendedora_id = ?');
+      miasParams.push(context.vendedoraId);
+    } else if (context.isAdmin && req.query.vendedora_id) {
+      miasFilters.push('r.vendedora_id = ?');
+      miasParams.push(Number(req.query.vendedora_id));
+    }
+    const [countRowsMias] = await pool.query(
+      `SELECT r.estado, COUNT(*) AS total
+       FROM fidelizacion_recomendacion r
+       ${miasFilters.length ? `WHERE ${miasFilters.join(' AND ')}` : ''}
+       GROUP BY r.estado`,
+      miasParams
+    );
+
+    const todosFilters = [...commonFilters, `r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')`];
+    const todosParams = [...commonParams];
+    const [countRowsTodos] = await pool.query(
+      `SELECT r.estado, COUNT(*) AS total
+       FROM fidelizacion_recomendacion r
+       ${todosFilters.length ? `WHERE ${todosFilters.join(' AND ')}` : ''}
+       GROUP BY r.estado`,
+      todosParams
+    );
+
+    const [countRowsAdmin] = await pool.query(
+      `SELECT r.estado, COUNT(*) AS total
+       FROM fidelizacion_recomendacion r
+       ${commonFilters.length ? `WHERE ${commonFilters.join(' AND ')}` : ''}
+       GROUP BY r.estado`,
+      commonParams
+    );
+
+    const countsMias = (countRowsMias || []).reduce((acc, row) => {
+      acc[String(row.estado || '').toUpperCase()] = Number(row.total) || 0;
+      return acc;
+    }, {});
+    const countsTodos = (countRowsTodos || []).reduce((acc, row) => {
+      acc[String(row.estado || '').toUpperCase()] = Number(row.total) || 0;
+      return acc;
+    }, {});
+    const countsAdmin = (countRowsAdmin || []).reduce((acc, row) => {
+      acc[String(row.estado || '').toUpperCase()] = Number(row.total) || 0;
+      return acc;
+    }, {});
+    res.json({
+      run: latestRun,
+      context,
+      counts: countsMias,
+      counts_mias: countsMias,
+      counts_todos: countsTodos,
+      counts_admin: countsAdmin,
+      data: rows || [],
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar cola de fidelizacion', error: error.message });
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/tomar', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.vendedoraId && !context.isAdmin) return res.status(400).json({ message: 'Usuario sin vendedora asociada' });
+    const recId = Number(req.params.id);
+    const motivo = String(req.body?.motivo || '').trim();
+    const requestedVendedoraId = Number(req.body?.vendedora_id) || null;
+    const targetVendedoraId = context.isAdmin
+      ? (requestedVendedoraId || context.vendedoraId || null)
+      : (context.vendedoraId || null);
+    if (!recId || !targetVendedoraId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    if (!motivo) return res.status(400).json({ message: 'Motivo obligatorio para TOMAR' });
+    const [[targetSeller]] = await conn.query(
+      `SELECT Id, Nombre
+       FROM vendedores
+       WHERE Id = ?
+       LIMIT 1`,
+      [targetVendedoraId]
+    );
+    if (!targetSeller) {
+      return res.status(400).json({ message: 'Vendedor destino invalido para TOMAR' });
+    }
+    if (isFidelizacionExcludedSellerName(targetSeller.Nombre)) {
+      return res.status(400).json({ message: 'El vendedor Pagina Web no puede participar en fidelizacion' });
+    }
+    await conn.beginTransaction();
+    const [[current]] = await conn.query(
+      `SELECT id, run_id, cliente_id, estado, vendedora_id
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    }
+    const [update] = await conn.query(
+      `UPDATE fidelizacion_recomendacion
+       SET estado = 'EN_GESTION',
+           estado_updated_at = NOW(),
+           estado_updated_by = ?,
+           vendedora_id = ?
+       WHERE id = ?
+         AND estado = 'PENDIENTE'`,
+      [context.userName || req.user?.name || '', targetVendedoraId, recId]
+    );
+    if (!update.affectedRows) {
+      await conn.rollback();
+      return res.status(409).json({ message: 'La recomendacion ya fue tomada por otra persona' });
+    }
+    await insertFidelizacionTransferLog(conn, {
+      recomendacion_id: current.id,
+      run_id: current.run_id,
+      cliente_id: current.cliente_id,
+      action: 'TOMAR',
+      from_vendedora_id: current.vendedora_id ? Number(current.vendedora_id) : null,
+      to_vendedora_id: targetVendedoraId,
+      motivo,
+      actor_user_id: context.userId,
+      actor_nombre: context.userName,
+    });
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al tomar recomendacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/transferir', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    const destinoId = Number(req.body?.to_vendedora_id);
+    const motivo = String(req.body?.motivo || '').trim();
+    if (!recId || !destinoId) return res.status(400).json({ message: 'Datos invalidos para transferir' });
+    if (!motivo) return res.status(400).json({ message: 'Motivo obligatorio para transferir' });
+    const [[destino]] = await conn.query(
+      `SELECT Id, Nombre
+       FROM vendedores
+       WHERE Id = ?
+       LIMIT 1`,
+      [destinoId]
+    );
+    if (!destino) return res.status(400).json({ message: 'Vendedor destino invalido' });
+    if (isFidelizacionExcludedSellerName(destino.Nombre)) {
+      return res.status(400).json({ message: 'No se puede transferir al vendedor Pagina Web' });
+    }
+    await conn.beginTransaction();
+    const [[current]] = await conn.query(
+      `SELECT id, run_id, cliente_id, estado, vendedora_id
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    }
+    if (!['PENDIENTE', 'EN_GESTION'].includes(String(current.estado || '').toUpperCase())) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'Solo se puede transferir desde PENDIENTE o EN_GESTION' });
+    }
+    if (!context.isAdmin && Number(current.vendedora_id) !== Number(context.vendedoraId)) {
+      await conn.rollback();
+      return res.status(403).json({ message: 'Solo podes transferir recomendaciones propias' });
+    }
+    if (Number(current.vendedora_id) === destinoId) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'La recomendacion ya esta asignada a ese vendedor' });
+    }
+    await conn.query(
+      `UPDATE fidelizacion_recomendacion
+       SET vendedora_id = ?,
+           estado = 'PENDIENTE',
+           estado_updated_at = NOW(),
+           estado_updated_by = ?
+       WHERE id = ?`,
+      [destinoId, context.userName || req.user?.name || '', recId]
+    );
+    await insertFidelizacionTransferLog(conn, {
+      recomendacion_id: current.id,
+      run_id: current.run_id,
+      cliente_id: current.cliente_id,
+      action: 'TRANSFERIR',
+      from_vendedora_id: current.vendedora_id ? Number(current.vendedora_id) : null,
+      to_vendedora_id: destinoId,
+      motivo,
+      actor_user_id: context.userId,
+      actor_nombre: context.userName,
+    });
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al transferir recomendacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/contactar', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    const recIdBody = Number(req.body?.recomendacion_id);
+    const canal = String(req.body?.canal || '').trim().toLowerCase();
+    const ofertaEnviada = String(req.body?.oferta_enviada || '').trim();
+    const notas = String(req.body?.notas || '').trim();
+    if (!recId || !canal) return res.status(400).json({ message: 'Recomendacion y canal son obligatorios' });
+    if (!recIdBody) {
+      return res.status(400).json({ message: 'recomendacion_id es obligatorio' });
+    }
+    if (recIdBody !== recId) {
+      return res.status(400).json({ message: 'recomendacion_id no coincide con la URL' });
+    }
+    await conn.beginTransaction();
+    const [[current]] = await conn.query(
+      `SELECT id, run_id, cliente_id, estado, vendedora_id, oferta_detalle
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    }
+    if (!['PENDIENTE', 'EN_GESTION'].includes(String(current.estado || '').toUpperCase())) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'Solo se puede contactar desde PENDIENTE o EN_GESTION' });
+    }
+    if (!context.isAdmin && Number(current.vendedora_id) !== Number(context.vendedoraId)) {
+      await conn.rollback();
+      return res.status(403).json({ message: 'Solo podes contactar recomendaciones propias' });
+    }
+    await conn.query(
+      `INSERT INTO fidelizacion_contacto
+       (recomendacion_id, run_id, cliente_id, vendedora_id, canal, oferta_enviada, contacted_at, notas)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)`,
+      [
+        recId,
+        Number(current.run_id),
+        Number(current.cliente_id),
+        current.vendedora_id ? Number(current.vendedora_id) : context.vendedoraId,
+        canal,
+        ofertaEnviada || current.oferta_detalle || '',
+        notas || null,
+      ]
+    );
+    await conn.query(
+      `UPDATE fidelizacion_recomendacion
+       SET estado = 'CONTACTADA',
+           contactado_at = NOW(),
+           estado_updated_at = NOW(),
+           estado_updated_by = ?
+       WHERE id = ?`,
+      [context.userName || req.user?.name || '', recId]
+    );
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al registrar contacto', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    const actorName = context.userName || req.user?.name || req.user?.email || '';
+    await conn.beginTransaction();
+    const [[current]] = await conn.query(
+      `SELECT id, cliente_id, estado, vendedora_id, created_at, conversion_deadline_at
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    }
+    const currentEstado = String(current.estado || '').toUpperCase();
+    if (currentEstado === 'CERRADA') {
+      await conn.rollback();
+      return res.status(400).json({ message: 'La recomendacion ya esta cerrada' });
+    }
+    if (!['PENDIENTE', 'EN_GESTION', 'CONTACTADA'].includes(currentEstado)) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'Solo se puede cerrar desde PENDIENTE, EN_GESTION o CONTACTADA' });
+    }
+    if (!context.isAdmin && Number(current.vendedora_id) !== Number(context.vendedoraId)) {
+      await conn.rollback();
+      return res.status(403).json({ message: 'Solo podes cerrar recomendaciones propias' });
+    }
+
+    const [[pedido]] = await conn.query(
+      `SELECT cp.id, cp.fecha, cp.total
+       FROM controlpedidos cp
+       WHERE cp.id_cliente = ?
+         AND cp.fecha >= ?
+       ORDER BY cp.fecha ASC
+       LIMIT 1`,
+      [Number(current.cliente_id), current.created_at]
+    );
+
+    const conversionDeadline = current.conversion_deadline_at ? new Date(current.conversion_deadline_at) : null;
+    const pedidoFecha = pedido?.fecha ? new Date(pedido.fecha) : null;
+    const withinWindow =
+      Boolean(pedidoFecha) && Boolean(conversionDeadline) && pedidoFecha.getTime() <= conversionDeadline.getTime();
+
+    if (pedido && withinWindow) {
+      await conn.query(
+        `UPDATE fidelizacion_recomendacion
+         SET estado = 'CERRADA',
+             resultado = 'CONVERTIDA',
+             pedido_id = ?,
+             converted_at = ?,
+             conversion_amount = ?,
+             closed_reason = 'AUTO_CONVERSION',
+             closed_at = NOW(),
+             estado_updated_at = NOW(),
+             estado_updated_by = ?
+         WHERE id = ?`,
+        [Number(pedido.id), pedido.fecha, pedido.total == null ? null : Number(pedido.total), actorName, recId]
+      );
+      await conn.commit();
+      return res.json({
+        ok: true,
+        mode: 'AUTO_CONVERSION',
+        message: 'Felicitaciones por su venta!!!',
+        pedido: { id: Number(pedido.id), fecha: pedido.fecha, total: pedido.total == null ? null : Number(pedido.total) },
+      });
+    }
+
+    if (pedido && !withinWindow) {
+      await conn.query(
+        `UPDATE fidelizacion_recomendacion
+         SET estado = 'CERRADA',
+             resultado = 'CONVERTIDA_FUERA_VENTANA',
+             pedido_id = ?,
+             converted_at = ?,
+             conversion_amount = ?,
+             closed_reason = 'AUTO_CONVERSION_OUT_OF_WINDOW',
+             closed_at = NOW(),
+             estado_updated_at = NOW(),
+             estado_updated_by = ?
+         WHERE id = ?`,
+        [Number(pedido.id), pedido.fecha, pedido.total == null ? null : Number(pedido.total), actorName, recId]
+      );
+      await conn.commit();
+      return res.json({
+        ok: true,
+        mode: 'AUTO_CONVERSION_OUT_OF_WINDOW',
+        message: 'Hubo venta, pero fuera de la ventana de conversion.',
+        pedido: { id: Number(pedido.id), fecha: pedido.fecha, total: pedido.total == null ? null : Number(pedido.total) },
+      });
+    }
+
+    const motivo = String(req.body?.closed_reason || req.body?.motivo || '').trim();
+    if (!motivo) {
+      await conn.rollback();
+      return res.status(409).json({
+        requires_manual_close: true,
+        message: 'Debe indicar motivo para cerrar sin pedido.',
+      });
+    }
+
+    await conn.query(
+      `UPDATE fidelizacion_recomendacion
+       SET estado = 'CERRADA',
+           resultado = 'NO_CONVERTIDA',
+           pedido_id = NULL,
+           converted_at = NULL,
+           conversion_amount = NULL,
+           closed_reason = ?,
+           closed_at = NOW(),
+           estado_updated_at = NOW(),
+           estado_updated_by = ?
+       WHERE id = ?`,
+      [motivo, actorName, recId]
+    );
+    await conn.commit();
+    return res.json({ ok: true, mode: 'MANUAL_NO_ORDER', message: 'Fidelizacion cerrada manualmente sin pedido.' });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al cerrar recomendacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/reabrir', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    await conn.beginTransaction();
+    const [[current]] = await conn.query(
+      `SELECT id, run_id, cliente_id, estado, vendedora_id
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    }
+    if (String(current.estado || '').toUpperCase() !== 'CERRADA') {
+      await conn.rollback();
+      return res.status(400).json({ message: 'Solo se puede reabrir una recomendacion cerrada' });
+    }
+    if (!context.isAdmin && Number(current.vendedora_id) !== Number(context.vendedoraId)) {
+      await conn.rollback();
+      return res.status(403).json({ message: 'Solo podes reabrir recomendaciones propias' });
+    }
+    await conn.query(
+      `UPDATE fidelizacion_recomendacion
+       SET estado = 'PENDIENTE',
+           resultado = NULL,
+           pedido_id = NULL,
+           converted_at = NULL,
+           conversion_amount = NULL,
+           closed_reason = NULL,
+           closed_at = NULL,
+           estado_updated_at = NOW(),
+           estado_updated_by = ?
+       WHERE id = ?`,
+      [context.userName || req.user?.name || '', recId]
+    );
+    await insertFidelizacionTransferLog(conn, {
+      recomendacion_id: current.id,
+      run_id: current.run_id,
+      cliente_id: current.cliente_id,
+      action: 'LIBERAR',
+      from_vendedora_id: current.vendedora_id ? Number(current.vendedora_id) : null,
+      to_vendedora_id: current.vendedora_id ? Number(current.vendedora_id) : null,
+      motivo: 'Reapertura manual',
+      actor_user_id: context.userId,
+      actor_nombre: context.userName,
+    });
+    await conn.commit();
+    res.json({ ok: true });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al reabrir recomendacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/resultados/recalcular', async (req, res) => {
+  return res.status(410).json({
+    message: 'Proceso deshabilitado. El resultado se define al cerrar la fidelizacion.',
+  });
+});
+
+function resolveFidelizacionDashboardScope(scopeRaw, runIdRaw) {
+  const scope = String(scopeRaw || 'run').trim().toLowerCase() === 'all' ? 'all' : 'run';
+  const runId = Number(runIdRaw) || 0;
+  return { scope, runId };
+}
+
+async function loadFidelizacionRunById(conn, runId) {
+  if (!runId) return null;
+  const [[runRow]] = await conn.query(
+    `SELECT id, run_date, created_at, params_json, config_id
+     FROM fidelizacion_run
+     WHERE id = ?
+     LIMIT 1`,
+    [runId]
+  );
+  if (!runRow) return null;
+  return {
+    id: Number(runRow.id),
+    run_date: runRow.run_date,
+    created_at: runRow.created_at,
+    config_id: runRow.config_id ? Number(runRow.config_id) : null,
+    params_json: parseMaybeJson(runRow.params_json),
+  };
+}
+
+app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver corridas' });
+    const [rows] = await pool.query(
+      `SELECT
+         fr.id,
+         fr.run_date,
+         fr.created_at,
+         fr.config_id,
+         COUNT(r.id) AS total,
+         SUM(r.estado='CERRADA') AS finalizadas,
+         SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+         COALESCE(
+           SUM(
+             CASE
+               WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+               THEN r.conversion_amount
+               ELSE 0
+             END
+           ), 0
+         ) AS monto_convertido,
+         ROUND(
+           100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(r.id),0),
+           1
+         ) AS tasa_conversion
+       FROM fidelizacion_run fr
+       LEFT JOIN fidelizacion_recomendacion r ON r.run_id = fr.id
+       GROUP BY fr.id, fr.run_date, fr.created_at, fr.config_id
+       ORDER BY fr.run_date DESC, fr.id DESC`
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar corridas de fidelizacion', error: error.message });
+  }
+});
+
+app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver dashboard global' });
+
+    const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
+    let effectiveRunId = runId;
+    if (scope !== 'all' && !effectiveRunId) {
+      const latest = await getFidelizacionLatestRun(pool);
+      effectiveRunId = latest?.id || 0;
+    }
+    if (scope !== 'all' && !effectiveRunId) {
+      return res.json({ scope: 'run', run_id: null, run: null, cards: {}, performance: [] });
+    }
+
+    const cardsSql =
+      scope === 'all'
+        ? `SELECT
+             SUM(r.estado='PENDIENTE')   AS pendientes,
+             SUM(r.estado='EN_GESTION')  AS en_gestion,
+             SUM(r.estado='CONTACTADA')  AS contactadas,
+             SUM(r.estado='CERRADA')     AS finalizadas,
+             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+             SUM(r.resultado='CONVERTIDA_FUERA_VENTANA') AS convertidas_fuera_ventana,
+             SUM(r.resultado='NO_CONVERTIDA') AS no_convertidas
+           FROM fidelizacion_recomendacion r`
+        : `SELECT
+             SUM(r.estado='PENDIENTE')   AS pendientes,
+             SUM(r.estado='EN_GESTION')  AS en_gestion,
+             SUM(r.estado='CONTACTADA')  AS contactadas,
+             SUM(r.estado='CERRADA')     AS finalizadas,
+             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+             SUM(r.resultado='CONVERTIDA_FUERA_VENTANA') AS convertidas_fuera_ventana,
+             SUM(r.resultado='NO_CONVERTIDA') AS no_convertidas
+           FROM fidelizacion_recomendacion r
+           WHERE r.run_id = ?`;
+    const [cardRows] = await pool.query(cardsSql, scope === 'all' ? [] : [effectiveRunId]);
+    const cardsRow = cardRows?.[0] || {};
+    const cards = {
+      pendientes: Number(cardsRow.pendientes) || 0,
+      en_gestion: Number(cardsRow.en_gestion) || 0,
+      contactadas: Number(cardsRow.contactadas) || 0,
+      finalizadas: Number(cardsRow.finalizadas) || 0,
+      convertidas: Number(cardsRow.convertidas) || 0,
+      convertidas_fuera_ventana: Number(cardsRow.convertidas_fuera_ventana) || 0,
+      no_convertidas: Number(cardsRow.no_convertidas) || 0,
+    };
+
+    const perfSql =
+      scope === 'all'
+        ? `SELECT
+             r.vendedora_id,
+             CONCAT(v.Nombre, ' ', v.Apellido) AS vendedora,
+             COUNT(*) AS total_gestionados,
+             SUM(r.estado='CERRADA') AS finalizados,
+             ROUND(100 * SUM(r.estado='CERRADA') / NULLIF(COUNT(*),0), 1) AS tasa_finalizacion,
+             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+             ROUND(100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
+             COALESCE(
+               SUM(
+                 CASE
+                   WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+                   THEN r.conversion_amount
+                   ELSE 0
+                 END
+               ), 0
+             ) AS monto_conversion,
+             ROUND(AVG(r.score), 2) AS score_prom,
+             ROUND(AVG(TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at)), 1) AS hs_a_contacto
+           FROM fidelizacion_recomendacion r
+           LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+           GROUP BY r.vendedora_id, v.Nombre, v.Apellido
+           ORDER BY convertidas DESC, tasa_conversion DESC, finalizados DESC`
+        : `SELECT
+             r.vendedora_id,
+             CONCAT(v.Nombre, ' ', v.Apellido) AS vendedora,
+             COUNT(*) AS total_gestionados,
+             SUM(r.estado='CERRADA') AS finalizados,
+             ROUND(100 * SUM(r.estado='CERRADA') / NULLIF(COUNT(*),0), 1) AS tasa_finalizacion,
+             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+             ROUND(100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
+             COALESCE(
+               SUM(
+                 CASE
+                   WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+                   THEN r.conversion_amount
+                   ELSE 0
+                 END
+               ), 0
+             ) AS monto_conversion,
+             ROUND(AVG(r.score), 2) AS score_prom,
+             ROUND(AVG(TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at)), 1) AS hs_a_contacto
+           FROM fidelizacion_recomendacion r
+           LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+           WHERE r.run_id = ?
+           GROUP BY r.vendedora_id, v.Nombre, v.Apellido
+           ORDER BY convertidas DESC, tasa_conversion DESC, finalizados DESC`;
+    const [perfRows] = await pool.query(perfSql, scope === 'all' ? [] : [effectiveRunId]);
+    const performance = (perfRows || []).map((row) => ({
+      vendedora_id: row.vendedora_id == null ? null : Number(row.vendedora_id),
+      vendedora: String(row.vendedora || '').trim() || 'Sin asignar',
+      total_gestionados: Number(row.total_gestionados) || 0,
+      finalizados: Number(row.finalizados) || 0,
+      tasa_finalizacion: Number(row.tasa_finalizacion) || 0,
+      convertidas: Number(row.convertidas) || 0,
+      tasa_conversion: Number(row.tasa_conversion) || 0,
+      monto_conversion: Number(row.monto_conversion) || 0,
+      score_prom: Number(row.score_prom) || 0,
+      hs_a_contacto: Number(row.hs_a_contacto) || 0,
+    }));
+
+    const runMeta = scope === 'all' ? null : await loadFidelizacionRunById(pool, effectiveRunId);
+    res.json({
+      scope,
+      run_id: scope === 'all' ? null : effectiveRunId,
+      run: runMeta,
+      cards,
+      performance,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar dashboard de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver este reporte' });
+    const runId = Number(req.query.run_id) || (await getFidelizacionLatestRun(pool))?.id || 0;
+    if (!runId) return res.json({ run_id: null, data: [] });
+    const [rows] = await pool.query(
+      `SELECT
+         r.vendedora_id,
+         COALESCE(v.Nombre, 'Sin asignar') AS vendedora,
+         COUNT(*) AS asignados,
+         SUM(r.estado = 'CERRADA') AS finalizados,
+         SUM(r.contactado_at IS NOT NULL) AS contactados,
+         SUM(r.resultado = 'CONVERTIDA') AS convertidos,
+         ROUND(SUM(CASE WHEN r.resultado = 'CONVERTIDA' THEN COALESCE(r.conversion_amount, 0) ELSE 0 END), 2) AS conversion_amount,
+         ROUND(AVG(r.score), 2) AS score_promedio,
+       ROUND(AVG(CASE WHEN r.contactado_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) END), 2) AS horas_a_contacto
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       WHERE r.run_id = ?
+         AND (r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))
+       GROUP BY r.vendedora_id, v.Nombre
+       ORDER BY asignados DESC, vendedora ASC`,
+      [runId]
+    );
+    const data = (rows || []).map((row) => {
+      const asignados = Number(row.asignados) || 0;
+      const finalizados = Number(row.finalizados) || 0;
+      const contactados = Number(row.contactados) || 0;
+      const convertidos = Number(row.convertidos) || 0;
+      return {
+        vendedora_id: row.vendedora_id ? Number(row.vendedora_id) : null,
+        vendedora: row.vendedora || 'Sin asignar',
+        asignados,
+        finalizados,
+        tasa_finalizacion: asignados ? round2((finalizados / asignados) * 100) : 0,
+        contactados,
+        tasa_contacto: asignados ? round2((contactados / asignados) * 100) : 0,
+        convertidos,
+        tasa_conversion: finalizados ? round2((convertidos / finalizados) * 100) : 0,
+        conversion_amount: Number(row.conversion_amount) || 0,
+        score_promedio: Number(row.score_promedio) || 0,
+        horas_a_contacto: Number(row.horas_a_contacto) || 0,
+      };
+    });
+    res.json({ run_id: runId, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar reporte admin de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/reportes/admin/finalizados', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver este detalle' });
+    const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
+    let effectiveRunId = runId;
+    if (scope !== 'all' && !effectiveRunId) {
+      const latest = await getFidelizacionLatestRun(pool);
+      effectiveRunId = latest?.id || 0;
+    }
+    if (scope !== 'all' && !effectiveRunId) return res.json({ scope: 'run', run_id: null, data: [] });
+
+    const vendedoraRaw = String(req.query.vendedora_id ?? '').trim().toLowerCase();
+    const hasVendedoraFilter = vendedoraRaw !== '';
+    const where = [
+      `r.estado = 'CERRADA'`,
+      `(r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))`,
+    ];
+    const params = [];
+    if (scope !== 'all') {
+      where.push('r.run_id = ?');
+      params.push(effectiveRunId);
+    }
+
+    if (hasVendedoraFilter) {
+      if (vendedoraRaw === 'null') {
+        where.push('r.vendedora_id IS NULL');
+      } else {
+        const vendedoraId = Number(vendedoraRaw);
+        if (!vendedoraId) return res.status(400).json({ message: 'vendedora_id invalido' });
+        where.push('r.vendedora_id = ?');
+        params.push(vendedoraId);
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         r.id,
+         r.cliente_id,
+         CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
+         r.vendedora_id,
+         COALESCE(v.Nombre, 'Sin asignar') AS vendedora,
+         r.estado,
+         r.resultado,
+         r.closed_reason,
+         r.closed_at,
+         r.pedido_id,
+         r.converted_at,
+         r.conversion_amount
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY r.closed_at DESC, r.id DESC
+       LIMIT 1000`,
+      params
+    );
+
+    res.json({ scope, run_id: scope === 'all' ? null : effectiveRunId, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar detalle de finalizados', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.vendedoraId && !context.isAdmin) return res.status(400).json({ message: 'Usuario sin vendedora asociada' });
+    const runId = Number(req.query.run_id) || (await getFidelizacionLatestRun(pool))?.id || 0;
+    if (!runId) return res.json({ run_id: null, resumen: {}, mensaje: '' });
+    const vendedoraId = context.vendedoraId || Number(req.query.vendedora_id) || null;
+    if (!vendedoraId) {
+      return res.status(400).json({ message: 'Vendedora invalida para reporte' });
+    }
+    const [[sellerRow]] = await pool.query(
+      `SELECT Nombre
+       FROM vendedores
+       WHERE Id = ?
+       LIMIT 1`,
+      [vendedoraId]
+    );
+    if (!sellerRow || isFidelizacionExcludedSellerName(sellerRow.Nombre)) {
+      return res.status(400).json({ message: 'Vendedora invalida para reporte' });
+    }
+    const [rows] = await pool.query(
+      `SELECT estado, COUNT(*) AS total
+       FROM fidelizacion_recomendacion
+       WHERE run_id = ?
+         AND vendedora_id = ?
+       GROUP BY estado`,
+      [runId, vendedoraId]
+    );
+    const [resultadoRows] = await pool.query(
+      `SELECT resultado, COUNT(*) AS total
+       FROM fidelizacion_recomendacion
+       WHERE run_id = ?
+         AND vendedora_id = ?
+         AND resultado IS NOT NULL
+         AND TRIM(resultado) <> ''
+       GROUP BY resultado`,
+      [runId, vendedoraId]
+    );
+    const resumen = {
+      PENDIENTE: 0,
+      EN_GESTION: 0,
+      CONTACTADA: 0,
+      CERRADA: 0,
+      CONVERTIDA: 0,
+      NO_CONVERTIDA: 0,
+    };
+    (rows || []).forEach((row) => {
+      const key = String(row.estado || '').toUpperCase();
+      if (key in resumen) resumen[key] = Number(row.total) || 0;
+    });
+    (resultadoRows || []).forEach((row) => {
+      const key = String(row.resultado || '').toUpperCase();
+      if (key in resumen) resumen[key] = Number(row.total) || 0;
+    });
+    const mensaje =
+      resumen.CONVERTIDA > 0
+        ? `Excelente avance: ${resumen.CONVERTIDA} conversiones en esta corrida.`
+        : resumen.CONTACTADA > 0
+          ? `Vas muy bien: ${resumen.CONTACTADA} clientes ya fueron contactados.`
+          : 'Arranque recomendado: toma clientes pendientes y registra tus contactos.';
+    res.json({ run_id: runId, vendedora_id: vendedoraId, resumen, mensaje });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar reporte de avance', error: error.message });
   }
 });
 

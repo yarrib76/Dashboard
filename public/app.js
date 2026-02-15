@@ -316,6 +316,28 @@ let facturacionClientesTarget = 'pedido';
 let facturacionArticulosTarget = 'pedido';
 let abmEditContext = null;
 let pedidoEditandoNumero = null;
+let fidelizacionRows = [];
+let fidelizacionPanelLoaded = false;
+let fidelizacionMisLoaded = false;
+let fidelizacionAdminLoaded = false;
+let fidelizacionContext = null;
+let fidelizacionMisRows = [];
+let fidelizacionMisEstado = 'PENDIENTE';
+let fidelizacionAdminRows = [];
+let fidelizacionAdminEstado = 'TODOS';
+let fidelizacionVendedoras = [];
+let fidTransferResolver = null;
+let fidCloseResolver = null;
+let fidPanelDataTable = null;
+let fidMisDataTable = null;
+let fidAdminQueueDataTable = null;
+let fidReportAdminDataTable = null;
+let fidFinalizadosDataTable = null;
+let fidReportRunId = null;
+let fidReportScope = 'run';
+let fidelizacionRunsLoaded = false;
+let fidelizacionRunsRows = [];
+let fidRunsDataTable = null;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -330,6 +352,10 @@ const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
 const viewIa = document.getElementById('view-ia');
 const viewSalon = document.getElementById('view-salon');
+const viewFidelizacionPanel = document.getElementById('view-fidelizacion-panel');
+const viewFidelizacionMis = document.getElementById('view-fidelizacion-mis');
+const viewFidelizacionAdmin = document.getElementById('view-fidelizacion-admin');
+const viewFidelizacionRuns = document.getElementById('view-fidelizacion-runs');
 const viewPedidos = document.getElementById('view-pedidos');
 const viewPedidosTodos = document.getElementById('view-pedidos-todos');
 const viewPedidosNuevo = document.getElementById('view-pedidos-nuevo');
@@ -444,6 +470,74 @@ const pedidoItemsFilterArticulo = document.getElementById('pedido-items-filter-a
 const pedidoItemsFilterDetalle = document.getElementById('pedido-items-filter-detalle');
 const pedidoSubtotalEl = document.getElementById('pedido-subtotal');
 const pedidoNuevoStatus = document.getElementById('pedido-nuevo-status');
+const fidelizacionRefreshBtn = document.getElementById('fidelizacion-refresh');
+const fidelizacionRunBtn = document.getElementById('fidelizacion-run');
+const fidelizacionConfigForm = document.getElementById('fidelizacion-config-form');
+const fidelizacionConfigSaveBtn = document.getElementById('fidelizacion-config-save');
+const fidelizacionStatus = document.getElementById('fidelizacion-status');
+const fidCooldownDaysInput = document.getElementById('fid-cooldown-days');
+const fidConversionWindowDaysInput = document.getElementById('fid-conversion-window-days');
+const fidMaxClientsRunInput = document.getElementById('fid-max-clients-run');
+const fidWMonthMatchInput = document.getElementById('fid-w-month-match');
+const fidWFrequency12mInput = document.getElementById('fid-w-frequency-12m');
+const fidWRecency3090Input = document.getElementById('fid-w-recency-30-90');
+const fidWMonetary12mInput = document.getElementById('fid-w-monetary-12m');
+const fidStatRunId = document.getElementById('fid-stat-run-id');
+const fidStatTotal = document.getElementById('fid-stat-total');
+const fidStatAvgScore = document.getElementById('fid-stat-avg-score');
+const fidStatMaxScore = document.getElementById('fid-stat-max-score');
+const fidelizacionTableBody = document.querySelector('#fidelizacion-table tbody');
+const fidelizacionCards = document.getElementById('fidelizacion-cards');
+const fidResultadosRecalcularBtn = document.getElementById('fid-resultados-recalcular');
+const fidTabs = document.getElementById('fid-tabs');
+const fidMisTableBody = document.querySelector('#fid-mis-table tbody');
+const fidMisCards = document.getElementById('fid-mis-cards');
+const fidMisStatus = document.getElementById('fid-mis-status');
+const fidReportesRefreshBtn = document.getElementById('fid-reportes-refresh');
+const fidDashboardOverlay = document.getElementById('fid-dashboard-overlay');
+const fidDashboardTitle = document.getElementById('fid-dashboard-title');
+const fidDashboardCloseBtn = document.getElementById('fid-dashboard-close');
+const fidDashboardScopeSelect = document.getElementById('fid-dashboard-scope');
+const fidDashboardMeta = document.getElementById('fid-dashboard-meta');
+const fidCardPendientes = document.getElementById('fid-card-pendientes');
+const fidCardGestion = document.getElementById('fid-card-gestion');
+const fidCardContactadas = document.getElementById('fid-card-contactadas');
+const fidCardFinalizadas = document.getElementById('fid-card-finalizadas');
+const fidCardConvertidas = document.getElementById('fid-card-convertidas');
+const fidCardConvertidasFv = document.getElementById('fid-card-convertidas-fv');
+const fidCardNoConvertidas = document.getElementById('fid-card-no-convertidas');
+const fidAdminTableBody = document.querySelector('#fid-admin-table tbody');
+const fidAdminCards = document.getElementById('fid-admin-cards');
+const fidReportesStatus = document.getElementById('fid-reportes-status');
+const fidAdminResultadosRecalcularBtn = document.getElementById('fid-admin-resultados-recalcular');
+const fidRunsRefreshBtn = document.getElementById('fid-runs-refresh');
+const fidRunsOpenHistoryBtn = document.getElementById('fid-runs-open-history');
+const fidRunsTableBody = document.querySelector('#fid-runs-table tbody');
+const fidRunsCards = document.getElementById('fid-runs-cards');
+const fidRunsStatus = document.getElementById('fid-runs-status');
+const fidAdminTabs = document.getElementById('fid-admin-tabs');
+const fidAdminQueueTableBody = document.querySelector('#fid-admin-queue-table tbody');
+const fidAdminQueueCards = document.getElementById('fid-admin-queue-cards');
+const fidAdminQueueStatus = document.getElementById('fid-admin-queue-status');
+const fidTransferOverlay = document.getElementById('fid-transfer-overlay');
+const fidTransferCloseBtn = document.getElementById('fid-transfer-close');
+const fidTransferForm = document.getElementById('fid-transfer-form');
+const fidTransferVendedoraSelect = document.getElementById('fid-transfer-vendedora');
+const fidTransferMotivoInput = document.getElementById('fid-transfer-motivo');
+const fidTransferCancelBtn = document.getElementById('fid-transfer-cancel');
+const fidTransferStatus = document.getElementById('fid-transfer-status');
+const fidCloseOverlay = document.getElementById('fid-close-overlay');
+const fidCloseCloseBtn = document.getElementById('fid-close-close');
+const fidCloseForm = document.getElementById('fid-close-form');
+const fidCloseResultadoSelect = document.getElementById('fid-close-resultado');
+const fidCloseMotivoInput = document.getElementById('fid-close-motivo');
+const fidCloseCancelBtn = document.getElementById('fid-close-cancel');
+const fidCloseStatus = document.getElementById('fid-close-status');
+const fidFinalizadosOverlay = document.getElementById('fid-finalizados-overlay');
+const fidFinalizadosCloseBtn = document.getElementById('fid-finalizados-close');
+const fidFinalizadosTitle = document.getElementById('fid-finalizados-title');
+const fidFinalizadosTableBody = document.querySelector('#fid-finalizados-table tbody');
+const fidFinalizadosStatus = document.getElementById('fid-finalizados-status');
 const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
 const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
 const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
@@ -11423,6 +11517,8 @@ async function exportCajasControlFacturasXlsx() {
 }
 
 function resolvePermissionKey(target) {
+  if (target === 'fidelizacion-runs') return 'fidelizacion-dashboard';
+  if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
   if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
@@ -11490,7 +11586,12 @@ function applyMenuPermissions(perms = {}) {
     const groupKey = group.dataset.group;
     const visibleItems = group.querySelectorAll('.menu-item[data-target]');
     const anyVisible = Array.from(visibleItems).some((btn) => btn.style.display !== 'none');
-    const forcedVisible = groupKey === 'pedidos' && perms['pedidos-menu'] === true;
+    const forcedGroupPerms = {
+      pedidos: 'pedidos-menu',
+      fidelizacion: 'fidelizacion-menu',
+    };
+    const forcedPermKey = forcedGroupPerms[groupKey] || '';
+    const forcedVisible = forcedPermKey ? perms[forcedPermKey] === true : false;
     group.style.display = anyVisible || forcedVisible ? '' : 'none';
   });
 }
@@ -11504,6 +11605,10 @@ function getFirstAllowedView(perms = {}) {
       'clientes',
       'ia',
       'salon',
+      'fidelizacion-panel',
+      'fidelizacion-mis',
+      'fidelizacion-admin',
+      'fidelizacion-runs',
       'pedidos',
       'pedidos-todos',
       'pedidos-nuevo',
@@ -11527,7 +11632,21 @@ function getFirstAllowedView(perms = {}) {
     ) {
       return 'pedidos';
     }
-  return order.find((key) => perms[key] === true) || '';
+    if (
+      perms['fidelizacion-menu'] === true &&
+      !perms['fidelizacion-panel'] &&
+      !perms['fidelizacion-mis'] &&
+      !perms['fidelizacion-admin'] &&
+      !perms['fidelizacion-dashboard']
+    ) {
+      return 'fidelizacion-panel';
+    }
+  return (
+    order.find((key) => {
+      if (key === 'fidelizacion-runs') return perms['fidelizacion-dashboard'] === true;
+      return perms[key] === true;
+    }) || ''
+  );
 }
 
 async function loadCurrentUser() {
@@ -11557,7 +11676,17 @@ async function loadCurrentUser() {
     const hasEcommerceSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel');
+    const hasFidelizacionSubPerms =
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-panel') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-mis') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-admin') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-dashboard');
     normalizeEcommercePermissions(currentPermissions, hasEcommerceSubPerms);
+    normalizeFidelizacionPermissions(
+      currentPermissions,
+      hasFidelizacionSubPerms,
+      Boolean(data?.permissions?.fidelizacion)
+    );
     applyMenuPermissions(currentPermissions);
     const path = window.location.pathname || '';
     const viewParam = new URLSearchParams(window.location.search || '').get('view');
@@ -12860,8 +12989,13 @@ const permissionGroups = [
         { key: 'cargar-ticket', label: 'CargarTicket' },
         { key: 'empleados', label: 'Empleados' },
       { key: 'clientes', label: 'Clientes' },
-      { key: 'ia', label: 'IA' },
+        { key: 'ia', label: 'IA' },
         { key: 'salon', label: 'Salon' },
+        { key: 'fidelizacion-menu', label: 'Menu Fidelizacion' },
+        { key: 'fidelizacion-panel', label: 'Fidelizacion - Panel' },
+        { key: 'fidelizacion-mis', label: 'Fidelizacion - Mis Fidelizaciones' },
+        { key: 'fidelizacion-admin', label: 'Fidelizacion - Admin' },
+        { key: 'fidelizacion-dashboard', label: 'Fidelizacion - Corridas y Dashboard' },
         { key: 'cajas', label: 'Cajas' },
         { key: 'cajas-cierre', label: 'Cajas - Cierre' },
         { key: 'cajas-nueva-factura', label: 'Cajas - Nueva Factura' },
@@ -12925,6 +13059,28 @@ function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
   return perms;
 }
 
+function normalizeFidelizacionPermissions(perms = {}, hasSubPerms = true, legacyEnabled = false) {
+  if (hasSubPerms) return perms;
+  if (legacyEnabled) {
+    perms['fidelizacion-panel'] = true;
+    perms['fidelizacion-mis'] = true;
+    perms['fidelizacion-admin'] = true;
+    perms['fidelizacion-dashboard'] = true;
+    if (!perms['fidelizacion-menu']) perms['fidelizacion-menu'] = true;
+    return perms;
+  }
+  if (
+    perms['fidelizacion-menu'] &&
+    !perms['fidelizacion-panel'] &&
+    !perms['fidelizacion-mis'] &&
+    !perms['fidelizacion-admin'] &&
+    !perms['fidelizacion-dashboard']
+  ) {
+    perms['fidelizacion-panel'] = true;
+  }
+  return perms;
+}
+
 async function loadRoles() {
   if (rolesStatus) rolesStatus.textContent = 'Cargando roles...';
   const res = await fetchJSON('/api/roles');
@@ -12943,15 +13099,29 @@ async function loadRolePermissions(roleId) {
   const res = await fetchJSON(`/api/roles/${encodeURIComponent(roleId)}/permissions`);
   const perms = buildEmptyPermissions();
   let hasEcommerceSubPerms = false;
+  let hasFidelizacionSubPerms = false;
+  let legacyFidelizacionEnabled = false;
   (res.data || []).forEach((row) => {
     if (row.permiso in perms) {
       perms[row.permiso] = !!row.habilitado;
       if (row.permiso === 'ecommerce-imagenweb' || row.permiso === 'ecommerce-panel') {
         hasEcommerceSubPerms = true;
       }
+      if (
+        row.permiso === 'fidelizacion-panel' ||
+        row.permiso === 'fidelizacion-mis' ||
+        row.permiso === 'fidelizacion-admin' ||
+        row.permiso === 'fidelizacion-dashboard'
+      ) {
+        hasFidelizacionSubPerms = true;
+      }
+    }
+    if (row.permiso === 'fidelizacion') {
+      legacyFidelizacionEnabled = !!row.habilitado;
     }
   });
   normalizeEcommercePermissions(perms, hasEcommerceSubPerms);
+  normalizeFidelizacionPermissions(perms, hasFidelizacionSubPerms, legacyFidelizacionEnabled);
   const role = rolesData.find((r) => r.id === roleId);
   if (role) role.permissions = perms;
   if (rolesStatus) rolesStatus.textContent = '';
@@ -12987,6 +13157,7 @@ function renderPermissions() {
     });
   });
   const submenuMap = {
+    'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
@@ -14183,7 +14354,938 @@ function initComisiones() {
   renderComisionesPanel();
 }
 
+const FIDELIZACION_DEFAULTS = {
+  cooldown_days: 30,
+  conversion_window_days: 14,
+  max_clients_per_run: 200,
+  w_month_match: 30,
+  w_frequency_12m: 20,
+  w_recency_30_90: 20,
+  w_monetary_12m: 10,
+};
+
+function toInt(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  const intVal = Math.trunc(num);
+  return Math.min(max, Math.max(min, intVal));
+}
+
+function fillFidelizacionConfig(config = {}) {
+  const safe = { ...FIDELIZACION_DEFAULTS, ...(config || {}) };
+  if (fidCooldownDaysInput) fidCooldownDaysInput.value = String(toInt(safe.cooldown_days, 30, 1, 365));
+  if (fidConversionWindowDaysInput) fidConversionWindowDaysInput.value = String(toInt(safe.conversion_window_days, 14, 1, 365));
+  if (fidMaxClientsRunInput) fidMaxClientsRunInput.value = String(toInt(safe.max_clients_per_run, 200, 1, 5000));
+  if (fidWMonthMatchInput) fidWMonthMatchInput.value = String(toInt(safe.w_month_match, 30, 0, 1000));
+  if (fidWFrequency12mInput) fidWFrequency12mInput.value = String(toInt(safe.w_frequency_12m, 20, 0, 1000));
+  if (fidWRecency3090Input) fidWRecency3090Input.value = String(toInt(safe.w_recency_30_90, 20, 0, 1000));
+  if (fidWMonetary12mInput) fidWMonetary12mInput.value = String(toInt(safe.w_monetary_12m, 10, 0, 1000));
+}
+
+function getFidelizacionConfigPayload() {
+  return {
+    cooldown_days: toInt(fidCooldownDaysInput?.value, 30, 1, 365),
+    conversion_window_days: toInt(fidConversionWindowDaysInput?.value, 14, 1, 365),
+    max_clients_per_run: toInt(fidMaxClientsRunInput?.value, 200, 1, 5000),
+    w_month_match: toInt(fidWMonthMatchInput?.value, 30, 0, 1000),
+    w_frequency_12m: toInt(fidWFrequency12mInput?.value, 20, 0, 1000),
+    w_recency_30_90: toInt(fidWRecency3090Input?.value, 20, 0, 1000),
+    w_monetary_12m: toInt(fidWMonetary12mInput?.value, 10, 0, 1000),
+  };
+}
+
+function setFidelizacionAdminUI(isAdmin) {
+  if (fidelizacionConfigForm) fidelizacionConfigForm.style.display = isAdmin ? '' : 'none';
+  if (fidelizacionRunBtn) fidelizacionRunBtn.style.display = isAdmin ? '' : 'none';
+  if (fidResultadosRecalcularBtn) fidResultadosRecalcularBtn.style.display = 'none';
+  if (fidAdminResultadosRecalcularBtn) fidAdminResultadosRecalcularBtn.style.display = 'none';
+  const adminTableWrap = fidAdminTableBody?.closest('.table-wrap');
+  if (adminTableWrap) adminTableWrap.style.display = isAdmin ? '' : 'none';
+  if (fidAdminCards) fidAdminCards.style.display = isAdmin && document.body.classList.contains('is-mobile') ? 'grid' : 'none';
+}
+
+function renderFidelizacionSummary(run, resumen) {
+  if (fidStatRunId) fidStatRunId.textContent = run?.id ? String(run.id) : '-';
+  if (fidStatTotal) fidStatTotal.textContent = String(Number(resumen?.total) || 0);
+  if (fidStatAvgScore) fidStatAvgScore.textContent = String(Number(resumen?.promedio_score || 0).toFixed(2));
+  if (fidStatMaxScore) fidStatMaxScore.textContent = String(Number(resumen?.max_score || 0).toFixed(2));
+}
+
+function destroyFidelizacionDataTable(instance) {
+  if (!instance) return null;
+  try {
+    instance.destroy();
+  } catch (_err) {
+    /* ignore */
+  }
+  return null;
+}
+
+function initFidelizacionDataTable(selector) {
+  if (typeof DataTable === 'undefined') return null;
+  const tableEl = document.querySelector(selector);
+  if (!tableEl) return null;
+  try {
+    return new DataTable(selector, {
+      pageLength: 10,
+      lengthMenu: [10, 25, 50, 100],
+      order: [],
+      language: {
+        search: 'Buscar:',
+        lengthMenu: 'Mostrar _MENU_',
+        info: 'Mostrando _START_ a _END_ de _TOTAL_',
+        infoEmpty: 'Sin resultados',
+        emptyTable: 'Sin datos.',
+        paginate: {
+          first: 'Primero',
+          last: 'Ultimo',
+          next: 'Siguiente',
+          previous: 'Anterior',
+        },
+      },
+    });
+  } catch (_err) {
+    return null;
+  }
+}
+
+function renderFidelizacionRows(rows = []) {
+  fidelizacionRows = Array.isArray(rows) ? rows : [];
+  fidPanelDataTable = destroyFidelizacionDataTable(fidPanelDataTable);
+  if (fidelizacionTableBody) fidelizacionTableBody.innerHTML = '';
+  if (fidelizacionCards) fidelizacionCards.innerHTML = '';
+  const safeRows = fidelizacionRows.slice(0, 300);
+  safeRows.forEach((row) => {
+    const tags = [row.tag_top_1, row.tag_top_2, row.tag_top_3].filter(Boolean).join(' / ');
+    const attrs = [row.attr_top_1, row.attr_top_2, row.attr_top_3].filter(Boolean).join(' / ');
+    if (fidelizacionTableBody) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeAttr(row.cliente || '')}</td>
+        <td>${Number(row.score || 0).toFixed(2)}</td>
+        <td>${escapeAttr(row.vendedora_nombre || '-')}</td>
+        <td>${escapeAttr(row.oferta_detalle || '')}</td>
+        <td>${escapeAttr([tags, attrs].filter(Boolean).join(' | '))}</td>
+        <td>${escapeAttr(formatDateLong(row.last_purchase_date || ''))}</td>
+        <td>${escapeAttr(row.razones || '')}</td>
+      `;
+      fidelizacionTableBody.appendChild(tr);
+    }
+    if (fidelizacionCards) {
+      const card = document.createElement('article');
+      card.className = 'fidelizacion-card';
+      card.innerHTML = `
+        <div class="fidelizacion-card-header">
+          <p class="fidelizacion-card-title">${escapeAttr(row.cliente || 'Cliente')}</p>
+          <span class="fidelizacion-card-score">${Number(row.score || 0).toFixed(2)}</span>
+        </div>
+        <p class="fidelizacion-card-meta">Vendedora: ${escapeAttr(row.vendedora_nombre || '-')}</p>
+        <p class="fidelizacion-card-meta">Ult. compra: ${escapeAttr(formatDateLong(row.last_purchase_date || ''))}</p>
+        <p class="fidelizacion-card-offer">${escapeAttr(row.oferta_detalle || '')}</p>
+        <p class="fidelizacion-card-meta">${escapeAttr([tags, attrs].filter(Boolean).join(' | '))}</p>
+        <p class="fidelizacion-card-reason">${escapeAttr(row.razones || '')}</p>
+      `;
+      fidelizacionCards.appendChild(card);
+    }
+  });
+  fidPanelDataTable = initFidelizacionDataTable('#fidelizacion-table');
+}
+
+function renderFidelizacionTabs(tabsEl, selectedEstado, countsMias = {}, countsTodos = {}) {
+  if (!tabsEl) return;
+  const map = {
+    PENDIENTE: countsMias.PENDIENTE || 0,
+    TODOS: (countsTodos.PENDIENTE || 0) + (countsTodos.EN_GESTION || 0) + (countsTodos.CONTACTADA || 0),
+    EN_GESTION: countsMias.EN_GESTION || 0,
+    CONTACTADA: countsMias.CONTACTADA || 0,
+    CERRADA: countsMias.CERRADA || 0,
+    HISTORICO: (countsMias.CERRADA || 0) + (countsMias.CONVERTIDA || 0) + (countsMias.NO_CONVERTIDA || 0),
+  };
+  tabsEl.querySelectorAll('.tab').forEach((btn) => {
+    const estado = btn.dataset.estado || '';
+    btn.classList.toggle('active', estado === selectedEstado);
+    const base = {
+      TODOS: 'Todos',
+      PENDIENTE: 'Pendiente',
+      EN_GESTION: 'En gestión',
+      CONTACTADA: 'Contactadas',
+      CERRADA: 'Cerradas',
+      HISTORICO: 'Histórico',
+    }[estado] || estado;
+    btn.textContent = `${base} (${map[estado] || 0})`;
+  });
+}
+
+function renderFidelizacionMisTabs(countsMias = {}, countsTodos = {}) {
+  renderFidelizacionTabs(fidTabs, fidelizacionMisEstado, countsMias, countsTodos);
+}
+
+function renderFidelizacionAdminTabs(counts = {}, countsTodos = {}) {
+  renderFidelizacionTabs(fidAdminTabs, fidelizacionAdminEstado, counts, countsTodos);
+}
+
+function getFidelizacionStatusDisplay(row) {
+  const estado = String(row?.estado || '').toUpperCase();
+  const resultado = String(row?.resultado || '').toUpperCase();
+  if (resultado === 'CONVERTIDA') return `<span class="badge green">CONVERTIDA</span>`;
+  if (resultado === 'CONVERTIDA_FUERA_VENTANA') return `<span class="badge yellow">CONVERTIDA (FUERA DE VENTANA)</span>`;
+  if (estado === 'CERRADA') return `<span class="badge gray">CERRADA</span>`;
+  if (row?.is_expired) {
+    const vence = row?.conversion_deadline_at ? escapeAttr(formatDateTime(row.conversion_deadline_at)) : '-';
+    return `<span class="badge red" title="Venció: ${vence}">VENCIDA</span>`;
+  }
+  if (estado === 'PENDIENTE') return `<span class="badge yellow">PENDIENTE</span>`;
+  if (estado === 'EN_GESTION') return `<span class="badge green">EN GESTION</span>`;
+  if (estado === 'CONTACTADA') return `<span class="badge green">CONTACTADA</span>`;
+  return `<span class="badge gray">${escapeAttr(estado || '-')}</span>`;
+}
+
+function buildFidActions(row, { adminMode = false } = {}) {
+  const estado = String(row.estado || '').toUpperCase();
+  const buttons = [];
+  const isMine =
+    Number(fidelizacionContext?.vendedoraId || 0) > 0 &&
+    Number(row.vendedora_id || 0) === Number(fidelizacionContext?.vendedoraId || 0);
+  if (estado === 'PENDIENTE' && (adminMode || !isMine)) {
+    buttons.push(`<button type="button" data-action="tomar" data-id="${row.id}">Tomar</button>`);
+  }
+  if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="transferir" data-id="${row.id}">Transferir</button>`);
+  if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="contactar" data-id="${row.id}">Contactar</button>`);
+  if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="cerrar" data-id="${row.id}">Cerrar</button>`);
+  if (estado === 'CERRADA') buttons.push(`<button type="button" data-action="reabrir" data-id="${row.id}">Reabrir</button>`);
+  return buttons.join(' ');
+}
+
+function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = false, tableType = '' } = {}) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (tableType === 'mis') fidMisDataTable = destroyFidelizacionDataTable(fidMisDataTable);
+  if (tableType === 'admin') fidAdminQueueDataTable = destroyFidelizacionDataTable(fidAdminQueueDataTable);
+  if (tableBody) tableBody.innerHTML = '';
+  if (cards) cards.innerHTML = '';
+  safeRows.forEach((row) => {
+    const actions = buildFidActions(row, { adminMode });
+    const estadoHtml = getFidelizacionStatusDisplay(row);
+    const expiredClass = row.is_expired ? ' fid-row-expired' : '';
+    if (tableBody) {
+      const tr = document.createElement('tr');
+      tr.className = expiredClass.trim();
+      tr.innerHTML = `
+        <td>${escapeAttr(row.cliente || '')}<br><small>${escapeAttr(row.telefono || '')}</small></td>
+        <td>${estadoHtml}</td>
+        <td>${Number(row.score || 0).toFixed(2)}</td>
+        <td>${escapeAttr(row.oferta_detalle || '')}</td>
+        <td>${escapeAttr(row.vendedora_nombre || '-')}</td>
+        <td class="actions">${actions}</td>
+      `;
+      tableBody.appendChild(tr);
+    }
+    if (cards) {
+      const card = document.createElement('article');
+      card.className = 'fidelizacion-card';
+      card.innerHTML = `
+        <div class="fidelizacion-card-header">
+          <p class="fidelizacion-card-title">${escapeAttr(row.cliente || 'Cliente')}</p>
+          <span class="fidelizacion-card-score">${Number(row.score || 0).toFixed(2)}</span>
+        </div>
+        <p class="fidelizacion-card-meta">${estadoHtml} · ${escapeAttr(row.telefono || '-')}</p>
+        <p class="fidelizacion-card-offer">${escapeAttr(row.oferta_detalle || '')}</p>
+        <div class="actions">${actions}</div>
+      `;
+      cards.appendChild(card);
+    }
+  });
+  if (tableType === 'mis') fidMisDataTable = initFidelizacionDataTable('#fid-mis-table');
+  if (tableType === 'admin') fidAdminQueueDataTable = initFidelizacionDataTable('#fid-admin-queue-table');
+}
+
+function renderFidelizacionMisRows(rows = []) {
+  fidelizacionMisRows = Array.isArray(rows) ? rows : [];
+  renderFidelizacionQueueRows(fidelizacionMisRows, {
+    tableBody: fidMisTableBody,
+    cards: fidMisCards,
+    adminMode: false,
+    tableType: 'mis',
+  });
+}
+
+function renderFidelizacionAdminRows(rows = []) {
+  fidelizacionAdminRows = Array.isArray(rows) ? rows : [];
+  renderFidelizacionQueueRows(fidelizacionAdminRows, {
+    tableBody: fidAdminQueueTableBody,
+    cards: fidAdminQueueCards,
+    adminMode: true,
+    tableType: 'admin',
+  });
+}
+
+async function loadFidelizacionContext() {
+  const res = await fetchJSON('/api/fidelizacion/context');
+  fidelizacionContext = res?.user || null;
+  setFidelizacionAdminUI(Boolean(fidelizacionContext?.isAdmin));
+}
+
+async function loadFidelizacionVendedoras({ force = false } = {}) {
+  if (!force && fidelizacionVendedoras.length) return fidelizacionVendedoras;
+  const res = await fetchJSON('/api/fidelizacion/vendedoras');
+  fidelizacionVendedoras = (res?.data || [])
+    .map((row) => ({
+      id: Number(row.id) || 0,
+      nombre: String(row.nombre || '').trim(),
+    }))
+    .filter((row) => row.id > 0 && row.nombre);
+  return fidelizacionVendedoras;
+}
+const FID_CLOSE_REASON_OPTIONS = [
+  { code: 'NO_RESPONDIO', label: 'No respondio' },
+  { code: 'SIN_STOCK', label: 'Sin stock' },
+  { code: 'PRECIO', label: 'Precio' },
+  { code: 'SIN_INTERES', label: 'Sin interes' },
+  { code: 'COMPRA_POSTERGADA', label: 'Compra postergada' },
+  { code: 'OTRO', label: 'Otro' },
+];
+
+function closeFidelizacionTransferModal(result = null) {
+  if (fidTransferOverlay) fidTransferOverlay.classList.remove('open');
+  if (fidTransferStatus) fidTransferStatus.textContent = '';
+  if (fidTransferForm) fidTransferForm.reset();
+  if (fidTransferVendedoraSelect) fidTransferVendedoraSelect.innerHTML = '';
+  if (fidTransferResolver) {
+    const resolve = fidTransferResolver;
+    fidTransferResolver = null;
+    resolve(result);
+  }
+}
+
+async function openFidelizacionTransferModal(rec) {
+  if (fidTransferResolver) closeFidelizacionTransferModal(null);
+  const vendedoras = await loadFidelizacionVendedoras();
+  const opciones = vendedoras
+    .filter((v) => Number(v.id) !== Number(rec?.vendedora_id || 0))
+    .slice(0, 200);
+  if (!opciones.length) {
+    setStatusMessage(fidMisStatus, 'No hay vendedoras disponibles para transferir.', 'error');
+    return null;
+  }
+  if (!fidTransferVendedoraSelect || !fidTransferMotivoInput || !fidTransferOverlay) return null;
+  fidTransferVendedoraSelect.innerHTML = '';
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = 'Seleccionar vendedora';
+  fidTransferVendedoraSelect.appendChild(empty);
+  opciones.forEach((row) => {
+    const opt = document.createElement('option');
+    opt.value = String(row.id);
+    opt.textContent = row.nombre;
+    fidTransferVendedoraSelect.appendChild(opt);
+  });
+  fidTransferVendedoraSelect.value = '';
+  fidTransferMotivoInput.value = '';
+  if (fidTransferStatus) fidTransferStatus.textContent = '';
+  fidTransferOverlay.classList.add('open');
+  setTimeout(() => {
+    fidTransferVendedoraSelect.focus();
+  }, 0);
+  return new Promise((resolve) => {
+    fidTransferResolver = resolve;
+  });
+}
+
+function closeFidelizacionCloseModal(result = null) {
+  if (fidCloseOverlay) fidCloseOverlay.classList.remove('open');
+  if (fidCloseStatus) fidCloseStatus.textContent = '';
+  if (fidCloseForm) fidCloseForm.reset();
+  if (fidCloseResultadoSelect) fidCloseResultadoSelect.innerHTML = '';
+  if (fidCloseResolver) {
+    const resolve = fidCloseResolver;
+    fidCloseResolver = null;
+    resolve(result);
+  }
+}
+
+async function openFidelizacionCloseModal() {
+  if (fidCloseResolver) closeFidelizacionCloseModal(null);
+  if (!fidCloseOverlay || !fidCloseResultadoSelect || !fidCloseMotivoInput) return null;
+  fidCloseResultadoSelect.innerHTML = '';
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = 'Seleccionar motivo';
+  fidCloseResultadoSelect.appendChild(empty);
+  FID_CLOSE_REASON_OPTIONS.forEach((row) => {
+    const opt = document.createElement('option');
+    opt.value = row.code;
+    opt.textContent = row.label;
+    fidCloseResultadoSelect.appendChild(opt);
+  });
+  fidCloseResultadoSelect.value = '';
+  fidCloseMotivoInput.value = '';
+  if (fidCloseStatus) fidCloseStatus.textContent = '';
+  fidCloseOverlay.classList.add('open');
+  setTimeout(() => {
+    fidCloseResultadoSelect.focus();
+  }, 0);
+  return new Promise((resolve) => {
+    fidCloseResolver = resolve;
+  });
+}
+
+async function postFidelizacionCerrar(id, payload = {}) {
+  const res = await fetch(`/api/fidelizacion/recomendaciones/${encodeURIComponent(id)}/cerrar`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  const contentType = res.headers.get('content-type') || '';
+  const data = contentType.includes('application/json') ? await res.json() : { message: await res.text() };
+  if (!res.ok) {
+    const error = new Error((data && data.message) || `Error ${res.status}`);
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  return data || {};
+}
+
+async function ensureFidelizacionContext() {
+  if (fidelizacionContext) return;
+  await loadFidelizacionContext();
+}
+
+async function loadFidelizacionMis() {
+  await ensureFidelizacionContext();
+  setStatusMessage(fidMisStatus, 'Cargando...');
+  try {
+    const scope = fidelizacionMisEstado === 'TODOS' ? 'TODOS' : 'MIAS';
+    const res = await fetchJSON(
+      `/api/fidelizacion/mis?estado=${encodeURIComponent(fidelizacionMisEstado)}&scope=${encodeURIComponent(scope)}`
+    );
+    renderFidelizacionMisTabs(res?.counts_mias || res?.counts || {}, res?.counts_todos || {});
+    renderFidelizacionMisRows(res?.data || []);
+    setStatusMessage(fidMisStatus, '');
+  } catch (error) {
+    setStatusMessage(fidMisStatus, error.message || 'Error al cargar mis fidelizaciones.', 'error');
+  }
+}
+
+async function loadFidelizacionAdminQueue() {
+  await ensureFidelizacionContext();
+  setStatusMessage(fidAdminQueueStatus, 'Cargando...');
+  try {
+    const res = await fetchJSON(
+      `/api/fidelizacion/mis?estado=${encodeURIComponent(fidelizacionAdminEstado)}&scope=${encodeURIComponent('ADMIN')}`
+    );
+    const countsAll = res?.counts_admin || res?.counts_mias || res?.counts || {};
+    renderFidelizacionAdminTabs(countsAll, countsAll);
+    renderFidelizacionAdminRows(res?.data || []);
+    setStatusMessage(fidAdminQueueStatus, '');
+  } catch (error) {
+    setStatusMessage(fidAdminQueueStatus, error.message || 'Error al cargar fidelizaciones admin.', 'error');
+  }
+}
+
+function renderFidelizacionReportesAdmin(rows = []) {
+  fidReportAdminDataTable = destroyFidelizacionDataTable(fidReportAdminDataTable);
+  if (fidAdminTableBody) fidAdminTableBody.innerHTML = '';
+  if (fidAdminCards) fidAdminCards.innerHTML = '';
+  (rows || []).forEach((row) => {
+    const vendedoraIdAttr = row.vendedora_id == null ? 'null' : String(row.vendedora_id);
+    if (fidAdminTableBody) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeAttr(row.vendedora || '')}</td>
+        <td>${row.total_gestionados || 0}</td>
+        <td><button type="button" class="fid-report-click" data-action="ver-finalizados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.finalizados || 0}</button></td>
+        <td>${Number(row.tasa_finalizacion || 0).toFixed(1)}%</td>
+        <td>${row.convertidas || 0}</td>
+        <td>${Number(row.tasa_conversion || 0).toFixed(1)}%</td>
+        <td>${formatMoney(row.monto_conversion || 0)}</td>
+        <td>${Number(row.score_prom || 0).toFixed(2)}</td>
+        <td>${Number(row.horas_a_contacto || 0).toFixed(1)}</td>
+      `;
+      fidAdminTableBody.appendChild(tr);
+    }
+    if (fidAdminCards) {
+      const card = document.createElement('article');
+      card.className = 'fidelizacion-card';
+      card.innerHTML = `
+        <div class="fidelizacion-card-header">
+          <p class="fidelizacion-card-title">${escapeAttr(row.vendedora || '')}</p>
+          <span class="fidelizacion-card-score">${row.total_gestionados || 0}</span>
+        </div>
+        <p class="fidelizacion-card-meta">Total gestionados: ${row.total_gestionados || 0}</p>
+        <p class="fidelizacion-card-meta">Finalizados: ${row.finalizados || 0} (${Number(row.tasa_finalizacion || 0).toFixed(1)}%)</p>
+        <p class="fidelizacion-card-meta">Convertidas: ${row.convertidas || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
+        <p class="fidelizacion-card-offer">${formatMoney(row.monto_conversion || 0)}</p>
+      `;
+      fidAdminCards.appendChild(card);
+    }
+  });
+  fidReportAdminDataTable = initFidelizacionDataTable('#fid-admin-table');
+}
+
+function renderFidelizacionDashboardCards(cards = {}) {
+  if (fidCardPendientes) fidCardPendientes.textContent = String(cards.pendientes || 0);
+  if (fidCardGestion) fidCardGestion.textContent = String(cards.en_gestion || 0);
+  if (fidCardContactadas) fidCardContactadas.textContent = String(cards.contactadas || 0);
+  if (fidCardFinalizadas) fidCardFinalizadas.textContent = String(cards.finalizadas || 0);
+  if (fidCardConvertidas) fidCardConvertidas.textContent = String(cards.convertidas || 0);
+  if (fidCardConvertidasFv) fidCardConvertidasFv.textContent = String(cards.convertidas_fuera_ventana || 0);
+  if (fidCardNoConvertidas) fidCardNoConvertidas.textContent = String(cards.no_convertidas || 0);
+}
+
+function renderFidelizacionDashboardScopeSelect(rows = []) {
+  if (!fidDashboardScopeSelect) return;
+  const current = String(fidDashboardScopeSelect.value || 'latest');
+  const options = ['<option value="latest">Ultima corrida</option>', '<option value="all">Todas (Historico)</option>'];
+  (rows || []).forEach((row) => {
+    const id = Number(row.id) || 0;
+    const dateLabel = row.run_date ? formatDateLong(row.run_date) : '-';
+    options.push(`<option value="run:${id}">Corrida #${id} - ${escapeAttr(dateLabel)}</option>`);
+  });
+  fidDashboardScopeSelect.innerHTML = options.join('');
+  const hasCurrent = Array.from(fidDashboardScopeSelect.options).some((opt) => opt.value === current);
+  fidDashboardScopeSelect.value = hasCurrent ? current : 'latest';
+}
+
+function renderFidelizacionRuns(rows = []) {
+  fidRunsDataTable = destroyFidelizacionDataTable(fidRunsDataTable);
+  if (fidRunsTableBody) fidRunsTableBody.innerHTML = '';
+  if (fidRunsCards) fidRunsCards.innerHTML = '';
+  (rows || []).forEach((row) => {
+    if (fidRunsTableBody) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${Number(row.id) || 0}</td>
+        <td>${escapeAttr(formatDateLong(row.run_date || ''))}</td>
+        <td>${escapeAttr(formatDateTime(row.created_at || ''))}</td>
+        <td>${Number(row.total) || 0}</td>
+        <td>${Number(row.finalizadas) || 0}</td>
+        <td>${Number(row.convertidas) || 0}</td>
+        <td>${formatMoney(row.monto_convertido || 0)}</td>
+        <td>${Number(row.tasa_conversion || 0).toFixed(1)}%</td>
+        <td><button type="button" data-action="ver-run" data-run-id="${Number(row.id) || 0}">Ver</button></td>
+      `;
+      fidRunsTableBody.appendChild(tr);
+    }
+    if (fidRunsCards) {
+      const card = document.createElement('article');
+      card.className = 'fidelizacion-card';
+      card.innerHTML = `
+        <div class="fidelizacion-card-header">
+          <p class="fidelizacion-card-title">Corrida #${Number(row.id) || 0}</p>
+          <span class="fidelizacion-card-score">${Number(row.total) || 0}</span>
+        </div>
+        <p class="fidelizacion-card-meta">Fecha: ${escapeAttr(formatDateLong(row.run_date || ''))}</p>
+        <p class="fidelizacion-card-meta">Finalizadas: ${Number(row.finalizadas) || 0}</p>
+        <p class="fidelizacion-card-meta">Convertidas: ${Number(row.convertidas) || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
+        <p class="fidelizacion-card-offer">${formatMoney(row.monto_convertido || 0)}</p>
+        <div class="actions inline"><button type="button" data-action="ver-run" data-run-id="${Number(row.id) || 0}">Ver</button></div>
+      `;
+      fidRunsCards.appendChild(card);
+    }
+  });
+  fidRunsDataTable = initFidelizacionDataTable('#fid-runs-table');
+}
+
+async function loadFidelizacionRuns({ silent = false } = {}) {
+  await ensureFidelizacionContext();
+  if (!silent) setStatusMessage(fidRunsStatus, 'Cargando...');
+  try {
+    const res = await fetchJSON('/api/fidelizacion/runs');
+    fidelizacionRunsRows = Array.isArray(res?.data) ? res.data : [];
+    fidelizacionRunsLoaded = true;
+    renderFidelizacionDashboardScopeSelect(fidelizacionRunsRows);
+    renderFidelizacionRuns(fidelizacionRunsRows);
+    if (!silent) setStatusMessage(fidRunsStatus, '');
+  } catch (error) {
+    if (!silent) setStatusMessage(fidRunsStatus, error.message || 'Error al cargar corridas.', 'error');
+  }
+}
+
+function closeFidelizacionFinalizadosModal() {
+  if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.remove('open');
+  if (fidFinalizadosStatus) fidFinalizadosStatus.textContent = '';
+}
+
+async function loadFidelizacionFinalizadosDetalle(vendedoraId, vendedoraLabel) {
+  fidFinalizadosDataTable = destroyFidelizacionDataTable(fidFinalizadosDataTable);
+  if (fidFinalizadosTableBody) fidFinalizadosTableBody.innerHTML = '';
+  if (fidFinalizadosTitle) fidFinalizadosTitle.textContent = `Finalizados - ${vendedoraLabel || 'Sin asignar'}`;
+  setStatusMessage(fidFinalizadosStatus, 'Cargando...');
+  try {
+    const query = new URLSearchParams();
+    query.set('scope', fidReportScope === 'all' ? 'all' : 'run');
+    if (fidReportScope !== 'all' && fidReportRunId) query.set('run_id', String(fidReportRunId));
+    query.set('vendedora_id', String(vendedoraId ?? 'null'));
+    const res = await fetchJSON(`/api/fidelizacion/reportes/admin/finalizados?${query.toString()}`);
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    rows.forEach((row) => {
+      if (!fidFinalizadosTableBody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${Number(row.id) || 0}</td>
+        <td>${escapeAttr(row.cliente || '')}</td>
+        <td>${escapeAttr(row.resultado || '-')}</td>
+        <td>${escapeAttr(row.closed_reason || '-')}</td>
+        <td>${escapeAttr(formatDateTime(row.closed_at || ''))}</td>
+        <td>${row.pedido_id ? Number(row.pedido_id) : '-'}</td>
+        <td>${row.conversion_amount == null ? '-' : formatMoney(row.conversion_amount || 0)}</td>
+      `;
+      fidFinalizadosTableBody.appendChild(tr);
+    });
+    fidFinalizadosDataTable = initFidelizacionDataTable('#fid-finalizados-table');
+    setStatusMessage(fidFinalizadosStatus, rows.length ? '' : 'Sin resultados para esta vendedora.');
+  } catch (error) {
+    setStatusMessage(fidFinalizadosStatus, error.message || 'Error al cargar detalle de finalizados.', 'error');
+  }
+}
+
+async function loadFidelizacionReportes() {
+  await ensureFidelizacionContext();
+  try {
+    if (fidelizacionContext?.isAdmin) {
+      if (!fidelizacionRunsLoaded) await loadFidelizacionRuns({ silent: true });
+      const selected = String(fidDashboardScopeSelect?.value || 'latest');
+      let scope = 'run';
+      let runId = '';
+      if (selected === 'all') {
+        scope = 'all';
+      } else if (selected.startsWith('run:')) {
+        scope = 'run';
+        runId = String(Number(selected.split(':')[1]) || '');
+      }
+      const query = new URLSearchParams();
+      query.set('scope', scope);
+      if (runId) query.set('run_id', runId);
+      const dashboard = await fetchJSON(`/api/fidelizacion/dashboard?${query.toString()}`);
+      fidReportScope = dashboard?.scope === 'all' ? 'all' : 'run';
+      fidReportRunId = dashboard?.run_id ? Number(dashboard.run_id) : null;
+      renderFidelizacionDashboardCards(dashboard?.cards || {});
+      renderFidelizacionReportesAdmin(dashboard?.performance || []);
+      if (fidDashboardMeta) {
+        if (fidReportScope === 'all') {
+          fidDashboardMeta.textContent = 'Mostrando historico de todas las corridas.';
+        } else {
+          const run = dashboard?.run;
+          const runLabel = run?.id ? `Corrida #${run.id}` : 'Corrida';
+          const runDate = run?.run_date ? formatDateLong(run.run_date) : '-';
+          fidDashboardMeta.textContent = `${runLabel} - ${runDate}`;
+        }
+      }
+    } else {
+      fidReportRunId = null;
+      fidReportScope = 'run';
+      const my = await fetchJSON('/api/fidelizacion/reportes/mios');
+      const resumen = my?.resumen || {};
+      renderFidelizacionDashboardCards({
+        pendientes: resumen.PENDIENTE || 0,
+        en_gestion: resumen.EN_GESTION || 0,
+        contactadas: resumen.CONTACTADA || 0,
+        finalizadas: resumen.CERRADA || 0,
+        convertidas: resumen.CONVERTIDA || 0,
+        convertidas_fuera_ventana: 0,
+        no_convertidas: resumen.NO_CONVERTIDA || 0,
+      });
+      if (fidDashboardMeta) fidDashboardMeta.textContent = my?.mensaje || 'Vista personal.';
+      renderFidelizacionReportesAdmin([]);
+    }
+    setStatusMessage(fidReportesStatus, '');
+  } catch (error) {
+    setStatusMessage(fidReportesStatus, error.message || 'Error al cargar reportes.', 'error');
+  }
+}
+
+function closeFidelizacionDashboardModal() {
+  if (fidDashboardOverlay) fidDashboardOverlay.classList.remove('open');
+}
+
+async function openFidelizacionDashboardModal({ scope = 'run', runId = null } = {}) {
+  if (fidDashboardScopeSelect) {
+    if (scope === 'all') {
+      fidDashboardScopeSelect.value = 'all';
+    } else if (runId) {
+      fidDashboardScopeSelect.value = `run:${Number(runId) || 0}`;
+    } else {
+      fidDashboardScopeSelect.value = 'latest';
+    }
+  }
+  if (fidDashboardTitle) {
+    fidDashboardTitle.textContent = scope === 'all' ? 'Dashboard Performance - Historico' : 'Dashboard Performance';
+  }
+  if (fidDashboardOverlay) fidDashboardOverlay.classList.add('open');
+  await loadFidelizacionReportes();
+}
+
+async function loadFidelizacionPanel({ silent = false } = {}) {
+  if (!silent) setStatusMessage(fidelizacionStatus, 'Cargando...');
+  try {
+    await ensureFidelizacionContext();
+    const res = await fetchJSON('/api/fidelizacion/run/latest');
+    fillFidelizacionConfig(res?.config || FIDELIZACION_DEFAULTS);
+    renderFidelizacionSummary(res?.run, res?.resumen);
+    renderFidelizacionRows(res?.data || []);
+    if (!silent) setStatusMessage(fidelizacionStatus, '');
+  } catch (error) {
+    setStatusMessage(fidelizacionStatus, error.message || 'Error al cargar fidelizacion. Verifica tablas del modulo.', 'error');
+  }
+}
+
+async function saveFidelizacionConfig() {
+  setStatusMessage(fidelizacionStatus, 'Guardando configuracion...');
+  try {
+    const payload = getFidelizacionConfigPayload();
+    const res = await fetchJSON('/api/fidelizacion/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    fillFidelizacionConfig(res?.data || payload);
+    setStatusMessage(fidelizacionStatus, 'Configuracion guardada.', 'ok');
+    fidelizacionPanelLoaded = false;
+    await loadFidelizacionPanel({ silent: true });
+  } catch (error) {
+    setStatusMessage(fidelizacionStatus, error.message || 'Error al guardar configuracion.', 'error');
+  }
+}
+
+async function runFidelizacionManual() {
+  if (!confirm('Se generara una corrida manual de fidelizacion para hoy. Continuar?')) return;
+  setStatusMessage(fidelizacionStatus, 'Generando corrida...');
+  try {
+    const res = await fetchJSON('/api/fidelizacion/run', { method: 'POST' });
+    renderFidelizacionSummary(res?.run, res?.resumen);
+    renderFidelizacionRows(res?.data || []);
+    fidelizacionMisLoaded = false;
+    fidelizacionRunsLoaded = false;
+    setStatusMessage(fidelizacionStatus, `Corrida ${res?.run?.id || ''} generada con ${Number(res?.resumen?.total) || 0} clientes.`, 'ok');
+  } catch (error) {
+    setStatusMessage(fidelizacionStatus, error.message || 'Error al generar corrida.', 'error');
+  }
+}
+
+async function doFidelizacionAction(action, id) {
+  const rec =
+    fidelizacionMisRows.find((row) => Number(row.id) === Number(id)) ||
+    fidelizacionAdminRows.find((row) => Number(row.id) === Number(id));
+  if (!rec) return;
+  let url = `/api/fidelizacion/recomendaciones/${encodeURIComponent(id)}/${action}`;
+  let payload = {};
+  if (action === 'tomar') {
+    const motivo = prompt('Motivo para tomar:');
+    if (!motivo) return;
+    payload = { motivo };
+  } else if (action === 'transferir') {
+    const transferData = await openFidelizacionTransferModal(rec);
+    if (!transferData) return;
+    payload = transferData;
+  } else if (action === 'contactar') {
+    const canal = prompt('Canal (whatsapp/telefono/instagram/email/otro):', 'whatsapp');
+    if (!canal) return;
+    const notas = prompt('Notas de contacto (opcional):', '') || '';
+    payload = {
+      recomendacion_id: Number(id),
+      canal: canal.toLowerCase(),
+      oferta_enviada: rec.oferta_detalle || '',
+      notas,
+    };
+  } else if (action === 'cerrar') {
+    const confirmClose = confirm('Se intentara cerrar la fidelizacion validando pedido en ventana. Continuar?');
+    if (!confirmClose) return;
+  } else if (action === 'reabrir') {
+    payload = {};
+  } else {
+    return;
+  }
+  setStatusMessage(fidMisStatus, 'Guardando accion...');
+  try {
+    if (action === 'cerrar') {
+      try {
+        const closeRes = await postFidelizacionCerrar(id, {});
+        if (closeRes?.mode === 'AUTO_CONVERSION') {
+          alert('Felicitaciones por su venta!!!');
+        } else if (closeRes?.mode === 'AUTO_CONVERSION_OUT_OF_WINDOW') {
+          alert('Hubo venta, pero fuera de la ventana de conversion.');
+        }
+      } catch (closeErr) {
+        if (closeErr?.status === 409 && closeErr?.payload?.requires_manual_close) {
+          const manual = await openFidelizacionCloseModal();
+          if (!manual) {
+            setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
+            return;
+          }
+          await postFidelizacionCerrar(id, manual);
+        } else {
+          throw closeErr;
+        }
+      }
+    } else {
+      await fetchJSON(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    await loadFidelizacionMis();
+    if (fidelizacionAdminLoaded) await loadFidelizacionAdminQueue();
+    await loadFidelizacionReportes();
+    setStatusMessage(fidMisStatus, 'Accion registrada.', 'ok');
+  } catch (error) {
+    let message = error.message || 'No se pudo registrar accion.';
+    if (action === 'contactar') {
+      const raw = String(error?.message || '').toLowerCase();
+      if (raw.includes('recomendacion_id es obligatorio')) {
+        message = 'No se pudo registrar el contacto: falta identificador de fidelizacion.';
+      } else if (raw.includes('recomendacion_id no coincide')) {
+        message =
+          'No se pudo registrar el contacto porque la fidelizacion cambio de contexto. Actualiza la grilla y reintenta.';
+      }
+    }
+    setStatusMessage(fidMisStatus, message, 'error');
+  }
+}
+
+function initFidelizacion() {
+  fillFidelizacionConfig(FIDELIZACION_DEFAULTS);
+  renderFidelizacionSummary(null, null);
+  renderFidelizacionRows([]);
+  renderFidelizacionMisRows([]);
+  renderFidelizacionReportesAdmin([]);
+  renderFidelizacionDashboardCards({});
+  renderFidelizacionRuns([]);
+  if (fidelizacionRefreshBtn) fidelizacionRefreshBtn.addEventListener('click', () => loadFidelizacionPanel());
+  if (fidelizacionRunBtn) fidelizacionRunBtn.addEventListener('click', runFidelizacionManual);
+  if (fidelizacionConfigForm) {
+    fidelizacionConfigForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveFidelizacionConfig();
+    });
+  } else if (fidelizacionConfigSaveBtn) {
+    fidelizacionConfigSaveBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      saveFidelizacionConfig();
+    });
+  }
+  if (fidReportesRefreshBtn) fidReportesRefreshBtn.addEventListener('click', loadFidelizacionReportes);
+  if (fidDashboardScopeSelect) {
+    fidDashboardScopeSelect.addEventListener('change', () => {
+      loadFidelizacionReportes();
+    });
+  }
+  if (fidRunsRefreshBtn) fidRunsRefreshBtn.addEventListener('click', () => loadFidelizacionRuns());
+  if (fidRunsOpenHistoryBtn) {
+    fidRunsOpenHistoryBtn.addEventListener('click', () => {
+      openFidelizacionDashboardModal({ scope: 'all' });
+    });
+  }
+  if (fidTabs) {
+    fidTabs.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-estado]');
+      if (!btn) return;
+      fidelizacionMisEstado = String(btn.dataset.estado || 'PENDIENTE').toUpperCase();
+      loadFidelizacionMis();
+    });
+  }
+  if (fidAdminTabs) {
+    fidAdminTabs.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-estado]');
+      if (!btn) return;
+      fidelizacionAdminEstado = String(btn.dataset.estado || 'TODOS').toUpperCase();
+      loadFidelizacionAdminQueue();
+    });
+  }
+  const onMisActionClick = (event) => {
+    const btn = event.target.closest('button[data-action][data-id]');
+    if (!btn) return;
+    doFidelizacionAction(btn.dataset.action, Number(btn.dataset.id));
+  };
+  const onAdminActionClick = (event) => {
+    const btn = event.target.closest('button[data-action][data-id]');
+    if (!btn) return;
+    doFidelizacionAction(btn.dataset.action, Number(btn.dataset.id));
+  };
+  if (fidMisTableBody) fidMisTableBody.addEventListener('click', onMisActionClick);
+  if (fidMisCards) fidMisCards.addEventListener('click', onMisActionClick);
+  if (fidAdminQueueTableBody) fidAdminQueueTableBody.addEventListener('click', onAdminActionClick);
+  if (fidAdminQueueCards) fidAdminQueueCards.addEventListener('click', onAdminActionClick);
+  const onRunClick = (event) => {
+    const btn = event.target.closest('button[data-action="ver-run"][data-run-id]');
+    if (!btn) return;
+    const runId = Number(btn.dataset.runId) || 0;
+    if (!runId) return;
+    openFidelizacionDashboardModal({ scope: 'run', runId });
+  };
+  if (fidRunsTableBody) fidRunsTableBody.addEventListener('click', onRunClick);
+  if (fidRunsCards) fidRunsCards.addEventListener('click', onRunClick);
+  if (fidAdminTableBody) {
+    fidAdminTableBody.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-action="ver-finalizados"][data-vendedora-id]');
+      if (!btn) return;
+      const vendedoraIdRaw = String(btn.dataset.vendedoraId || 'null').trim();
+      const vendedoraLabel = String(btn.dataset.vendedora || 'Sin asignar').trim() || 'Sin asignar';
+      if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
+      loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+    });
+  }
+  if (fidTransferCloseBtn) fidTransferCloseBtn.addEventListener('click', () => closeFidelizacionTransferModal(null));
+  if (fidTransferCancelBtn) fidTransferCancelBtn.addEventListener('click', () => closeFidelizacionTransferModal(null));
+  if (fidTransferOverlay) {
+    fidTransferOverlay.addEventListener('click', (event) => {
+      if (event.target === fidTransferOverlay) closeFidelizacionTransferModal(null);
+    });
+  }
+  if (fidTransferForm) {
+    fidTransferForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const toVendedoraId = Number(fidTransferVendedoraSelect?.value || 0);
+      const motivo = String(fidTransferMotivoInput?.value || '').trim();
+      if (!toVendedoraId) {
+        setStatusMessage(fidTransferStatus, 'Selecciona una vendedora destino.', 'error');
+        return;
+      }
+      if (!motivo) {
+        setStatusMessage(fidTransferStatus, 'El motivo es obligatorio.', 'error');
+        return;
+      }
+      closeFidelizacionTransferModal({ to_vendedora_id: toVendedoraId, motivo });
+    });
+  }
+  if (fidCloseCloseBtn) fidCloseCloseBtn.addEventListener('click', () => closeFidelizacionCloseModal(null));
+  if (fidCloseCancelBtn) fidCloseCancelBtn.addEventListener('click', () => closeFidelizacionCloseModal(null));
+  if (fidCloseOverlay) {
+    fidCloseOverlay.addEventListener('click', (event) => {
+      if (event.target === fidCloseOverlay) closeFidelizacionCloseModal(null);
+    });
+  }
+  if (fidFinalizadosCloseBtn) fidFinalizadosCloseBtn.addEventListener('click', closeFidelizacionFinalizadosModal);
+  if (fidFinalizadosOverlay) {
+    fidFinalizadosOverlay.addEventListener('click', (event) => {
+      if (event.target === fidFinalizadosOverlay) closeFidelizacionFinalizadosModal();
+    });
+  }
+  if (fidDashboardCloseBtn) fidDashboardCloseBtn.addEventListener('click', closeFidelizacionDashboardModal);
+  if (fidDashboardOverlay) {
+    fidDashboardOverlay.addEventListener('click', (event) => {
+      if (event.target === fidDashboardOverlay) closeFidelizacionDashboardModal();
+    });
+  }
+  if (fidCloseForm) {
+    fidCloseForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const motivoCode = String(fidCloseResultadoSelect?.value || '').trim().toUpperCase();
+      const detalle = String(fidCloseMotivoInput?.value || '').trim();
+      if (!motivoCode) {
+        setStatusMessage(fidCloseStatus, 'Selecciona un motivo.', 'error');
+        return;
+      }
+      const closedReason = detalle ? `${motivoCode} | ${detalle}` : motivoCode;
+      closeFidelizacionCloseModal({ closed_reason: closedReason });
+    });
+  }
+}
+
 function switchView(target) {
+  if (target === 'fidelizacion') target = 'fidelizacion-panel';
+  if (target === 'fidelizacion-dashboard') target = 'fidelizacion-runs';
   if (currentView === 'pedidos-nuevo' && target !== 'pedidos-nuevo') {
     resetPedidoEdicion();
     resetPedidoNuevoForm();
@@ -14196,6 +15298,10 @@ function switchView(target) {
       viewClientes,
       viewIa,
       viewSalon,
+      viewFidelizacionPanel,
+      viewFidelizacionMis,
+      viewFidelizacionAdmin,
+      viewFidelizacionRuns,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -14231,6 +15337,10 @@ function switchView(target) {
       viewClientes,
       viewIa,
       viewSalon,
+      viewFidelizacionPanel,
+      viewFidelizacionMis,
+      viewFidelizacionAdmin,
+      viewFidelizacionRuns,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -14261,7 +15371,37 @@ function switchView(target) {
   } else if (target === 'salon') {
     viewSalon.classList.remove('hidden');
     loadSalonResumen();
-    } else if (target === 'pedidos') {
+  } else if (target === 'fidelizacion-panel') {
+    viewFidelizacionPanel.classList.remove('hidden');
+    if (!fidelizacionPanelLoaded) {
+      loadFidelizacionPanel();
+      fidelizacionPanelLoaded = true;
+    } else {
+      loadFidelizacionPanel({ silent: true });
+    }
+  } else if (target === 'fidelizacion-mis') {
+    viewFidelizacionMis.classList.remove('hidden');
+    if (!fidelizacionMisLoaded) {
+      loadFidelizacionMis();
+      fidelizacionMisLoaded = true;
+    }
+  } else if (target === 'fidelizacion-admin') {
+    viewFidelizacionAdmin.classList.remove('hidden');
+    if (!fidelizacionAdminLoaded) {
+      loadFidelizacionAdminQueue();
+      fidelizacionAdminLoaded = true;
+    } else {
+      loadFidelizacionAdminQueue();
+    }
+  } else if (target === 'fidelizacion-runs') {
+    viewFidelizacionRuns.classList.remove('hidden');
+    if (!fidelizacionRunsLoaded) {
+      loadFidelizacionRuns();
+      fidelizacionRunsLoaded = true;
+    } else {
+      loadFidelizacionRuns({ silent: true });
+    }
+  } else if (target === 'pedidos') {
       viewPedidos.classList.remove('hidden');
       loadPedidosResumen();
     } else if (target === 'pedidos-todos') {
@@ -14340,6 +15480,7 @@ initClientes();
 initPedidosClientes();
 initIaChat();
 initSalonResumen();
+initFidelizacion();
 initPedidosResumen();
 initMercaderia();
 initAbm();

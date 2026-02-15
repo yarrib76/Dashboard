@@ -2380,6 +2380,174 @@ body.theme-light .caja-card-label {
   color: #64748b;
 }
 
+.fidelizacion-layout {
+  display: grid;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.fidelizacion-form-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.fidelizacion-form-actions button {
+  width: 100%;
+}
+
+.fidelizacion-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.fidelizacion-ops,
+.fidelizacion-reportes {
+  margin-top: 14px;
+}
+
+#fid-tabs {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#fid-tabs .tab {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 82%, #0ea5a6 18%);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+#fid-tabs .tab.active {
+  background: #0ea5a6;
+  color: #ffffff;
+  border-color: #0ea5a6;
+}
+
+.fidelizacion-cards {
+  display: none;
+  gap: 12px;
+}
+
+.fidelizacion-card {
+  background: #111827;
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.2);
+  display: grid;
+  gap: 8px;
+}
+
+body.theme-light .fidelizacion-card {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.15);
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+}
+
+.fidelizacion-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.fidelizacion-card-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.fidelizacion-card-score {
+  font-weight: 700;
+}
+
+.fidelizacion-card-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+body.theme-light .fidelizacion-card-meta {
+  color: #64748b;
+}
+
+.fidelizacion-card-offer {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.fidelizacion-card-reason {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #a5b4fc;
+}
+
+body.theme-light .fidelizacion-card-reason {
+  color: #4338ca;
+}
+
+.fid-transfer-modal {
+  max-width: 540px;
+}
+
+#fid-transfer-form {
+  gap: 12px;
+}
+
+#fid-transfer-form label {
+  display: grid;
+  gap: 6px;
+}
+
+#fid-transfer-status {
+  min-height: 20px;
+  margin: 0;
+}
+
+#fid-close-form {
+  gap: 12px;
+}
+
+#fid-close-form label {
+  display: grid;
+  gap: 6px;
+}
+
+#fid-close-status {
+  min-height: 20px;
+  margin: 0;
+}
+
+.fid-finalizados-modal {
+  max-width: 1100px;
+}
+
+.fid-dashboard-modal {
+  max-width: 1200px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px 18px;
+}
+
+.fid-report-click {
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+#fid-mis-table tbody tr.fid-row-expired td {
+  background: rgba(244, 63, 94, 0.12);
+}
+
+body.theme-light #fid-mis-table tbody tr.fid-row-expired td {
+  background: rgba(244, 63, 94, 0.18);
+}
+
 .control-ordenes-notas-body {
   display: grid;
   gap: 16px;
@@ -3965,6 +4133,19 @@ body.theme-light select:focus {
 
 .is-mobile .caja-cards {
   display: grid;
+}
+
+.is-mobile #fidelizacion-table {
+  display: none;
+}
+
+.is-mobile .fidelizacion-cards {
+  display: grid;
+}
+
+.is-mobile #fid-mis-table,
+.is-mobile #fid-admin-table {
+  display: none;
 }
 
 
