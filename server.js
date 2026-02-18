@@ -3230,41 +3230,102 @@ app.get('/api/fidelizacion/vendedoras', async (req, res) => {
   }
 });
 
+async function getFidelizacionResultadoCatalogColumns(conn) {
+  const [cols] = await conn.query(
+    `SELECT LOWER(COLUMN_NAME) AS col
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'fidelizacion_resultado_catalogo'`
+  );
+  const colSet = new Set((cols || []).map((row) => String(row.col || '').toLowerCase()));
+  const pick = (candidates = []) => candidates.find((c) => colSet.has(c)) || '';
+  const codigoCol = pick(['codigo', 'resultado', 'code', 'id']);
+  const nombreCol = pick(['nombre', 'descripcion', 'detalle', 'label', 'resultado', 'codigo', 'id']);
+  const activoCol = pick(['activo', 'is_active', 'habilitado']);
+  const ordenCol = pick(['orden', 'sort_order', 'id', 'codigo']);
+  return { codigoCol, nombreCol, activoCol, ordenCol };
+}
+
+async function listFidelizacionResultadosCatalogo(conn) {
+  const { codigoCol, nombreCol, activoCol, ordenCol } = await getFidelizacionResultadoCatalogColumns(conn);
+  if (!codigoCol || !nombreCol) {
+    throw new Error('Catalogo de resultados sin columnas compatibles');
+  }
+  const whereSql = activoCol ? `WHERE ${activoCol} = 1` : '';
+  const orderSql = ordenCol ? `ORDER BY ${ordenCol} ASC, ${nombreCol} ASC` : `ORDER BY ${nombreCol} ASC`;
+  const [rows] = await conn.query(
+    `SELECT ${codigoCol} AS codigo, ${nombreCol} AS nombre
+     FROM fidelizacion_resultado_catalogo
+     ${whereSql}
+     ${orderSql}`
+  );
+  return (rows || []).map((row) => ({
+    codigo: String(row.codigo || '').trim(),
+    nombre: String(row.nombre || '').trim(),
+  }));
+}
+
+async function getFidelizacionResultadoCodes(conn) {
+  const catalogo = await listFidelizacionResultadosCatalogo(conn);
+  const byUpper = new Map(catalogo.map((row) => [String(row.codigo || '').trim().toUpperCase(), row.codigo]));
+  const convertida = byUpper.get('CONVERTIDA') || '';
+  const convertidaFueraVentana = byUpper.get('CONVERTIDA_FUERA_VENTANA') || '';
+  const noConvertida = byUpper.get('NO_CONVERTIDA') || '';
+  if (!convertida || !convertidaFueraVentana || !noConvertida) {
+    throw new Error('Catalogo de resultados incompleto: requiere CONVERTIDA, CONVERTIDA_FUERA_VENTANA y NO_CONVERTIDA');
+  }
+  return { convertida, convertidaFueraVentana, noConvertida };
+}
+
+async function listFidelizacionConversionReasonsCatalogo(conn) {
+  const [cols] = await conn.query(
+    `SELECT LOWER(COLUMN_NAME) AS col
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'fidelizacion_conversion_reason_catalogo'`
+  );
+  const colSet = new Set((cols || []).map((row) => String(row.col || '').toLowerCase()));
+  const pick = (candidates = []) => candidates.find((c) => colSet.has(c)) || '';
+  const codigoCol = pick(['codigo', 'code', 'id', 'motivo_code']);
+  const nombreCol = pick(['nombre', 'descripcion', 'detalle', 'label', 'motivo', 'codigo']);
+  const activoCol = pick(['activo', 'is_active', 'habilitado']);
+  const ordenCol = pick(['orden', 'sort_order', 'id', 'codigo']);
+  if (!codigoCol || !nombreCol) {
+    throw new Error('Catalogo de motivos de conversion sin columnas compatibles');
+  }
+  const whereSql = activoCol ? `WHERE ${activoCol} = 1` : '';
+  const orderSql = ordenCol ? `ORDER BY ${ordenCol} ASC, ${nombreCol} ASC` : `ORDER BY ${nombreCol} ASC`;
+  const [rows] = await conn.query(
+    `SELECT ${codigoCol} AS codigo, ${nombreCol} AS nombre
+     FROM fidelizacion_conversion_reason_catalogo
+     ${whereSql}
+     ${orderSql}`
+  );
+  return (rows || []).map((row) => ({
+    codigo: String(row.codigo || '').trim(),
+    nombre: String(row.nombre || '').trim(),
+  }));
+}
+
 app.get('/api/fidelizacion/resultados/catalogo', async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
-    const [cols] = await pool.query(
-      `SELECT LOWER(COLUMN_NAME) AS col
-       FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE()
-         AND TABLE_NAME = 'fidelizacion_resultado_catalogo'`
-    );
-    const colSet = new Set((cols || []).map((row) => String(row.col || '').toLowerCase()));
-    const pick = (candidates = []) => candidates.find((c) => colSet.has(c)) || '';
-    const codigoCol = pick(['codigo', 'resultado', 'code', 'id']);
-    const nombreCol = pick(['nombre', 'descripcion', 'detalle', 'label', 'resultado', 'codigo', 'id']);
-    const activoCol = pick(['activo', 'is_active', 'habilitado']);
-    const ordenCol = pick(['orden', 'sort_order', 'id', 'codigo']);
-    if (!codigoCol || !nombreCol) {
-      return res.status(500).json({ message: 'Catalogo de resultados sin columnas compatibles' });
-    }
-    const whereSql = activoCol ? `WHERE ${activoCol} = 1` : '';
-    const orderSql = ordenCol ? `ORDER BY ${ordenCol} ASC, ${nombreCol} ASC` : `ORDER BY ${nombreCol} ASC`;
-    const [rows] = await pool.query(
-      `SELECT ${codigoCol} AS codigo, ${nombreCol} AS nombre
-       FROM fidelizacion_resultado_catalogo
-       ${whereSql}
-       ${orderSql}`
-    );
-    res.json({
-      data: (rows || []).map((row) => ({
-        codigo: String(row.codigo || '').trim(),
-        nombre: String(row.nombre || '').trim(),
-      })),
-    });
+    const data = await listFidelizacionResultadosCatalogo(pool);
+    res.json({ data });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar catalogo de resultados', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/conversion-reasons/catalogo', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const data = await listFidelizacionConversionReasonsCatalogo(pool);
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogo de motivos de conversion', error: error.message });
   }
 });
 
@@ -3435,6 +3496,11 @@ app.post('/api/fidelizacion/run', async (req, res) => {
          f.id_clientes AS cliente_id,
          DATE(MAX(f.Fecha)) AS last_purchase_date,
          DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) AS recency_days,
+         DATE(MAX(ult_fid.last_fidelizacion_at)) AS last_fidelizacion_date,
+         CASE
+           WHEN MAX(ult_fid.last_fidelizacion_at) IS NULL THEN 99999
+           ELSE DATEDIFF(CURDATE(), DATE(MAX(ult_fid.last_fidelizacion_at)))
+         END AS recency_fidelizacion_days,
          SUM(
            CASE
              WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) THEN 1
@@ -3457,11 +3523,17 @@ app.post('/api/fidelizacion/run', async (req, res) => {
            END
          ) AS month_hits_12m
        FROM facturah f
+       LEFT JOIN (
+         SELECT cliente_id, MAX(created_at) AS last_fidelizacion_at
+         FROM fidelizacion_recomendacion
+         GROUP BY cliente_id
+       ) ult_fid ON ult_fid.cliente_id = f.id_clientes
        WHERE f.id_clientes IS NOT NULL
          AND f.id_clientes <> 1
        GROUP BY f.id_clientes
-       HAVING DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) >= ?`,
-      [config.cooldown_days]
+       HAVING DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) >= ?
+          AND (MAX(ult_fid.last_fidelizacion_at) IS NULL OR DATEDIFF(CURDATE(), DATE(MAX(ult_fid.last_fidelizacion_at))) >= ?)`,
+      [config.cooldown_days, config.cooldown_days]
     );
 
     const maxFrequency = Math.max(
@@ -3703,11 +3775,10 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
     const latestRun = await getFidelizacionLatestRun(pool);
-    if (!latestRun) return res.json({ run: null, counts: {}, counts_mias: {}, counts_todos: {}, data: [] });
     const estado = String(req.query.estado || '').trim().toUpperCase();
     const scope = String(req.query.scope || 'MIAS').trim().toUpperCase();
-    const commonFilters = ['r.run_id = ?'];
-    const commonParams = [latestRun.id];
+    const commonFilters = [];
+    const commonParams = [];
     commonFilters.push(
       `(r.vendedora_id IS NULL OR EXISTS (
          SELECT 1
@@ -3745,6 +3816,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       `SELECT
          r.id,
          r.run_id,
+         fr.run_date,
          r.cliente_id,
          CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
          COALESCE(c.telefono, '') AS telefono,
@@ -3784,6 +3856,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
            ELSE 0
          END AS is_expired
        FROM fidelizacion_recomendacion r
+       LEFT JOIN fidelizacion_run fr ON fr.id = r.run_id
        LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
        ${where}
@@ -3840,7 +3913,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       return acc;
     }, {});
     res.json({
-      run: latestRun,
+      run: latestRun || null,
       context,
       counts: countsMias,
       counts_mias: countsMias,
@@ -4096,6 +4169,7 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
     const recId = Number(req.params.id);
     if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
     const actorName = context.userName || req.user?.name || req.user?.email || '';
+    const resultadoCodes = await getFidelizacionResultadoCodes(conn);
     await conn.beginTransaction();
     const [[current]] = await conn.query(
       `SELECT id, cliente_id, estado, vendedora_id, created_at, conversion_deadline_at
@@ -4136,12 +4210,34 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
     const pedidoFecha = pedido?.fecha ? new Date(pedido.fecha) : null;
     const withinWindow =
       Boolean(pedidoFecha) && Boolean(conversionDeadline) && pedidoFecha.getTime() <= conversionDeadline.getTime();
+    const conversionReasonCode = String(req.body?.conversion_reason_code || '').trim();
+    const conversionReasonNoteRaw = String(req.body?.conversion_reason_note || '').trim();
+    const conversionReasonNote = conversionReasonNoteRaw ? conversionReasonNoteRaw.slice(0, 255) : null;
+    const conversionReasonCatalog = pedido ? await listFidelizacionConversionReasonsCatalogo(conn) : [];
+    const conversionReasonCodeSet = new Set(
+      conversionReasonCatalog.map((row) => String(row.codigo || '').trim().toUpperCase()).filter(Boolean)
+    );
 
     if (pedido && withinWindow) {
+      if (!conversionReasonCode) {
+        await conn.rollback();
+        return res.status(409).json({
+          requires_conversion_reason: true,
+          mode: 'AUTO_CONVERSION',
+          message: 'Debe indicar motivo de conversion para cerrar una convertida.',
+          pedido: { id: Number(pedido.id), fecha: pedido.fecha, total: pedido.total == null ? null : Number(pedido.total) },
+        });
+      }
+      if (!conversionReasonCodeSet.has(conversionReasonCode.toUpperCase())) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'Motivo de conversion invalido' });
+      }
       await conn.query(
         `UPDATE fidelizacion_recomendacion
          SET estado = 'CERRADA',
-             resultado = 'CONVERTIDA',
+             resultado = ?,
+             conversion_reason_code = ?,
+             conversion_reason_note = ?,
              pedido_id = ?,
              converted_at = ?,
              conversion_amount = ?,
@@ -4150,7 +4246,16 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
              estado_updated_at = NOW(),
              estado_updated_by = ?
          WHERE id = ?`,
-        [Number(pedido.id), pedido.fecha, pedido.total == null ? null : Number(pedido.total), actorName, recId]
+        [
+          resultadoCodes.convertida,
+          conversionReasonCode,
+          conversionReasonNote,
+          Number(pedido.id),
+          pedido.fecha,
+          pedido.total == null ? null : Number(pedido.total),
+          actorName,
+          recId,
+        ]
       );
       await conn.commit();
       return res.json({
@@ -4162,10 +4267,25 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
     }
 
     if (pedido && !withinWindow) {
+      if (!conversionReasonCode) {
+        await conn.rollback();
+        return res.status(409).json({
+          requires_conversion_reason: true,
+          mode: 'AUTO_CONVERSION_OUT_OF_WINDOW',
+          message: 'Debe indicar motivo de conversion para cerrar una convertida fuera de ventana.',
+          pedido: { id: Number(pedido.id), fecha: pedido.fecha, total: pedido.total == null ? null : Number(pedido.total) },
+        });
+      }
+      if (!conversionReasonCodeSet.has(conversionReasonCode.toUpperCase())) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'Motivo de conversion invalido' });
+      }
       await conn.query(
         `UPDATE fidelizacion_recomendacion
          SET estado = 'CERRADA',
-             resultado = 'CONVERTIDA_FUERA_VENTANA',
+             resultado = ?,
+             conversion_reason_code = ?,
+             conversion_reason_note = ?,
              pedido_id = ?,
              converted_at = ?,
              conversion_amount = ?,
@@ -4174,7 +4294,16 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
              estado_updated_at = NOW(),
              estado_updated_by = ?
          WHERE id = ?`,
-        [Number(pedido.id), pedido.fecha, pedido.total == null ? null : Number(pedido.total), actorName, recId]
+        [
+          resultadoCodes.convertidaFueraVentana,
+          conversionReasonCode,
+          conversionReasonNote,
+          Number(pedido.id),
+          pedido.fecha,
+          pedido.total == null ? null : Number(pedido.total),
+          actorName,
+          recId,
+        ]
       );
       await conn.commit();
       return res.json({
@@ -4193,11 +4322,17 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
         message: 'Debe indicar motivo para cerrar sin pedido.',
       });
     }
+    if (conversionReasonCode) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'El motivo de conversion solo aplica a resultados convertidos' });
+    }
 
     await conn.query(
       `UPDATE fidelizacion_recomendacion
        SET estado = 'CERRADA',
-           resultado = 'NO_CONVERTIDA',
+           resultado = ?,
+           conversion_reason_code = NULL,
+           conversion_reason_note = NULL,
            pedido_id = NULL,
            converted_at = NULL,
            conversion_amount = NULL,
@@ -4206,7 +4341,7 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
            estado_updated_at = NOW(),
            estado_updated_by = ?
        WHERE id = ?`,
-      [motivo, actorName, recId]
+      [resultadoCodes.noConvertida, motivo, actorName, recId]
     );
     await conn.commit();
     return res.json({ ok: true, mode: 'MANUAL_NO_ORDER', message: 'Fidelizacion cerrada manualmente sin pedido.' });
@@ -4254,6 +4389,8 @@ app.post('/api/fidelizacion/recomendaciones/:id/reabrir', async (req, res) => {
       `UPDATE fidelizacion_recomendacion
        SET estado = 'PENDIENTE',
            resultado = NULL,
+           conversion_reason_code = NULL,
+           conversion_reason_note = NULL,
            pedido_id = NULL,
            converted_at = NULL,
            conversion_amount = NULL,
@@ -4325,6 +4462,7 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
     if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver corridas' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
     const [rows] = await pool.query(
       `SELECT
          fr.id,
@@ -4333,24 +4471,32 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
          fr.config_id,
          COUNT(r.id) AS total,
          SUM(r.estado='CERRADA') AS finalizadas,
-         SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
+         SUM(r.resultado IN (?,?)) AS convertidas,
          COALESCE(
            SUM(
              CASE
-               WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+               WHEN r.resultado IN (?,?)
                THEN r.conversion_amount
                ELSE 0
              END
            ), 0
          ) AS monto_convertido,
          ROUND(
-           100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(r.id),0),
+           100 * SUM(r.resultado IN (?,?)) / NULLIF(COUNT(r.id),0),
            1
          ) AS tasa_conversion
        FROM fidelizacion_run fr
        LEFT JOIN fidelizacion_recomendacion r ON r.run_id = fr.id
        GROUP BY fr.id, fr.run_date, fr.created_at, fr.config_id
-       ORDER BY fr.run_date DESC, fr.id DESC`
+       ORDER BY fr.run_date DESC, fr.id DESC`,
+      [
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+      ]
     );
     res.json({ data: rows || [] });
   } catch (error) {
@@ -4363,6 +4509,7 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
     if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver dashboard global' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
 
     const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
     let effectiveRunId = runId;
@@ -4381,21 +4528,27 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
              SUM(r.estado='EN_GESTION')  AS en_gestion,
              SUM(r.estado='CONTACTADA')  AS contactadas,
              SUM(r.estado='CERRADA')     AS finalizadas,
-             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
-             SUM(r.resultado='CONVERTIDA_FUERA_VENTANA') AS convertidas_fuera_ventana,
-             SUM(r.resultado='NO_CONVERTIDA') AS no_convertidas
+             SUM(r.resultado IN (?,?)) AS convertidas,
+             SUM(r.resultado=?) AS convertidas_fuera_ventana,
+             SUM(r.resultado=?) AS no_convertidas
            FROM fidelizacion_recomendacion r`
         : `SELECT
              SUM(r.estado='PENDIENTE')   AS pendientes,
              SUM(r.estado='EN_GESTION')  AS en_gestion,
              SUM(r.estado='CONTACTADA')  AS contactadas,
              SUM(r.estado='CERRADA')     AS finalizadas,
-             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
-             SUM(r.resultado='CONVERTIDA_FUERA_VENTANA') AS convertidas_fuera_ventana,
-             SUM(r.resultado='NO_CONVERTIDA') AS no_convertidas
+             SUM(r.resultado IN (?,?)) AS convertidas,
+             SUM(r.resultado=?) AS convertidas_fuera_ventana,
+             SUM(r.resultado=?) AS no_convertidas
            FROM fidelizacion_recomendacion r
            WHERE r.run_id = ?`;
-    const [cardRows] = await pool.query(cardsSql, scope === 'all' ? [] : [effectiveRunId]);
+    const cardParamsBase = [
+      resultadoCodes.convertida,
+      resultadoCodes.convertidaFueraVentana,
+      resultadoCodes.convertidaFueraVentana,
+      resultadoCodes.noConvertida,
+    ];
+    const [cardRows] = await pool.query(cardsSql, scope === 'all' ? cardParamsBase : [...cardParamsBase, effectiveRunId]);
     const cardsRow = cardRows?.[0] || {};
     const cards = {
       pendientes: Number(cardsRow.pendientes) || 0,
@@ -4415,12 +4568,12 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
              COUNT(*) AS total_gestionados,
              SUM(r.estado='CERRADA') AS finalizados,
              ROUND(100 * SUM(r.estado='CERRADA') / NULLIF(COUNT(*),0), 1) AS tasa_finalizacion,
-             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
-             ROUND(100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
+             SUM(r.resultado IN (?,?)) AS convertidas,
+             ROUND(100 * SUM(r.resultado IN (?,?)) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
              COALESCE(
                SUM(
                  CASE
-                   WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+                   WHEN r.resultado IN (?,?)
                    THEN r.conversion_amount
                    ELSE 0
                  END
@@ -4438,12 +4591,12 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
              COUNT(*) AS total_gestionados,
              SUM(r.estado='CERRADA') AS finalizados,
              ROUND(100 * SUM(r.estado='CERRADA') / NULLIF(COUNT(*),0), 1) AS tasa_finalizacion,
-             SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) AS convertidas,
-             ROUND(100 * SUM(r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
+             SUM(r.resultado IN (?,?)) AS convertidas,
+             ROUND(100 * SUM(r.resultado IN (?,?)) / NULLIF(COUNT(*),0), 1) AS tasa_conversion,
              COALESCE(
                SUM(
                  CASE
-                   WHEN r.resultado IN ('CONVERTIDA','CONVERTIDA_FUERA_VENTANA')
+                   WHEN r.resultado IN (?,?)
                    THEN r.conversion_amount
                    ELSE 0
                  END
@@ -4456,7 +4609,15 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
            WHERE r.run_id = ?
            GROUP BY r.vendedora_id, v.Nombre, v.Apellido
            ORDER BY convertidas DESC, tasa_conversion DESC, finalizados DESC`;
-    const [perfRows] = await pool.query(perfSql, scope === 'all' ? [] : [effectiveRunId]);
+    const perfParamsBase = [
+      resultadoCodes.convertida,
+      resultadoCodes.convertidaFueraVentana,
+      resultadoCodes.convertida,
+      resultadoCodes.convertidaFueraVentana,
+      resultadoCodes.convertida,
+      resultadoCodes.convertidaFueraVentana,
+    ];
+    const [perfRows] = await pool.query(perfSql, scope === 'all' ? perfParamsBase : [...perfParamsBase, effectiveRunId]);
     const performance = (perfRows || []).map((row) => ({
       vendedora_id: row.vendedora_id == null ? null : Number(row.vendedora_id),
       vendedora: String(row.vendedora || '').trim() || 'Sin asignar',
@@ -4488,6 +4649,7 @@ app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
     if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver este reporte' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
     const runId = Number(req.query.run_id) || (await getFidelizacionLatestRun(pool))?.id || 0;
     if (!runId) return res.json({ run_id: null, data: [] });
     const [rows] = await pool.query(
@@ -4497,8 +4659,8 @@ app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
          COUNT(*) AS asignados,
          SUM(r.estado = 'CERRADA') AS finalizados,
          SUM(r.contactado_at IS NOT NULL) AS contactados,
-         SUM(r.resultado = 'CONVERTIDA') AS convertidos,
-         ROUND(SUM(CASE WHEN r.resultado = 'CONVERTIDA' THEN COALESCE(r.conversion_amount, 0) ELSE 0 END), 2) AS conversion_amount,
+         SUM(r.resultado IN (?,?)) AS convertidos,
+         ROUND(SUM(CASE WHEN r.resultado IN (?,?) THEN COALESCE(r.conversion_amount, 0) ELSE 0 END), 2) AS conversion_amount,
          ROUND(AVG(r.score), 2) AS score_promedio,
        ROUND(AVG(CASE WHEN r.contactado_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) END), 2) AS horas_a_contacto
        FROM fidelizacion_recomendacion r
@@ -4507,7 +4669,13 @@ app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
          AND (r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))
        GROUP BY r.vendedora_id, v.Nombre
        ORDER BY asignados DESC, vendedora ASC`,
-      [runId]
+      [
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        runId,
+      ]
     );
     const data = (rows || []).map((row) => {
       const asignados = Number(row.asignados) || 0;
@@ -4583,11 +4751,13 @@ app.get('/api/fidelizacion/reportes/admin/finalizados', async (req, res) => {
          r.closed_reason,
          r.closed_at,
          r.pedido_id,
+         cp.nropedido AS nro_pedido,
          r.converted_at,
          r.conversion_amount
        FROM fidelizacion_recomendacion r
        LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
        WHERE ${where.join(' AND ')}
        ORDER BY r.closed_at DESC, r.id DESC
        LIMIT 1000`,
@@ -4605,6 +4775,7 @@ app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
     if (!context) return res.status(401).json({ message: 'Usuario invalido' });
     if (!context.vendedoraId && !context.isAdmin) return res.status(400).json({ message: 'Usuario sin vendedora asociada' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
     const runId = Number(req.query.run_id) || (await getFidelizacionLatestRun(pool))?.id || 0;
     if (!runId) return res.json({ run_id: null, resumen: {}, mensaje: '' });
     const vendedoraId = context.vendedoraId || Number(req.query.vendedora_id) || null;
@@ -4653,7 +4824,16 @@ app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
     });
     (resultadoRows || []).forEach((row) => {
       const key = String(row.resultado || '').toUpperCase();
-      if (key in resumen) resumen[key] = Number(row.total) || 0;
+      const total = Number(row.total) || 0;
+      if (key === String(resultadoCodes.convertida || '').toUpperCase()) {
+        resumen.CONVERTIDA += total;
+      } else if (key === String(resultadoCodes.convertidaFueraVentana || '').toUpperCase()) {
+        resumen.CONVERTIDA += total;
+      } else if (key === String(resultadoCodes.noConvertida || '').toUpperCase()) {
+        resumen.NO_CONVERTIDA += total;
+      } else if (key in resumen) {
+        resumen[key] = total;
+      }
     });
     const mensaje =
       resumen.CONVERTIDA > 0

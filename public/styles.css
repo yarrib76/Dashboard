@@ -2522,6 +2522,20 @@ body.theme-light .fidelizacion-card-reason {
   margin: 0;
 }
 
+#fid-conv-form {
+  gap: 12px;
+}
+
+#fid-conv-form label {
+  display: grid;
+  gap: 6px;
+}
+
+#fid-conv-status {
+  min-height: 20px;
+  margin: 0;
+}
+
 .fid-finalizados-modal {
   max-width: 1100px;
 }
@@ -4135,17 +4149,21 @@ body.theme-light select:focus {
   display: grid;
 }
 
-.is-mobile #fidelizacion-table {
-  display: none;
+.is-mobile #fidelizacion-table,
+.is-mobile #fidelizacion-table_wrapper,
+.is-mobile #fid-mis-table,
+.is-mobile #fid-mis-table_wrapper,
+.is-mobile #fid-admin-table,
+.is-mobile #fid-admin-table_wrapper,
+.is-mobile #fid-admin-queue-table,
+.is-mobile #fid-admin-queue-table_wrapper,
+.is-mobile #fid-runs-table,
+.is-mobile #fid-runs-table_wrapper {
+  display: none !important;
 }
 
 .is-mobile .fidelizacion-cards {
-  display: grid;
-}
-
-.is-mobile #fid-mis-table,
-.is-mobile #fid-admin-table {
-  display: none;
+  display: grid !important;
 }
 
 

@@ -328,6 +328,8 @@ let fidelizacionAdminEstado = 'TODOS';
 let fidelizacionVendedoras = [];
 let fidTransferResolver = null;
 let fidCloseResolver = null;
+let fidConversionResolver = null;
+let fidConversionReasonOptions = [];
 let fidPanelDataTable = null;
 let fidMisDataTable = null;
 let fidAdminQueueDataTable = null;
@@ -533,6 +535,14 @@ const fidCloseResultadoSelect = document.getElementById('fid-close-resultado');
 const fidCloseMotivoInput = document.getElementById('fid-close-motivo');
 const fidCloseCancelBtn = document.getElementById('fid-close-cancel');
 const fidCloseStatus = document.getElementById('fid-close-status');
+const fidConvOverlay = document.getElementById('fid-conv-overlay');
+const fidConvTitle = document.getElementById('fid-conv-title');
+const fidConvCloseBtn = document.getElementById('fid-conv-close');
+const fidConvForm = document.getElementById('fid-conv-form');
+const fidConvCodeSelect = document.getElementById('fid-conv-code');
+const fidConvNoteInput = document.getElementById('fid-conv-note');
+const fidConvCancelBtn = document.getElementById('fid-conv-cancel');
+const fidConvStatus = document.getElementById('fid-conv-status');
 const fidFinalizadosOverlay = document.getElementById('fid-finalizados-overlay');
 const fidFinalizadosCloseBtn = document.getElementById('fid-finalizados-close');
 const fidFinalizadosTitle = document.getElementById('fid-finalizados-title');
@@ -14571,6 +14581,7 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
       tr.className = expiredClass.trim();
       tr.innerHTML = `
         <td>${escapeAttr(row.cliente || '')}<br><small>${escapeAttr(row.telefono || '')}</small></td>
+        <td>${escapeAttr(formatDateLong(row.run_date || ''))}</td>
         <td>${estadoHtml}</td>
         <td>${Number(row.score || 0).toFixed(2)}</td>
         <td>${escapeAttr(row.oferta_detalle || '')}</td>
@@ -14588,6 +14599,7 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
           <span class="fidelizacion-card-score">${Number(row.score || 0).toFixed(2)}</span>
         </div>
         <p class="fidelizacion-card-meta">${estadoHtml} · ${escapeAttr(row.telefono || '-')}</p>
+        <p class="fidelizacion-card-meta">Corrida: ${escapeAttr(formatDateLong(row.run_date || ''))}</p>
         <p class="fidelizacion-card-offer">${escapeAttr(row.oferta_detalle || '')}</p>
         <div class="actions">${actions}</div>
       `;
@@ -14634,6 +14646,18 @@ async function loadFidelizacionVendedoras({ force = false } = {}) {
     }))
     .filter((row) => row.id > 0 && row.nombre);
   return fidelizacionVendedoras;
+}
+
+async function loadFidelizacionConversionReasonCatalog({ force = false } = {}) {
+  if (!force && fidConversionReasonOptions.length) return fidConversionReasonOptions;
+  const res = await fetchJSON('/api/fidelizacion/conversion-reasons/catalogo');
+  fidConversionReasonOptions = (res?.data || [])
+    .map((row) => ({
+      codigo: String(row.codigo || '').trim(),
+      nombre: String(row.nombre || '').trim(),
+    }))
+    .filter((row) => row.codigo && row.nombre);
+  return fidConversionReasonOptions;
 }
 const FID_CLOSE_REASON_OPTIONS = [
   { code: 'NO_RESPONDIO', label: 'No respondio' },
@@ -14700,6 +14724,53 @@ function closeFidelizacionCloseModal(result = null) {
     fidCloseResolver = null;
     resolve(result);
   }
+}
+
+function closeFidelizacionConversionModal(result = null) {
+  if (fidConvOverlay) fidConvOverlay.classList.remove('open');
+  if (fidConvStatus) fidConvStatus.textContent = '';
+  if (fidConvForm) fidConvForm.reset();
+  if (fidConvCodeSelect) fidConvCodeSelect.innerHTML = '';
+  if (fidConversionResolver) {
+    const resolve = fidConversionResolver;
+    fidConversionResolver = null;
+    resolve(result);
+  }
+}
+
+async function openFidelizacionConversionModal(mode = 'AUTO_CONVERSION') {
+  if (fidConversionResolver) closeFidelizacionConversionModal(null);
+  if (!fidConvOverlay || !fidConvCodeSelect || !fidConvNoteInput) return null;
+  const reasons = await loadFidelizacionConversionReasonCatalog();
+  if (!reasons.length) {
+    setStatusMessage(fidMisStatus, 'No hay motivos de conversion disponibles.', 'error');
+    return null;
+  }
+  if (fidConvTitle) {
+    fidConvTitle.textContent =
+      mode === 'AUTO_CONVERSION_OUT_OF_WINDOW' ? 'Motivo de conversion (fuera de ventana)' : 'Motivo de conversion';
+  }
+  fidConvCodeSelect.innerHTML = '';
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = 'Seleccionar motivo';
+  fidConvCodeSelect.appendChild(empty);
+  reasons.forEach((row) => {
+    const opt = document.createElement('option');
+    opt.value = row.codigo;
+    opt.textContent = row.nombre;
+    fidConvCodeSelect.appendChild(opt);
+  });
+  fidConvCodeSelect.value = '';
+  fidConvNoteInput.value = '';
+  if (fidConvStatus) fidConvStatus.textContent = '';
+  fidConvOverlay.classList.add('open');
+  setTimeout(() => {
+    fidConvCodeSelect.focus();
+  }, 0);
+  return new Promise((resolve) => {
+    fidConversionResolver = resolve;
+  });
 }
 
 async function openFidelizacionCloseModal() {
@@ -14928,7 +14999,7 @@ async function loadFidelizacionFinalizadosDetalle(vendedoraId, vendedoraLabel) {
         <td>${escapeAttr(row.resultado || '-')}</td>
         <td>${escapeAttr(row.closed_reason || '-')}</td>
         <td>${escapeAttr(formatDateTime(row.closed_at || ''))}</td>
-        <td>${row.pedido_id ? Number(row.pedido_id) : '-'}</td>
+        <td>${row.nro_pedido ? Number(row.nro_pedido) : row.pedido_id ? Number(row.pedido_id) : '-'}</td>
         <td>${row.conversion_amount == null ? '-' : formatMoney(row.conversion_amount || 0)}</td>
       `;
       fidFinalizadosTableBody.appendChild(tr);
@@ -15107,7 +15178,19 @@ async function doFidelizacionAction(action, id) {
           alert('Hubo venta, pero fuera de la ventana de conversion.');
         }
       } catch (closeErr) {
-        if (closeErr?.status === 409 && closeErr?.payload?.requires_manual_close) {
+        if (closeErr?.status === 409 && closeErr?.payload?.requires_conversion_reason) {
+          const conversionPayload = await openFidelizacionConversionModal(closeErr?.payload?.mode || '');
+          if (!conversionPayload) {
+            setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
+            return;
+          }
+          const closeRes = await postFidelizacionCerrar(id, conversionPayload);
+          if (closeRes?.mode === 'AUTO_CONVERSION') {
+            alert('Felicitaciones por su venta!!!');
+          } else if (closeRes?.mode === 'AUTO_CONVERSION_OUT_OF_WINDOW') {
+            alert('Hubo venta, pero fuera de la ventana de conversion.');
+          }
+        } else if (closeErr?.status === 409 && closeErr?.payload?.requires_manual_close) {
           const manual = await openFidelizacionCloseModal();
           if (!manual) {
             setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
@@ -15254,6 +15337,28 @@ function initFidelizacion() {
   if (fidCloseOverlay) {
     fidCloseOverlay.addEventListener('click', (event) => {
       if (event.target === fidCloseOverlay) closeFidelizacionCloseModal(null);
+    });
+  }
+  if (fidConvCloseBtn) fidConvCloseBtn.addEventListener('click', () => closeFidelizacionConversionModal(null));
+  if (fidConvCancelBtn) fidConvCancelBtn.addEventListener('click', () => closeFidelizacionConversionModal(null));
+  if (fidConvOverlay) {
+    fidConvOverlay.addEventListener('click', (event) => {
+      if (event.target === fidConvOverlay) closeFidelizacionConversionModal(null);
+    });
+  }
+  if (fidConvForm) {
+    fidConvForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const code = String(fidConvCodeSelect?.value || '').trim();
+      const note = String(fidConvNoteInput?.value || '').trim();
+      if (!code) {
+        setStatusMessage(fidConvStatus, 'Selecciona un motivo de conversion.', 'error');
+        return;
+      }
+      closeFidelizacionConversionModal({
+        conversion_reason_code: code,
+        conversion_reason_note: note || '',
+      });
     });
   }
   if (fidFinalizadosCloseBtn) fidFinalizadosCloseBtn.addEventListener('click', closeFidelizacionFinalizadosModal);

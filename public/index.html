@@ -616,7 +616,7 @@
       </div>
       <div class="fidelizacion-layout">
         <form id="fidelizacion-config-form" class="abm-form-grid">
-          <label title="Dias minimos desde la ultima compra para volver a contactar. Ej: 30 = no contactar si compro hace menos de 30 dias.">
+          <label title="Dias minimos desde la ultima compra Y desde la ultima fidelizacion. Solo entra si cumple ambas condiciones. Ej: 30 = no contactar si compro hace menos de 30 dias o si fue fidelizado hace menos de 30 dias.">
             <span>Cooldown (dias)</span>
             <input type="number" id="fid-cooldown-days" min="1" step="1" />
           </label>
@@ -693,7 +693,7 @@
   <section class="view hidden" id="view-fidelizacion-mis">
     <article class="card wide fidelizacion-ops">
       <div class="actions between">
-        <h3>Mis Fidelizaciones (corrida actual)</h3>
+        <h3>Mis Fidelizaciones</h3>
         <div class="actions"></div>
       </div>
       <div class="actions tabs" id="fid-tabs">
@@ -709,6 +709,7 @@
           <thead>
             <tr>
               <th>Cliente</th>
+              <th>Fecha corrida</th>
               <th>Estado</th>
               <th>Score</th>
               <th>Oferta</th>
@@ -845,6 +846,7 @@
           <thead>
             <tr>
               <th>Cliente</th>
+              <th>Fecha corrida</th>
               <th>Estado</th>
               <th>Score</th>
               <th>Oferta</th>
@@ -912,6 +914,32 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="fid-conv-overlay">
+    <div class="modal fid-transfer-modal">
+      <div class="modal-header">
+        <h3 id="fid-conv-title">Motivo de conversion</h3>
+        <button id="fid-conv-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <form id="fid-conv-form" class="abm-form-grid">
+          <label>
+            <span>Motivo de conversion</span>
+            <select id="fid-conv-code" required></select>
+          </label>
+          <label>
+            <span>Nota (opcional)</span>
+            <textarea id="fid-conv-note" rows="3" maxlength="255" placeholder="Detalle breve"></textarea>
+          </label>
+          <div class="actions inline">
+            <button id="fid-conv-confirm" type="submit">Guardar y cerrar</button>
+            <button id="fid-conv-cancel" type="button">Cancelar</button>
+          </div>
+          <p class="status" id="fid-conv-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="fid-finalizados-overlay">
     <div class="modal fid-finalizados-modal">
       <div class="modal-header">
@@ -928,7 +956,7 @@
                 <th>Resultado</th>
                 <th>Razon cierre</th>
                 <th>Fecha cierre</th>
-                <th>Pedido</th>
+                <th>NroPedido</th>
                 <th>$ conversion</th>
               </tr>
             </thead>
