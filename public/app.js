@@ -14566,6 +14566,23 @@ function buildFidActions(row, { adminMode = false } = {}) {
   return buttons.join(' ');
 }
 
+function normalizePhoneForWhatsApp(value) {
+  let digits = String(value || '').replace(/\D+/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.startsWith('54')) return digits;
+  if (digits.length === 10) return `54${digits}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `54${digits.slice(1)}`;
+  return digits;
+}
+
+function getWhatsAppGreetingByHour() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Buen día';
+  if (hour >= 12 && hour < 20) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
 function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = false, tableType = '' } = {}) {
   const safeRows = Array.isArray(rows) ? rows : [];
   if (tableType === 'mis') fidMisDataTable = destroyFidelizacionDataTable(fidMisDataTable);
@@ -14576,11 +14593,16 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
     const actions = buildFidActions(row, { adminMode });
     const estadoHtml = getFidelizacionStatusDisplay(row);
     const expiredClass = row.is_expired ? ' fid-row-expired' : '';
+    const waPhone = normalizePhoneForWhatsApp(row.telefono || '');
+    const clientHtml =
+      tableType === 'mis' && waPhone
+        ? `<button type="button" class="link-btn" data-action="whatsapp" data-phone="${escapeAttr(waPhone)}" data-cliente="${escapeAttr(row.cliente || '')}">${escapeAttr(row.cliente || '')}</button>`
+        : escapeAttr(row.cliente || '');
     if (tableBody) {
       const tr = document.createElement('tr');
       tr.className = expiredClass.trim();
       tr.innerHTML = `
-        <td>${escapeAttr(row.cliente || '')}<br><small>${escapeAttr(row.telefono || '')}</small></td>
+        <td>${clientHtml}<br><small>${escapeAttr(row.telefono || '')}</small></td>
         <td>${escapeAttr(formatDateLong(row.run_date || ''))}</td>
         <td>${estadoHtml}</td>
         <td>${Number(row.score || 0).toFixed(2)}</td>
@@ -14593,9 +14615,13 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
     if (cards) {
       const card = document.createElement('article');
       card.className = 'fidelizacion-card';
+      const cardClientHtml =
+        tableType === 'mis' && waPhone
+          ? `<button type="button" class="link-btn" data-action="whatsapp" data-phone="${escapeAttr(waPhone)}" data-cliente="${escapeAttr(row.cliente || '')}">${escapeAttr(row.cliente || 'Cliente')}</button>`
+          : `<p class="fidelizacion-card-title">${escapeAttr(row.cliente || 'Cliente')}</p>`;
       card.innerHTML = `
         <div class="fidelizacion-card-header">
-          <p class="fidelizacion-card-title">${escapeAttr(row.cliente || 'Cliente')}</p>
+          ${cardClientHtml}
           <span class="fidelizacion-card-score">${Number(row.score || 0).toFixed(2)}</span>
         </div>
         <p class="fidelizacion-card-meta">${estadoHtml} · ${escapeAttr(row.telefono || '-')}</p>
@@ -15277,8 +15303,23 @@ function initFidelizacion() {
     });
   }
   const onMisActionClick = (event) => {
-    const btn = event.target.closest('button[data-action][data-id]');
+    const btn = event.target.closest('button[data-action]');
     if (!btn) return;
+    if (btn.dataset.action === 'whatsapp') {
+      const phone = String(btn.dataset.phone || '').trim();
+      const cliente = String(btn.dataset.cliente || '').trim();
+      if (!phone) {
+        setStatusMessage(fidMisStatus, 'El cliente no tiene telefono valido para WhatsApp.', 'error');
+        return;
+      }
+      const saludo = getWhatsAppGreetingByHour();
+      const nombre = cliente ? String(cliente).trim().split(/\s+/)[0] : '';
+      const text = nombre ? `${saludo} ${nombre}` : saludo;
+      const url = `https://wa.me/${encodeURIComponent(phone)}?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (!btn.dataset.id) return;
     doFidelizacionAction(btn.dataset.action, Number(btn.dataset.id));
   };
   const onAdminActionClick = (event) => {

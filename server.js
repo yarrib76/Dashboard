@@ -7282,6 +7282,14 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
          LIMIT 1`,
         [nroFactura, listoParaEnvio ? 1 : 0, nroPedido]
       );
+      if (Number(listoParaEnvio) === 1) {
+        await connection.query(
+          `UPDATE ${DB_NAME}.mi_correo
+           SET tipo = 0
+           WHERE nropedido = ?`,
+          [nroPedido]
+        );
+      }
     }
     await connection.commit();
     res.json({ ok: true, nroFactura });
