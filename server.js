@@ -429,6 +429,7 @@ const ROLE_PERMISSIONS = [
   'cajas',
   'cajas-cierre',
   'cajas-nueva-factura',
+  'apis',
   'configuracion',
 ];
 
@@ -919,6 +920,61 @@ function clampLimit(sql, maxRows = 50) {
     return cleaned;
   }
   return `${cleaned} LIMIT ${maxRows}`;
+}
+
+function slugifyApiEndpoint(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90);
+}
+
+function normalizeApiEndpointPath(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const pathOnly = raw.split('?')[0].split('#')[0].trim();
+  if (!pathOnly) return '';
+  const prefixed = pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
+  return prefixed.replace(/\/{2,}/g, '/');
+}
+
+async function buildUniqueApiEndpoint(nombreApi, excludeId = 0) {
+  const baseSlug = slugifyApiEndpoint(nombreApi) || `endpoint-${Date.now()}`;
+  const basePath = `/api/public/${baseSlug}`;
+  let endpoint = basePath;
+  let counter = 2;
+  while (counter < 1000) {
+    const params = [endpoint];
+    let sql = `SELECT id FROM api_endpoints WHERE endpoint = ? LIMIT 1`;
+    if (Number(excludeId) > 0) {
+      sql = `SELECT id FROM api_endpoints WHERE endpoint = ? AND id <> ? LIMIT 1`;
+      params.push(Number(excludeId));
+    }
+    const [rows] = await pool.query(sql, params);
+    if (!rows?.length) return endpoint;
+    endpoint = `${basePath}-${counter}`;
+    counter += 1;
+  }
+  throw new Error('No se pudo generar un endpoint único');
+}
+
+function validateApiEndpointSql(sqlRaw) {
+  const sql = String(sqlRaw || '')
+    .trim()
+    .replace(/;+\s*$/, '');
+  if (!sql) throw new Error('La consulta SQL es obligatoria');
+  if (!isSafeSelect(sql)) throw new Error('Solo se permiten consultas SELECT de solo lectura');
+  const upper = sql.toUpperCase();
+  if (!upper.startsWith('SELECT')) throw new Error('Solo se permite SELECT');
+  if (/--|\/\*|\*\/|#/.test(sql)) throw new Error('No se permiten comentarios SQL en el endpoint');
+  if (/\bINTO\s+OUTFILE\b|\bINTO\s+DUMPFILE\b|\bLOAD_FILE\s*\(/i.test(sql)) {
+    throw new Error('La consulta contiene clausulas no permitidas');
+  }
+  return sql;
 }
 
 function hasSubquery(sql) {
@@ -3063,7 +3119,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login' || req.path === '/health') return next();
+  if (req.path === '/login' || req.path === '/health' || req.path.startsWith('/public/')) return next();
   return requireAuth(req, res, next); 
 });
 
@@ -3192,6 +3248,183 @@ app.put('/api/roles/:id/permissions', async (req, res) => {
     res.status(500).json({ message: 'Error al guardar permisos', error: error.message });
   } finally {
     if (conn) conn.release();
+  }
+});
+
+app.get('/api/apis/endpoints', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, nombre_api, endpoint, query_sql, api_key, formato_salida, activo, created_at, updated_at
+       FROM api_endpoints
+       ORDER BY id DESC`
+    );
+    res.json({
+      data: (rows || []).map((row) => ({
+        id: Number(row.id) || 0,
+        nombre_api: String(row.nombre_api || ''),
+        endpoint: String(row.endpoint || ''),
+        query_sql: String(row.query_sql || ''),
+        api_key: String(row.api_key || ''),
+        formato_salida: String(row.formato_salida || 'json').toLowerCase(),
+        activo: !!row.activo,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar endpoints', error: error.message });
+  }
+});
+
+app.post('/api/apis/endpoints', requireAuth, async (req, res) => {
+  try {
+    const nombreApi = String(req.body?.nombre_api || '').trim();
+    const apiKey = String(req.body?.api_key || '').trim();
+    const formatoSalida = String(req.body?.formato_salida || 'json').trim().toLowerCase();
+    const activo = req.body?.activo === undefined ? true : Boolean(req.body?.activo);
+    if (!nombreApi) return res.status(400).json({ message: 'nombre_api es obligatorio' });
+    if (!apiKey) return res.status(400).json({ message: 'api_key es obligatorio' });
+    if (formatoSalida !== 'json') return res.status(400).json({ message: 'Solo se soporta formato json' });
+
+    const querySql = validateApiEndpointSql(req.body?.query_sql);
+    const endpoint = await buildUniqueApiEndpoint(nombreApi);
+
+    const [result] = await pool.query(
+      `INSERT INTO api_endpoints (nombre_api, endpoint, query_sql, api_key, formato_salida, activo)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [nombreApi, endpoint, querySql, apiKey, formatoSalida, activo ? 1 : 0]
+    );
+
+    res.json({
+      ok: true,
+      data: {
+        id: Number(result.insertId) || 0,
+        nombre_api: nombreApi,
+        endpoint,
+        query_sql: querySql,
+        api_key: apiKey,
+        formato_salida: formatoSalida,
+        activo: !!activo,
+      },
+    });
+  } catch (error) {
+    const status = error?.message?.includes('SELECT') || error?.message?.includes('permit') ? 400 : 500;
+    res.status(status).json({ message: error.message || 'Error al crear endpoint' });
+  }
+});
+
+app.put('/api/apis/endpoints/:id', requireAuth, async (req, res) => {
+  try {
+    const endpointId = Number(req.params.id);
+    if (!Number.isFinite(endpointId) || endpointId <= 0) {
+      return res.status(400).json({ message: 'id inválido' });
+    }
+    const [[existing]] = await pool.query(
+      `SELECT id, endpoint, api_key
+       FROM api_endpoints
+       WHERE id = ?
+       LIMIT 1`,
+      [endpointId]
+    );
+    if (!existing) return res.status(404).json({ message: 'Endpoint no encontrado' });
+
+    const nombreApi = String(req.body?.nombre_api || '').trim();
+    const apiKeyInput = String(req.body?.api_key || '').trim();
+    const formatoSalida = String(req.body?.formato_salida || 'json').trim().toLowerCase();
+    const activo = req.body?.activo === undefined ? true : Boolean(req.body?.activo);
+    if (!nombreApi) return res.status(400).json({ message: 'nombre_api es obligatorio' });
+    if (formatoSalida !== 'json') return res.status(400).json({ message: 'Solo se soporta formato json' });
+
+    const querySql = validateApiEndpointSql(req.body?.query_sql);
+    const apiKey = apiKeyInput || String(existing.api_key || '').trim();
+    if (!apiKey) return res.status(400).json({ message: 'api_key es obligatorio' });
+
+    await pool.query(
+      `UPDATE api_endpoints
+       SET nombre_api = ?, query_sql = ?, api_key = ?, formato_salida = ?, activo = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [nombreApi, querySql, apiKey, formatoSalida, activo ? 1 : 0, endpointId]
+    );
+
+    res.json({
+      ok: true,
+      data: {
+        id: endpointId,
+        nombre_api: nombreApi,
+        endpoint: String(existing.endpoint || ''),
+        query_sql: querySql,
+        api_key: apiKey,
+        formato_salida: formatoSalida,
+        activo: !!activo,
+      },
+    });
+  } catch (error) {
+    const status = error?.message?.includes('SELECT') || error?.message?.includes('permit') ? 400 : 500;
+    res.status(status).json({ message: error.message || 'Error al actualizar endpoint' });
+  }
+});
+
+app.patch('/api/apis/endpoints/:id/activo', requireAuth, async (req, res) => {
+  try {
+    const endpointId = Number(req.params.id);
+    if (!Number.isFinite(endpointId) || endpointId <= 0) {
+      return res.status(400).json({ message: 'id inválido' });
+    }
+    const activo = Boolean(req.body?.activo);
+    const [result] = await pool.query(
+      `UPDATE api_endpoints
+       SET activo = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [activo ? 1 : 0, endpointId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Endpoint no encontrado' });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar estado', error: error.message });
+  }
+});
+
+app.get('/api/public/*', async (req, res) => {
+  try {
+    const requestedEndpoint = normalizeApiEndpointPath(req.path);
+    const [[endpointCfg]] = await pool.query(
+      `SELECT id, nombre_api, endpoint, query_sql, api_key, formato_salida, activo
+       FROM api_endpoints
+       WHERE endpoint = ? AND activo = 1
+       LIMIT 1`,
+      [requestedEndpoint]
+    );
+    if (!endpointCfg) {
+      return res.status(404).json({ message: 'Endpoint no encontrado o inactivo' });
+    }
+
+    const incomingApiKey = String(req.get('x-api-key') || req.query.api_key || '').trim();
+    const configuredApiKey = String(endpointCfg.api_key || '').trim();
+    if (!incomingApiKey || incomingApiKey !== configuredApiKey) {
+      return res.status(403).json({ message: 'API key inválida' });
+    }
+
+    const validatedSql = validateApiEndpointSql(endpointCfg.query_sql);
+    const safeSql = clampLimit(validatedSql, 1000);
+    const [rows] = await pool.query(safeSql);
+    const normalizedRows = Array.isArray(rows) ? normalizeRows(rows) : [];
+
+    res.json({
+      ok: true,
+      endpoint: String(endpointCfg.endpoint || ''),
+      nombre_api: String(endpointCfg.nombre_api || ''),
+      formato_salida: String(endpointCfg.formato_salida || 'json').toLowerCase(),
+      rowCount: normalizedRows.length,
+      rows: normalizedRows,
+    });
+  } catch (error) {
+    const isMysqlError = error && typeof error.code === 'string';
+    res.status(isMysqlError ? 400 : 500).json({
+      message: 'Error al ejecutar endpoint',
+      error: error.message || String(error),
+    });
   }
 });
 

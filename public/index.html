@@ -194,6 +194,10 @@
               </button>
             </div>
           </div>
+          <button class="menu-item" data-target="apis">
+            <span class="icon">🔌</span>
+            <span class="label">APIs</span>
+          </button>
           <button class="menu-item" data-target="configuracion">
             <span class="icon">⚙</span>
             <span class="label">Configuracion</span>
@@ -2197,6 +2201,74 @@
             </div>
           </div>
         </div>
+      </article>
+    </section>
+
+    <section class="view hidden" id="view-apis">
+      <article class="card wide">
+        <div class="actions between">
+          <div>
+            <h2>APIs</h2>
+            <p class="status">Crea endpoints dinamicos con SQL de solo lectura.</p>
+          </div>
+          <button type="button" id="apis-refresh">Actualizar</button>
+        </div>
+        <form id="apis-form" class="abm-form-grid">
+          <label class="abm-span-2">
+            <span>Nombre API</span>
+            <input type="text" id="apis-nombre" maxlength="120" placeholder="Ej: Ventas del mes" required />
+          </label>
+          <label class="abm-span-2">
+            <span>Consulta SQL (solo SELECT)</span>
+            <textarea id="apis-query" rows="6" placeholder="SELECT ... FROM ... LIMIT 100" required></textarea>
+          </label>
+          <label>
+            <span>API Key</span>
+            <input type="text" id="apis-key" maxlength="255" placeholder="Clave para consumir el endpoint" required />
+          </label>
+          <label>
+            <span>Formato</span>
+            <select id="apis-formato">
+              <option value="json">json</option>
+            </select>
+          </label>
+          <label>
+            <span>Estado</span>
+            <select id="apis-activo">
+              <option value="1">Activo</option>
+              <option value="0">Inactivo</option>
+            </select>
+          </label>
+          <div class="actions inline abm-footer-actions abm-span-2">
+            <button type="submit" id="apis-save">Guardar Endpoint</button>
+            <button type="button" id="apis-cancel">Cancelar edicion</button>
+          </div>
+        </form>
+        <p class="status" id="apis-status"></p>
+      </article>
+
+      <article class="card wide">
+        <div class="actions between">
+          <div>
+            <h3>Endpoints creados</h3>
+            <p class="status">Cada endpoint se publica bajo la ruta guardada en la tabla.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="apis-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Endpoint</th>
+                <th>Formato</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="apis-list-status"></p>
       </article>
     </section>
 

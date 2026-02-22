@@ -280,6 +280,9 @@ let pedidoTicketItemsCache = [];
 let clientesNewMode = 'create';
 let clientesEditId = null;
 let currentView = '';
+let apisRows = [];
+let apisEditingId = 0;
+let apisLoaded = false;
 let ecommerceImageDataUrl = '';
 let ecommerceImageBaseResult = '';
 let ecommerceWatermarkTarget = 'result';
@@ -371,11 +374,24 @@ const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCajasNuevaFactura = document.getElementById('view-cajas-nueva-factura');
 const viewCargarTicket = document.getElementById('view-cargar-ticket');
+const viewApis = document.getElementById('view-apis');
 const DEBUG_OCR = true;
   const viewConfiguracion = document.getElementById('view-configuracion');
   const viewFacturas = document.getElementById('view-facturas');
   const viewComisiones = document.getElementById('view-comisiones');
   const viewNoPermission = document.getElementById('view-no-permission');
+const apisForm = document.getElementById('apis-form');
+const apisNombreInput = document.getElementById('apis-nombre');
+const apisQueryInput = document.getElementById('apis-query');
+const apisKeyInput = document.getElementById('apis-key');
+const apisFormatoSelect = document.getElementById('apis-formato');
+const apisActivoSelect = document.getElementById('apis-activo');
+const apisSaveBtn = document.getElementById('apis-save');
+const apisCancelBtn = document.getElementById('apis-cancel');
+const apisRefreshBtn = document.getElementById('apis-refresh');
+const apisStatus = document.getElementById('apis-status');
+const apisListStatus = document.getElementById('apis-list-status');
+const apisTableBody = document.querySelector('#apis-table tbody');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -11630,6 +11646,7 @@ function getFirstAllowedView(perms = {}) {
       'cajas',
       'cajas-cierre',
       'cajas-nueva-factura',
+      'apis',
       'facturas',
     'comisiones',
     'configuracion',
@@ -12990,6 +13007,167 @@ function syncMobileLayout() {
   }
 }
 
+function escapeApiHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function resetApisForm() {
+  apisEditingId = 0;
+  if (apisForm) apisForm.reset();
+  if (apisFormatoSelect) apisFormatoSelect.value = 'json';
+  if (apisActivoSelect) apisActivoSelect.value = '1';
+  if (apisSaveBtn) apisSaveBtn.textContent = 'Guardar Endpoint';
+}
+
+function fillApisForm(row) {
+  if (!row) return;
+  apisEditingId = Number(row.id) || 0;
+  if (apisNombreInput) apisNombreInput.value = row.nombre_api || '';
+  if (apisQueryInput) apisQueryInput.value = row.query_sql || '';
+  if (apisKeyInput) apisKeyInput.value = row.api_key || '';
+  if (apisFormatoSelect) apisFormatoSelect.value = row.formato_salida || 'json';
+  if (apisActivoSelect) apisActivoSelect.value = row.activo ? '1' : '0';
+  if (apisSaveBtn) apisSaveBtn.textContent = 'Guardar cambios';
+}
+
+function renderApisTable() {
+  if (!apisTableBody) return;
+  if (!apisRows.length) {
+    apisTableBody.innerHTML = '<tr><td colspan="5">Sin endpoints creados.</td></tr>';
+    return;
+  }
+  apisTableBody.innerHTML = apisRows
+    .map((row) => {
+      const id = Number(row.id) || 0;
+      const estado = row.activo ? 'Activo' : 'Inactivo';
+      const endpoint = escapeApiHtml(row.endpoint || '');
+      return `<tr>
+        <td>${escapeApiHtml(row.nombre_api || '')}</td>
+        <td><code>${endpoint}</code></td>
+        <td>${escapeApiHtml(row.formato_salida || 'json')}</td>
+        <td>${estado}</td>
+        <td class="actions inline no-wrap">
+          <button type="button" data-api-action="editar" data-api-id="${id}">Editar</button>
+          <button type="button" data-api-action="estado" data-api-id="${id}">
+            ${row.activo ? 'Desactivar' : 'Activar'}
+          </button>
+          <button type="button" data-api-action="copiar" data-api-id="${id}">Copiar cURL</button>
+        </td>
+      </tr>`;
+    })
+    .join('');
+}
+
+async function loadApisEndpoints({ silent = false } = {}) {
+  if (!silent) setStatusMessage(apisListStatus, 'Cargando...');
+  try {
+    const res = await fetchJSON('/api/apis/endpoints');
+    apisRows = Array.isArray(res?.data) ? res.data : [];
+    renderApisTable();
+    if (!silent) setStatusMessage(apisListStatus, apisRows.length ? '' : 'Sin endpoints.');
+    apisLoaded = true;
+  } catch (error) {
+    setStatusMessage(apisListStatus, error.message || 'Error al cargar endpoints.', 'error');
+  }
+}
+
+async function saveApisEndpoint() {
+  const payload = {
+    nombre_api: String(apisNombreInput?.value || '').trim(),
+    query_sql: String(apisQueryInput?.value || '').trim(),
+    api_key: String(apisKeyInput?.value || '').trim(),
+    formato_salida: String(apisFormatoSelect?.value || 'json').trim().toLowerCase(),
+    activo: String(apisActivoSelect?.value || '1') === '1',
+  };
+  if (!payload.nombre_api || !payload.query_sql || !payload.api_key) {
+    setStatusMessage(apisStatus, 'Nombre, SQL y API Key son obligatorios.', 'error');
+    return;
+  }
+  setStatusMessage(apisStatus, 'Guardando...');
+  try {
+    const url = apisEditingId ? `/api/apis/endpoints/${encodeURIComponent(apisEditingId)}` : '/api/apis/endpoints';
+    const method = apisEditingId ? 'PUT' : 'POST';
+    const res = await fetchJSON(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const endpointText = res?.data?.endpoint ? ` Endpoint: ${res.data.endpoint}` : '';
+    setStatusMessage(apisStatus, `Guardado correctamente.${endpointText}`, 'ok');
+    resetApisForm();
+    await loadApisEndpoints({ silent: true });
+  } catch (error) {
+    setStatusMessage(apisStatus, error.message || 'Error al guardar endpoint.', 'error');
+  }
+}
+
+async function setApisEndpointActive(id, active) {
+  setStatusMessage(apisListStatus, 'Actualizando...');
+  try {
+    await fetchJSON(`/api/apis/endpoints/${encodeURIComponent(id)}/activo`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activo: !!active }),
+    });
+    await loadApisEndpoints({ silent: true });
+    setStatusMessage(apisListStatus, 'Estado actualizado.', 'ok');
+  } catch (error) {
+    setStatusMessage(apisListStatus, error.message || 'No se pudo actualizar el estado.', 'error');
+  }
+}
+
+function onApisTableClick(event) {
+  const button = event.target.closest('button[data-api-action]');
+  if (!button) return;
+  const id = Number(button.dataset.apiId || 0);
+  if (!id) return;
+  const row = apisRows.find((item) => Number(item.id) === id);
+  if (!row) return;
+  const action = String(button.dataset.apiAction || '');
+  if (action === 'editar') {
+    fillApisForm(row);
+    setStatusMessage(apisStatus, `Editando endpoint: ${row.endpoint || ''}`);
+    return;
+  }
+  if (action === 'estado') {
+    setApisEndpointActive(id, !row.activo);
+    return;
+  }
+  if (action === 'copiar') {
+    const url = `${window.location.origin}${row.endpoint || ''}`;
+    const apiKey = String(row.api_key || '').trim();
+    const curl = `curl -H "x-api-key: ${apiKey}" "${url}"`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(curl)
+        .then(() => setStatusMessage(apisListStatus, 'cURL copiado.', 'ok'))
+        .catch(() => setStatusMessage(apisListStatus, curl));
+    } else {
+      setStatusMessage(apisListStatus, curl);
+    }
+  }
+}
+
+function initApisModule() {
+  if (!viewApis) return;
+  safeOn(apisForm, 'submit', (event) => {
+    event.preventDefault();
+    saveApisEndpoint();
+  });
+  safeOn(apisCancelBtn, 'click', () => {
+    resetApisForm();
+    setStatusMessage(apisStatus, '');
+  });
+  safeOn(apisRefreshBtn, 'click', () => loadApisEndpoints());
+  safeOn(apisTableBody, 'click', onApisTableClick);
+  resetApisForm();
+}
+
 const permissionGroups = [
     {
       title: 'General',
@@ -13040,7 +13218,10 @@ const permissionGroups = [
   },
   {
     title: 'Configuracion',
-    items: [{ key: 'configuracion', label: 'Roles' }],
+    items: [
+      { key: 'apis', label: 'APIs' },
+      { key: 'configuracion', label: 'Roles' },
+    ],
   },
 ];
 
@@ -15457,10 +15638,11 @@ function switchView(target) {
       viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
-        viewCajas,
-        viewCajasCierre,
-        viewCajasNuevaFactura,
-        viewConfiguracion,
+      viewCajas,
+      viewCajasCierre,
+      viewCajasNuevaFactura,
+      viewApis,
+      viewConfiguracion,
       viewFacturas,
       viewComisiones,
     ];
@@ -15499,6 +15681,7 @@ function switchView(target) {
       viewCajas,
       viewCajasCierre,
       viewCajasNuevaFactura,
+      viewApis,
       viewConfiguracion,
     viewFacturas,
     viewComisiones,
@@ -15591,6 +15774,13 @@ function switchView(target) {
     viewPanelControl.classList.remove('hidden');
   } else if (target === 'cargar-ticket') {
     viewCargarTicket.classList.remove('hidden');
+  } else if (target === 'apis') {
+    viewApis.classList.remove('hidden');
+    if (!apisLoaded) {
+      loadApisEndpoints();
+    } else {
+      loadApisEndpoints({ silent: true });
+    }
   } else if (target === 'configuracion') {
     viewConfiguracion.classList.remove('hidden');
   } else if (target === 'facturas') {
@@ -15639,6 +15829,7 @@ initPedidoNuevo();
 initFacturaNueva();
 initFacturas();
 initComisiones();
+initApisModule();
 initRolesModule();
 syncMobileLayout();
 window.addEventListener('resize', syncMobileLayout);
