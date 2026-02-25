@@ -3062,25 +3062,33 @@ async function initFacturaNueva() {
     facturaNuevaSaveBtn.addEventListener('click', async () => {
       if (facturaNuevaSaving) return;
       if (!facturaNuevaAutorizado) {
-        setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
+        const msg = 'IP no autorizada para facturar.';
+        setStatusMessage(facturaNuevaStatus, msg, 'error');
+        window.alert(msg);
         return;
       }
       const clienteId = Number(facturaClienteId?.value) || 1;
       const vendedora = facturaVendedoraSelect?.value || '';
       const tipoPagoId = Number(facturaTipoPagoSelect?.value) || 0;
       if (!vendedora || !tipoPagoId) {
-        setStatusMessage(facturaNuevaStatus, 'Vendedora y tipo de pago son obligatorios.', 'error');
+        const msg = 'Vendedora y tipo de pago son obligatorios.';
+        setStatusMessage(facturaNuevaStatus, msg, 'error');
+        window.alert(msg);
         return;
       }
       if (!facturaNuevaItems.length) {
-        setStatusMessage(facturaNuevaStatus, 'Agrega al menos un articulo.');
+        const msg = 'Agrega al menos un articulo.';
+        setStatusMessage(facturaNuevaStatus, msg);
+        window.alert(msg);
         return;
       }
       const totals = updateFacturaNuevaTotals();
       const esPedido = facturaPedidoCheck?.checked ? 'SI' : 'NO';
       const nroPedidoValue = esPedido === 'SI' ? facturaPedidoInput?.value || facturaPedidoSelect?.value || '' : '';
       if (esPedido === 'SI' && !nroPedidoValue) {
-        setStatusMessage(facturaNuevaStatus, 'Selecciona un pedido.');
+        const msg = 'Selecciona un pedido.';
+        setStatusMessage(facturaNuevaStatus, msg);
+        window.alert(msg);
         return;
       }
       const confirmFactura = window.confirm('¿Confirma factura?');
