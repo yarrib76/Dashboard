@@ -3083,6 +3083,11 @@ async function initFacturaNueva() {
         setStatusMessage(facturaNuevaStatus, 'Selecciona un pedido.');
         return;
       }
+      const confirmFactura = window.confirm('¿Confirma factura?');
+      if (!confirmFactura) {
+        setStatusMessage(facturaNuevaStatus, 'Facturacion cancelada.');
+        return;
+      }
       const payload = {
         cliente_id: clienteId,
         vendedora,
@@ -3112,7 +3117,9 @@ async function initFacturaNueva() {
           },
           body: JSON.stringify(payload),
         });
-        setStatusMessage(facturaNuevaStatus, `Factura ${res?.nroFactura || ''} guardada.`, 'ok');
+        const okMessage = `Factura ${res?.nroFactura || ''} guardada.`;
+        setStatusMessage(facturaNuevaStatus, okMessage, 'ok');
+        window.alert(okMessage);
         facturaNuevaItems = [];
         renderFacturaNuevaItems();
         if (facturaClienteInput) facturaClienteInput.value = '';
@@ -3140,7 +3147,9 @@ async function initFacturaNueva() {
         await loadNextFacturaNumero();
         await loadFacturaPedidos();
       } catch (error) {
-        setStatusMessage(facturaNuevaStatus, error.message || 'Error al guardar factura.', 'error');
+        const errorMessage = error.message || 'Error al guardar factura.';
+        setStatusMessage(facturaNuevaStatus, errorMessage, 'error');
+        window.alert(errorMessage);
       } finally {
         facturaNuevaSaving = false;
         if (facturaNuevaSaveBtn) facturaNuevaSaveBtn.disabled = false;
