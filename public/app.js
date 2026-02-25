@@ -315,6 +315,7 @@ let facturaNuevaClientesTimer = null;
 let pedidoNuevoArticulosTimer = null;
 let facturaNuevaArticulosTimer = null;
 let facturaNuevaAutorizado = true;
+let facturaNuevaSaving = false;
 let facturacionClientesTarget = 'pedido';
 let facturacionArticulosTarget = 'pedido';
 let abmEditContext = null;
@@ -1131,6 +1132,13 @@ function formatMoney(value) {
 function parseIdFromInput(value) {
   const match = String(value || '').trim().match(/^(\d+)\s*-/);
   return match ? match[1] : '';
+}
+
+function generateIdempotencyKey() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  const stamp = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `fact-${stamp}-${rand}`;
 }
 
 function buildDatalistOptions(rows, format) {
@@ -3052,6 +3060,7 @@ async function initFacturaNueva() {
 
   if (facturaNuevaSaveBtn) {
     facturaNuevaSaveBtn.addEventListener('click', async () => {
+      if (facturaNuevaSaving) return;
       if (!facturaNuevaAutorizado) {
         setStatusMessage(facturaNuevaStatus, 'IP no autorizada para facturar.', 'error');
         return;
@@ -3089,11 +3098,18 @@ async function initFacturaNueva() {
         nroPedido: nroPedidoValue,
         listoParaEnvio: esPedido === 'SI' && facturaListoEnvioInput?.checked ? 1 : 0,
       };
+      const idempotencyKey = generateIdempotencyKey();
+      payload.idempotency_key = idempotencyKey;
+      facturaNuevaSaving = true;
+      if (facturaNuevaSaveBtn) facturaNuevaSaveBtn.disabled = true;
       setStatusMessage(facturaNuevaStatus, 'Guardando...');
       try {
         const res = await fetchJSON('/api/facturas', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-idempotency-key': idempotencyKey,
+          },
           body: JSON.stringify(payload),
         });
         setStatusMessage(facturaNuevaStatus, `Factura ${res?.nroFactura || ''} guardada.`, 'ok');
@@ -3125,6 +3141,9 @@ async function initFacturaNueva() {
         await loadFacturaPedidos();
       } catch (error) {
         setStatusMessage(facturaNuevaStatus, error.message || 'Error al guardar factura.', 'error');
+      } finally {
+        facturaNuevaSaving = false;
+        if (facturaNuevaSaveBtn) facturaNuevaSaveBtn.disabled = false;
       }
     });
   }

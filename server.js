@@ -942,6 +942,12 @@ function normalizeApiEndpointPath(value) {
   return prefixed.replace(/\/{2,}/g, '/');
 }
 
+function normalizeIdempotencyKey(value) {
+  const key = String(value || '').trim();
+  if (!key) return '';
+  return key.slice(0, 64);
+}
+
 async function buildUniqueApiEndpoint(nombreApi, excludeId = 0) {
   const baseSlug = slugifyApiEndpoint(nombreApi) || `endpoint-${Date.now()}`;
   const basePath = `/api/public/${baseSlug}`;
@@ -7383,6 +7389,9 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
       nroPedido = null,
       listoParaEnvio = 0,
     } = req.body || {};
+    const idempotencyKey = normalizeIdempotencyKey(
+      req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+    );
     if (!cliente_id || !vendedora || !tipo_pago_id) {
       return res.status(400).json({ message: 'cliente_id, vendedora y tipo_pago_id requeridos' });
     }
@@ -7391,6 +7400,23 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
     }
     connection = await pool.getConnection();
     await connection.beginTransaction();
+    if (idempotencyKey) {
+      const [[existingFactura]] = await connection.query(
+        `SELECT NroFactura
+         FROM ${DB_NAME}.facturah
+         WHERE idempotency_key = ?
+         LIMIT 1`,
+        [idempotencyKey]
+      );
+      if (existingFactura?.NroFactura) {
+        await connection.commit();
+        return res.json({
+          ok: true,
+          nroFactura: Number(existingFactura.NroFactura) || 0,
+          idempotentReplay: true,
+        });
+      }
+    }
     const [[nroRow]] = await connection.query(
       `SELECT NroFactura FROM ${DB_NAME}.nrofactura LIMIT 1 FOR UPDATE`
     );
@@ -7487,8 +7513,8 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
     const nowStamp = formatDateTimeLocal(new Date());
     await connection.query(
       `INSERT INTO ${DB_NAME}.facturah
-       (NroFactura, Total, Porcentaje, Descuento, Ganancia, Fecha, Estado, id_clientes, envio, totalEnvio, id_tipo_pago, vendedora, pagomixto, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (NroFactura, Total, Porcentaje, Descuento, Ganancia, Fecha, Estado, id_clientes, envio, totalEnvio, id_tipo_pago, vendedora, pagomixto, created_at, updated_at, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         nroFactura,
         subtotal,
@@ -7504,6 +7530,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         Number(pagoMixto) || 0,
         nowStamp,
         nowStamp,
+        idempotencyKey || null,
       ]
     );
     await connection.query(`UPDATE ${DB_NAME}.nrofactura SET NroFactura = ?`, [nroFactura + 1]);
@@ -7527,6 +7554,37 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
     await connection.commit();
     res.json({ ok: true, nroFactura });
   } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') {
+      try {
+        if (connection) {
+          try {
+            await connection.rollback();
+          } catch (_rollbackErr) {
+            /* ignore */
+          }
+        }
+        const key = normalizeIdempotencyKey(req.body?.idempotency_key || req.get('x-idempotency-key') || '');
+        if (key) {
+          const [rows] = await pool.query(
+            `SELECT NroFactura
+             FROM ${DB_NAME}.facturah
+             WHERE idempotency_key = ?
+             LIMIT 1`,
+            [key]
+          );
+          const factura = rows?.[0];
+          if (factura?.NroFactura) {
+            return res.json({
+              ok: true,
+              nroFactura: Number(factura.NroFactura) || 0,
+              idempotentReplay: true,
+            });
+          }
+        }
+      } catch (_replayErr) {
+        // fallback a manejo de error general
+      }
+    }
     if (connection) {
       try {
         await connection.rollback();
