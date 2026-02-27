@@ -2562,6 +2562,28 @@ body.theme-light #fid-mis-table tbody tr.fid-row-expired td {
   background: rgba(244, 63, 94, 0.18);
 }
 
+.fidelizacion-reportes #fid-runs-table th:nth-child(8),
+.fidelizacion-reportes #fid-runs-table td:nth-child(8) {
+  width: 90px;
+  white-space: nowrap;
+}
+
+.fidelizacion-reportes #fid-runs-table th:nth-child(9),
+.fidelizacion-reportes #fid-runs-table td:nth-child(9) {
+  width: 110px;
+  white-space: nowrap;
+}
+
+.fidelizacion-reportes #fid-runs-table td:nth-child(9) .actions.inline.no-wrap {
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.fidelizacion-reportes #fid-runs-table td:nth-child(9) .icon-button {
+  padding: 6px 8px;
+  min-width: 32px;
+}
+
 .fid-notas-stale {
   border-color: rgba(59, 130, 246, 0.95);
   box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.8);

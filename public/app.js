@@ -15297,7 +15297,10 @@ function renderFidelizacionRuns(rows = []) {
         <td>${Number(row.convertidas) || 0}</td>
         <td>${formatMoney(row.monto_convertido || 0)}</td>
         <td>${Number(row.tasa_conversion || 0).toFixed(1)}%</td>
-        <td><button type="button" data-action="ver-run" data-run-id="${Number(row.id) || 0}">Ver</button></td>
+        <td class="actions inline no-wrap">
+          <button type="button" class="icon-button" data-action="ver-run" data-run-id="${Number(row.id) || 0}" title="Ver corrida" aria-label="Ver corrida">&#128065;</button>
+          <button type="button" class="icon-button" data-action="eliminar-run" data-run-id="${Number(row.id) || 0}" title="Eliminar corrida" aria-label="Eliminar corrida">&#128465;</button>
+        </td>
       `;
       fidRunsTableBody.appendChild(tr);
     }
@@ -15313,12 +15316,37 @@ function renderFidelizacionRuns(rows = []) {
         <p class="fidelizacion-card-meta">Finalizadas: ${Number(row.finalizadas) || 0}</p>
         <p class="fidelizacion-card-meta">Convertidas: ${Number(row.convertidas) || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
         <p class="fidelizacion-card-offer">${formatMoney(row.monto_convertido || 0)}</p>
-        <div class="actions inline"><button type="button" data-action="ver-run" data-run-id="${Number(row.id) || 0}">Ver</button></div>
+        <div class="actions inline no-wrap">
+          <button type="button" class="icon-button" data-action="ver-run" data-run-id="${Number(row.id) || 0}" title="Ver corrida" aria-label="Ver corrida">&#128065;</button>
+          <button type="button" class="icon-button" data-action="eliminar-run" data-run-id="${Number(row.id) || 0}" title="Eliminar corrida" aria-label="Eliminar corrida">&#128465;</button>
+        </div>
       `;
       fidRunsCards.appendChild(card);
     }
   });
   fidRunsDataTable = initFidelizacionDataTable('#fid-runs-table');
+}
+
+async function deleteFidelizacionRun(runId) {
+  const id = Number(runId) || 0;
+  if (!id) return;
+  const ok = confirm(
+    `Se eliminara la corrida #${id} y todos sus datos relacionados (recomendaciones, notas, contactos y transferencias). Esta accion no se puede deshacer. Continuar?`
+  );
+  if (!ok) return;
+  setStatusMessage(fidRunsStatus, `Eliminando corrida #${id}...`);
+  try {
+    await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    fidelizacionRunsRows = fidelizacionRunsRows.filter((row) => Number(row.id) !== id);
+    renderFidelizacionDashboardScopeSelect(fidelizacionRunsRows);
+    renderFidelizacionRuns(fidelizacionRunsRows);
+    setStatusMessage(fidRunsStatus, `Corrida #${id} eliminada.`, 'ok');
+    if (fidDashboardOverlay?.classList.contains('open')) {
+      await loadFidelizacionReportes();
+    }
+  } catch (error) {
+    setStatusMessage(fidRunsStatus, error.message || 'Error al eliminar corrida.', 'error');
+  }
 }
 
 async function loadFidelizacionRuns({ silent = false } = {}) {
@@ -15688,11 +15716,18 @@ function initFidelizacion() {
   }
   if (fidNotasSave) fidNotasSave.addEventListener('click', saveFidelizacionNota);
   const onRunClick = (event) => {
-    const btn = event.target.closest('button[data-action="ver-run"][data-run-id]');
+    const btn = event.target.closest('button[data-action][data-run-id]');
     if (!btn) return;
     const runId = Number(btn.dataset.runId) || 0;
     if (!runId) return;
-    openFidelizacionDashboardModal({ scope: 'run', runId });
+    const action = String(btn.dataset.action || '').trim();
+    if (action === 'ver-run') {
+      openFidelizacionDashboardModal({ scope: 'run', runId });
+      return;
+    }
+    if (action === 'eliminar-run') {
+      deleteFidelizacionRun(runId);
+    }
   };
   if (fidRunsTableBody) fidRunsTableBody.addEventListener('click', onRunClick);
   if (fidRunsCards) fidRunsCards.addEventListener('click', onRunClick);

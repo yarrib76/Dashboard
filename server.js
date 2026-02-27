@@ -4858,6 +4858,96 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
   }
 });
 
+app.delete('/api/fidelizacion/runs/:id', async (req, res) => {
+  let conn;
+  try {
+    const runId = Number(req.params.id);
+    if (!runId) return res.status(400).json({ message: 'Corrida invalida' });
+
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede eliminar corridas' });
+
+    await conn.beginTransaction();
+
+    const [[runRow]] = await conn.query(
+      `SELECT id
+       FROM fidelizacion_run
+       WHERE id = ?
+       LIMIT 1`,
+      [runId]
+    );
+    if (!runRow) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Corrida no encontrada' });
+    }
+
+    const [delNotasJoin] = await conn.query(
+      `DELETE n
+       FROM fidelizacion_notas n
+       INNER JOIN fidelizacion_recomendacion r ON r.id = n.recomendacion_id
+       WHERE r.run_id = ?`,
+      [runId]
+    );
+
+    const [delContactoJoin] = await conn.query(
+      `DELETE c
+       FROM fidelizacion_contacto c
+       INNER JOIN fidelizacion_recomendacion r ON r.id = c.recomendacion_id
+       WHERE r.run_id = ?`,
+      [runId]
+    );
+
+    const [delTransferJoin] = await conn.query(
+      `DELETE t
+       FROM fidelizacion_transferencia t
+       INNER JOIN fidelizacion_recomendacion r ON r.id = t.recomendacion_id
+       WHERE r.run_id = ?`,
+      [runId]
+    );
+
+    const [delContactoRun] = await conn.query(
+      'DELETE FROM fidelizacion_contacto WHERE run_id = ?',
+      [runId]
+    );
+    const [delTransferRun] = await conn.query(
+      'DELETE FROM fidelizacion_transferencia WHERE run_id = ?',
+      [runId]
+    );
+
+    const [delRecs] = await conn.query(
+      'DELETE FROM fidelizacion_recomendacion WHERE run_id = ?',
+      [runId]
+    );
+    const [delRun] = await conn.query(
+      'DELETE FROM fidelizacion_run WHERE id = ? LIMIT 1',
+      [runId]
+    );
+
+    await conn.commit();
+    res.json({
+      ok: true,
+      deleted: {
+        notas: Number(delNotasJoin?.affectedRows) || 0,
+        contactos: (Number(delContactoJoin?.affectedRows) || 0) + (Number(delContactoRun?.affectedRows) || 0),
+        transferencias: (Number(delTransferJoin?.affectedRows) || 0) + (Number(delTransferRun?.affectedRows) || 0),
+        recomendaciones: Number(delRecs?.affectedRows) || 0,
+        corrida: Number(delRun?.affectedRows) || 0,
+      },
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al eliminar corrida de fidelizacion', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
