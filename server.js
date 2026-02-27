@@ -4082,7 +4082,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       }
     }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-    const [rows] = await pool.query(
+       const [rows] = await pool.query(
       `SELECT
          r.id,
          r.run_id,
@@ -4119,6 +4119,13 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
          r.frequency_12m,
          r.monetary_12m,
          r.avg_ticket_12m,
+         fn.last_note_at,
+         CASE
+           WHEN r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+            AND COALESCE(fn.last_note_at, r.created_at) < DATE_SUB(NOW(), INTERVAL 2 DAY)
+             THEN 1
+           ELSE 0
+         END AS requires_note_update,
          CASE
            WHEN NOW() > r.conversion_deadline_at
             AND r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
@@ -4129,6 +4136,11 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
        LEFT JOIN fidelizacion_run fr ON fr.id = r.run_id
        LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       LEFT JOIN (
+         SELECT recomendacion_id, MAX(created_at) AS last_note_at
+         FROM fidelizacion_notas
+         GROUP BY recomendacion_id
+       ) fn ON fn.recomendacion_id = r.id
        ${where}
       ORDER BY FIELD(r.estado, 'EN_GESTION', 'PENDIENTE', 'CONTACTADA', 'CERRADA', 'CONVERTIDA', 'NO_CONVERTIDA'), r.score DESC, r.id DESC
        LIMIT 600`,

@@ -14779,6 +14779,7 @@ function getFidelizacionStatusDisplay(row) {
 function buildFidActions(row, { adminMode = false } = {}) {
   const estado = String(row.estado || '').toUpperCase();
   const buttons = [];
+  const requiresNoteUpdate = Number(row.requires_note_update || 0) === 1;
   const isMine =
     Number(fidelizacionContext?.vendedoraId || 0) > 0 &&
     Number(row.vendedora_id || 0) === Number(fidelizacionContext?.vendedoraId || 0);
@@ -14789,7 +14790,11 @@ function buildFidActions(row, { adminMode = false } = {}) {
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="contactar" data-id="${row.id}">Contactar</button>`);
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="cerrar" data-id="${row.id}">Cerrar</button>`);
   if (estado === 'CERRADA') buttons.push(`<button type="button" data-action="reabrir" data-id="${row.id}">Reabrir</button>`);
-  buttons.push(`<button type="button" data-action="notas" data-id="${row.id}">Notas</button>`);
+  buttons.push(
+    `<button type="button" data-action="notas" data-id="${row.id}"${
+      requiresNoteUpdate ? ' class="fid-notas-stale" title="Hace más de 2 días sin notas"' : ''
+    }>Notas</button>`
+  );
   return buttons.join(' ');
 }
 
@@ -14799,6 +14804,25 @@ function getFidelizacionRowById(id) {
     fidelizacionAdminRows.find((row) => Number(row.id) === Number(id)) ||
     null
   );
+}
+
+function clearFidNotasAlert(recId) {
+  const targetId = Number(recId) || 0;
+  if (!targetId) return;
+  fidelizacionMisRows = fidelizacionMisRows.map((row) =>
+    Number(row.id) === targetId
+      ? { ...row, requires_note_update: 0, last_note_at: new Date().toISOString().slice(0, 19).replace('T', ' ') }
+      : row
+  );
+  fidelizacionAdminRows = fidelizacionAdminRows.map((row) =>
+    Number(row.id) === targetId
+      ? { ...row, requires_note_update: 0, last_note_at: new Date().toISOString().slice(0, 19).replace('T', ' ') }
+      : row
+  );
+  document.querySelectorAll(`button[data-action="notas"][data-id="${targetId}"]`).forEach((btn) => {
+    btn.classList.remove('fid-notas-stale');
+    btn.removeAttribute('title');
+  });
 }
 
 function renderFidelizacionNotasList(rows = []) {
@@ -14868,6 +14892,7 @@ async function saveFidelizacionNota() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nota }),
     });
+    clearFidNotasAlert(fidNotasCurrentRecId);
     if (fidNotasInput) fidNotasInput.value = '';
     await loadFidelizacionNotas(fidNotasCurrentRecId);
     if (fidNotasStatus) fidNotasStatus.textContent = 'Guardado.';
