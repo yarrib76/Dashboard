@@ -344,6 +344,8 @@ let fidReportScope = 'run';
 let fidelizacionRunsLoaded = false;
 let fidelizacionRunsRows = [];
 let fidRunsDataTable = null;
+let fidNotasCurrentRecId = 0;
+let fidNotasCurrentClientLabel = '';
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -512,6 +514,13 @@ const fidTabs = document.getElementById('fid-tabs');
 const fidMisTableBody = document.querySelector('#fid-mis-table tbody');
 const fidMisCards = document.getElementById('fid-mis-cards');
 const fidMisStatus = document.getElementById('fid-mis-status');
+const fidNotasOverlay = document.getElementById('fid-notas-overlay');
+const fidNotasTitle = document.getElementById('fid-notas-title');
+const fidNotasClose = document.getElementById('fid-notas-close');
+const fidNotasList = document.getElementById('fid-notas-list');
+const fidNotasInput = document.getElementById('fid-notas-input');
+const fidNotasSave = document.getElementById('fid-notas-save');
+const fidNotasStatus = document.getElementById('fid-notas-status');
 const fidReportesRefreshBtn = document.getElementById('fid-reportes-refresh');
 const fidDashboardOverlay = document.getElementById('fid-dashboard-overlay');
 const fidDashboardTitle = document.getElementById('fid-dashboard-title');
@@ -14780,7 +14789,93 @@ function buildFidActions(row, { adminMode = false } = {}) {
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="contactar" data-id="${row.id}">Contactar</button>`);
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="cerrar" data-id="${row.id}">Cerrar</button>`);
   if (estado === 'CERRADA') buttons.push(`<button type="button" data-action="reabrir" data-id="${row.id}">Reabrir</button>`);
+  buttons.push(`<button type="button" data-action="notas" data-id="${row.id}">Notas</button>`);
   return buttons.join(' ');
+}
+
+function getFidelizacionRowById(id) {
+  return (
+    fidelizacionMisRows.find((row) => Number(row.id) === Number(id)) ||
+    fidelizacionAdminRows.find((row) => Number(row.id) === Number(id)) ||
+    null
+  );
+}
+
+function renderFidelizacionNotasList(rows = []) {
+  if (!fidNotasList) return;
+  fidNotasList.innerHTML = '';
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'status';
+    empty.textContent = 'Sin notas.';
+    fidNotasList.appendChild(empty);
+    return;
+  }
+  safeRows.forEach((row) => {
+    const note = document.createElement('article');
+    note.className = 'carritos-nota';
+    note.innerHTML = `
+      <div class="carritos-nota-meta">
+        <span>${escapeAttr(row.vendedora || 'Equipo')}</span>
+        <small>${escapeAttr(formatDateTime(row.created_at || ''))}</small>
+      </div>
+      <p>${escapeAttr(row.nota || '')}</p>
+    `;
+    fidNotasList.appendChild(note);
+  });
+}
+
+async function loadFidelizacionNotas(recId) {
+  if (!recId) return;
+  if (fidNotasStatus) fidNotasStatus.textContent = 'Cargando...';
+  try {
+    const res = await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(recId)}/notas`);
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    renderFidelizacionNotasList(rows);
+    if (fidNotasStatus) fidNotasStatus.textContent = rows.length ? `Notas: ${rows.length}` : '';
+  } catch (error) {
+    if (fidNotasStatus) fidNotasStatus.textContent = error.message || 'Error al cargar notas.';
+  }
+}
+
+function openFidelizacionNotas(recId, clienteLabel) {
+  if (!fidNotasOverlay) return;
+  fidNotasCurrentRecId = Number(recId) || 0;
+  fidNotasCurrentClientLabel = String(clienteLabel || '').trim();
+  if (fidNotasInput) fidNotasInput.value = '';
+  if (fidNotasTitle) {
+    fidNotasTitle.textContent = fidNotasCurrentClientLabel
+      ? `Notas - ${fidNotasCurrentClientLabel}`
+      : `Notas - Fidelizacion #${fidNotasCurrentRecId}`;
+  }
+  fidNotasOverlay.classList.add('open');
+  loadFidelizacionNotas(fidNotasCurrentRecId);
+}
+
+async function saveFidelizacionNota() {
+  if (!fidNotasCurrentRecId) return;
+  const nota = String(fidNotasInput?.value || '').trim();
+  if (!nota) {
+    if (fidNotasStatus) fidNotasStatus.textContent = 'Escribe una nota.';
+    return;
+  }
+  try {
+    if (fidNotasSave) fidNotasSave.disabled = true;
+    if (fidNotasStatus) fidNotasStatus.textContent = 'Guardando...';
+    await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(fidNotasCurrentRecId)}/notas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nota }),
+    });
+    if (fidNotasInput) fidNotasInput.value = '';
+    await loadFidelizacionNotas(fidNotasCurrentRecId);
+    if (fidNotasStatus) fidNotasStatus.textContent = 'Guardado.';
+  } catch (error) {
+    if (fidNotasStatus) fidNotasStatus.textContent = error.message || 'Error al guardar nota.';
+  } finally {
+    if (fidNotasSave) fidNotasSave.disabled = false;
+  }
 }
 
 function normalizePhoneForWhatsApp(value) {
@@ -15537,17 +15632,36 @@ function initFidelizacion() {
       return;
     }
     if (!btn.dataset.id) return;
+    if (btn.dataset.action === 'notas') {
+      const recId = Number(btn.dataset.id);
+      const rec = getFidelizacionRowById(recId);
+      openFidelizacionNotas(recId, rec?.cliente || '');
+      return;
+    }
     doFidelizacionAction(btn.dataset.action, Number(btn.dataset.id));
   };
   const onAdminActionClick = (event) => {
     const btn = event.target.closest('button[data-action][data-id]');
     if (!btn) return;
+    if (btn.dataset.action === 'notas') {
+      const recId = Number(btn.dataset.id);
+      const rec = getFidelizacionRowById(recId);
+      openFidelizacionNotas(recId, rec?.cliente || '');
+      return;
+    }
     doFidelizacionAction(btn.dataset.action, Number(btn.dataset.id));
   };
   if (fidMisTableBody) fidMisTableBody.addEventListener('click', onMisActionClick);
   if (fidMisCards) fidMisCards.addEventListener('click', onMisActionClick);
   if (fidAdminQueueTableBody) fidAdminQueueTableBody.addEventListener('click', onAdminActionClick);
   if (fidAdminQueueCards) fidAdminQueueCards.addEventListener('click', onAdminActionClick);
+  if (fidNotasClose) fidNotasClose.addEventListener('click', () => fidNotasOverlay?.classList.remove('open'));
+  if (fidNotasOverlay) {
+    fidNotasOverlay.addEventListener('click', (event) => {
+      if (event.target === fidNotasOverlay) fidNotasOverlay.classList.remove('open');
+    });
+  }
+  if (fidNotasSave) fidNotasSave.addEventListener('click', saveFidelizacionNota);
   const onRunClick = (event) => {
     const btn = event.target.closest('button[data-action="ver-run"][data-run-id]');
     if (!btn) return;
