@@ -3737,13 +3737,27 @@ app.post('/api/fidelizacion/run', async (req, res) => {
          END AS recency_fidelizacion_days,
          SUM(
            CASE
-             WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) THEN 1
+             WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+              AND EXISTS (
+                SELECT 1
+                FROM controlpedidos cpw
+                WHERE cpw.nrofactura = f.NroFactura
+                  AND cpw.ordenWeb IS NOT NULL
+                  AND cpw.ordenWeb <> 0
+              ) THEN 1
              ELSE 0
            END
          ) AS frequency_12m,
          SUM(
            CASE
              WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+              AND EXISTS (
+                SELECT 1
+                FROM controlpedidos cpw
+                WHERE cpw.nrofactura = f.NroFactura
+                  AND cpw.ordenWeb IS NOT NULL
+                  AND cpw.ordenWeb <> 0
+              )
                THEN COALESCE(NULLIF(f.totalEnvio, 0), NULLIF(f.Descuento, 0), f.Total, 0)
              ELSE 0
            END
@@ -3752,6 +3766,13 @@ app.post('/api/fidelizacion/run', async (req, res) => {
            CASE
              WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
               AND MONTH(f.Fecha) = MONTH(CURDATE())
+              AND EXISTS (
+                SELECT 1
+                FROM controlpedidos cpw
+                WHERE cpw.nrofactura = f.NroFactura
+                  AND cpw.ordenWeb IS NOT NULL
+                  AND cpw.ordenWeb <> 0
+              )
                THEN 1
              ELSE 0
            END
@@ -3765,7 +3786,20 @@ app.post('/api/fidelizacion/run', async (req, res) => {
        WHERE f.id_clientes IS NOT NULL
          AND f.id_clientes <> 1
        GROUP BY f.id_clientes
-       HAVING DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) >= ?
+       HAVING SUM(
+                CASE
+                  WHEN f.Fecha >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+                   AND EXISTS (
+                     SELECT 1
+                     FROM controlpedidos cpw
+                     WHERE cpw.nrofactura = f.NroFactura
+                       AND cpw.ordenWeb IS NOT NULL
+                       AND cpw.ordenWeb <> 0
+                   ) THEN 1
+                  ELSE 0
+                END
+              ) > 0
+          AND DATEDIFF(CURDATE(), DATE(MAX(f.Fecha))) >= ?
           AND (MAX(ult_fid.last_fidelizacion_at) IS NULL OR DATEDIFF(CURDATE(), DATE(MAX(ult_fid.last_fidelizacion_at))) >= ?)`,
       [config.cooldown_days, config.cooldown_days]
     );
@@ -3783,6 +3817,7 @@ app.post('/api/fidelizacion/run', async (req, res) => {
       .map((row) => {
         const frequency = Number(row.frequency_12m) || 0;
         const monetary = Number(row.monetary_12m) || 0;
+        const avgTicket = frequency > 0 ? round2(monetary / frequency) : 0;
         const recency = Number(row.recency_days) || 0;
         const monthMatch = (Number(row.month_hits_12m) || 0) > 0;
         const recency3090 = recency >= 30 && recency <= 90;
@@ -3798,7 +3833,8 @@ app.post('/api/fidelizacion/run', async (req, res) => {
         if (monthMatch) razones.push(`estacionalidad(+${config.w_month_match})`);
         if (frequency > 0) razones.push(`frecuencia 12m: ${frequency}`);
         if (recency3090) razones.push(`recencia ideal: ${recency} dias`);
-        if (monetary > 0) razones.push(`monto 12m: ${round2(monetary)}`);
+        razones.push(`monto 12m: ${round2(monetary)}`);
+        razones.push(`ticket promedio 12m: ${avgTicket}`);
 
         return {
           cliente_id: Number(row.cliente_id) || 0,
@@ -3806,7 +3842,7 @@ app.post('/api/fidelizacion/run', async (req, res) => {
           recency_days: recency,
           frequency_12m: frequency,
           monetary_12m: round2(monetary),
-          avg_ticket_12m: frequency > 0 ? round2(monetary / frequency) : 0,
+          avg_ticket_12m: avgTicket,
           score: round2(score),
           razones: razones.join(' | '),
         };
@@ -4157,6 +4193,78 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar cola de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+
+    const [[current]] = await pool.query(
+      `SELECT id, vendedora_id
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    if (!context.isAdmin && Number(current.vendedora_id || 0) !== Number(context.vendedoraId || 0)) {
+      return res.status(403).json({ message: 'Solo podes ver notas de recomendaciones propias' });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         n.id,
+         n.recomendacion_id,
+         n.users_id,
+         n.nota,
+         n.created_at,
+         n.updated_at,
+         COALESCE(u.name, '') AS vendedora
+       FROM fidelizacion_notas n
+       LEFT JOIN users u ON u.id = n.users_id
+       WHERE n.recomendacion_id = ?
+       ORDER BY n.id DESC`,
+      [recId]
+    );
+    res.json({ data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar notas de fidelizacion', error: error.message });
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const recId = Number(req.params.id);
+    const nota = String(req.body?.nota || '').trim();
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+
+    const [[current]] = await pool.query(
+      `SELECT id, vendedora_id
+       FROM fidelizacion_recomendacion
+       WHERE id = ?
+       LIMIT 1`,
+      [recId]
+    );
+    if (!current) return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    if (!context.isAdmin && Number(current.vendedora_id || 0) !== Number(context.vendedoraId || 0)) {
+      return res.status(403).json({ message: 'Solo podes agregar notas a recomendaciones propias' });
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO fidelizacion_notas (recomendacion_id, users_id, nota)
+       VALUES (?, ?, ?)`,
+      [recId, context.userId || req.user?.id || null, nota]
+    );
+    res.json({ ok: true, id: Number(result.insertId) || 0 });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar nota de fidelizacion', error: error.message });
   }
 });
 
