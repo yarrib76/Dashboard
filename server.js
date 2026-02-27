@@ -5,6 +5,7 @@ const { computeNuevaCantidad, resolveArticuloValores, resolveCompraValores } = r
 const { computePedidoSubtotal } = require('./lib/pedidosNuevo');
 const { processAbmCreate } = require('./lib/abmCreateService');
 const { processAbmBatch } = require('./lib/abmBatchService');
+const { normalizeIdempotencyKey, validateFacturaPayload } = require('./lib/facturas');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const path = require('path');
@@ -940,12 +941,6 @@ function normalizeApiEndpointPath(value) {
   if (!pathOnly) return '';
   const prefixed = pathOnly.startsWith('/') ? pathOnly : `/${pathOnly}`;
   return prefixed.replace(/\/{2,}/g, '/');
-}
-
-function normalizeIdempotencyKey(value) {
-  const key = String(value || '').trim();
-  if (!key) return '';
-  return key.slice(0, 64);
 }
 
 async function buildUniqueApiEndpoint(nombreApi, excludeId = 0) {
@@ -7377,6 +7372,10 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
 app.post('/api/facturas', requireAuth, async (req, res) => {
   let connection;
   try {
+    const payloadValidation = validateFacturaPayload(req.body || {});
+    if (!payloadValidation.ok) {
+      return res.status(400).json({ message: payloadValidation.message });
+    }
     const {
       cliente_id,
       vendedora,
@@ -7388,16 +7387,10 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
       esPedido = 'NO',
       nroPedido = null,
       listoParaEnvio = 0,
-    } = req.body || {};
+    } = payloadValidation.data;
     const idempotencyKey = normalizeIdempotencyKey(
       req.body?.idempotency_key || req.get('x-idempotency-key') || ''
     );
-    if (!cliente_id || !vendedora || !tipo_pago_id) {
-      return res.status(400).json({ message: 'cliente_id, vendedora y tipo_pago_id requeridos' });
-    }
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ message: 'items requeridos' });
-    }
     connection = await pool.getConnection();
     await connection.beginTransaction();
     if (idempotencyKey) {
