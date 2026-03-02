@@ -503,6 +503,8 @@ const fidWMonthMatchInput = document.getElementById('fid-w-month-match');
 const fidWFrequency12mInput = document.getElementById('fid-w-frequency-12m');
 const fidWRecency3090Input = document.getElementById('fid-w-recency-30-90');
 const fidWMonetary12mInput = document.getElementById('fid-w-monetary-12m');
+const fidTicketPenaltyThresholdInput = document.getElementById('fid-ticket-penalty-threshold');
+const fidTicketPenaltyPointsInput = document.getElementById('fid-ticket-penalty-points');
 const fidStatRunId = document.getElementById('fid-stat-run-id');
 const fidStatTotal = document.getElementById('fid-stat-total');
 const fidStatAvgScore = document.getElementById('fid-stat-avg-score');
@@ -14598,6 +14600,8 @@ const FIDELIZACION_DEFAULTS = {
   w_frequency_12m: 20,
   w_recency_30_90: 20,
   w_monetary_12m: 10,
+  ticket_penalty_threshold: 100000,
+  ticket_penalty_points: 10,
 };
 
 function toInt(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
@@ -14616,6 +14620,12 @@ function fillFidelizacionConfig(config = {}) {
   if (fidWFrequency12mInput) fidWFrequency12mInput.value = String(toInt(safe.w_frequency_12m, 20, 0, 1000));
   if (fidWRecency3090Input) fidWRecency3090Input.value = String(toInt(safe.w_recency_30_90, 20, 0, 1000));
   if (fidWMonetary12mInput) fidWMonetary12mInput.value = String(toInt(safe.w_monetary_12m, 10, 0, 1000));
+  if (fidTicketPenaltyThresholdInput) {
+    fidTicketPenaltyThresholdInput.value = String(toInt(safe.ticket_penalty_threshold, 100000, 0, 999999999));
+  }
+  if (fidTicketPenaltyPointsInput) {
+    fidTicketPenaltyPointsInput.value = String(toInt(safe.ticket_penalty_points, 10, 0, 1000));
+  }
 }
 
 function getFidelizacionConfigPayload() {
@@ -14627,6 +14637,8 @@ function getFidelizacionConfigPayload() {
     w_frequency_12m: toInt(fidWFrequency12mInput?.value, 20, 0, 1000),
     w_recency_30_90: toInt(fidWRecency3090Input?.value, 20, 0, 1000),
     w_monetary_12m: toInt(fidWMonetary12mInput?.value, 10, 0, 1000),
+    ticket_penalty_threshold: toInt(fidTicketPenaltyThresholdInput?.value, 100000, 0, 999999999),
+    ticket_penalty_points: toInt(fidTicketPenaltyPointsInput?.value, 10, 0, 1000),
   };
 }
 

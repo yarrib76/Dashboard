@@ -648,6 +648,14 @@
             <span>Peso monetary</span>
             <input type="number" id="fid-w-monetary-12m" min="0" step="1" />
           </label>
+          <label title="Si el ticket promedio 12m es menor o igual a este valor, aplica penalizacion al score.">
+            <span>Ticket prom. tope</span>
+            <input type="number" id="fid-ticket-penalty-threshold" min="0" step="1" />
+          </label>
+          <label title="Puntos a restar cuando el ticket promedio 12m es menor o igual al tope.">
+            <span>Penalizacion ticket</span>
+            <input type="number" id="fid-ticket-penalty-points" min="0" step="1" />
+          </label>
           <div class="fidelizacion-form-actions">
             <button id="fidelizacion-config-save" type="submit">Guardar configuracion</button>
           </div>

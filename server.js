@@ -442,6 +442,8 @@ const FIDELIZACION_DEFAULT_CONFIG = {
   w_frequency_12m: 20,
   w_recency_30_90: 20,
   w_monetary_12m: 10,
+  ticket_penalty_threshold: 100000,
+  ticket_penalty_points: 10,
 };
 const FIDELIZACION_EXCLUDED_SELLER_NAMES = new Set(['pagina', 'pagina web']);
 
@@ -466,6 +468,13 @@ function toSafeInt(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
 function round2(value) {
   const num = Number(value) || 0;
   return Number(num.toFixed(2));
+}
+
+function toSafeDecimal(value, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  const clamped = Math.min(max, Math.max(min, num));
+  return round2(clamped);
 }
 
 function parseMaybeJson(value) {
@@ -500,6 +509,15 @@ function buildFidelizacionParamsJson(config) {
       frequency_12m: toSafeInt(config.w_frequency_12m, FIDELIZACION_DEFAULT_CONFIG.w_frequency_12m, 0, 1000),
       recency_30_90: toSafeInt(config.w_recency_30_90, FIDELIZACION_DEFAULT_CONFIG.w_recency_30_90, 0, 1000),
       monetary_12m: toSafeInt(config.w_monetary_12m, FIDELIZACION_DEFAULT_CONFIG.w_monetary_12m, 0, 1000),
+    },
+    ticket_penalty: {
+      threshold: toSafeDecimal(
+        config.ticket_penalty_threshold,
+        FIDELIZACION_DEFAULT_CONFIG.ticket_penalty_threshold,
+        0,
+        999999999
+      ),
+      points: toSafeInt(config.ticket_penalty_points, FIDELIZACION_DEFAULT_CONFIG.ticket_penalty_points, 0, 1000),
     },
   };
 }
@@ -540,6 +558,18 @@ function normalizeFidelizacionConfig(row = {}) {
       0,
       1000
     ),
+    ticket_penalty_threshold: toSafeDecimal(
+      row.ticket_penalty_threshold,
+      FIDELIZACION_DEFAULT_CONFIG.ticket_penalty_threshold,
+      0,
+      999999999
+    ),
+    ticket_penalty_points: toSafeInt(
+      row.ticket_penalty_points,
+      FIDELIZACION_DEFAULT_CONFIG.ticket_penalty_points,
+      0,
+      1000
+    ),
     updated_by: row.updated_by || '',
     updated_at: row.updated_at || null,
   };
@@ -548,7 +578,8 @@ function normalizeFidelizacionConfig(row = {}) {
 async function getFidelizacionActiveConfig(conn) {
   const [[row]] = await conn.query(
     `SELECT id, is_active, cooldown_days, conversion_window_days, max_clients_per_run,
-            w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by, updated_at
+            w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m,
+            ticket_penalty_threshold, ticket_penalty_points, updated_by, updated_at
      FROM fidelizacion_config
      WHERE is_active = 1
      ORDER BY id DESC
@@ -3594,8 +3625,9 @@ app.put('/api/fidelizacion/config', async (req, res) => {
     const [insert] = await conn.query(
       `INSERT INTO fidelizacion_config
        (is_active, cooldown_days, conversion_window_days, max_clients_per_run,
-        w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m,
+        ticket_penalty_threshold, ticket_penalty_points, updated_by)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         config.cooldown_days,
         config.conversion_window_days,
@@ -3604,13 +3636,16 @@ app.put('/api/fidelizacion/config', async (req, res) => {
         config.w_frequency_12m,
         config.w_recency_30_90,
         config.w_monetary_12m,
+        config.ticket_penalty_threshold,
+        config.ticket_penalty_points,
         config.updated_by || '',
       ]
     );
     await conn.commit();
     const [[saved]] = await pool.query(
       `SELECT id, is_active, cooldown_days, conversion_window_days, max_clients_per_run,
-              w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by, updated_at
+              w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m,
+              ticket_penalty_threshold, ticket_penalty_points, updated_by, updated_at
        FROM fidelizacion_config
        WHERE id = ?
        LIMIT 1`,
@@ -3676,8 +3711,9 @@ app.post('/api/fidelizacion/run', async (req, res) => {
       const [insertCfg] = await conn.query(
         `INSERT INTO fidelizacion_config
          (is_active, cooldown_days, conversion_window_days, max_clients_per_run,
-          w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m, updated_by)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          w_month_match, w_frequency_12m, w_recency_30_90, w_monetary_12m,
+          ticket_penalty_threshold, ticket_penalty_points, updated_by)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           config.cooldown_days,
           config.conversion_window_days,
@@ -3686,6 +3722,8 @@ app.post('/api/fidelizacion/run', async (req, res) => {
           config.w_frequency_12m,
           config.w_recency_30_90,
           config.w_monetary_12m,
+          config.ticket_penalty_threshold,
+          config.ticket_penalty_points,
           context.userName || req.user?.name || '',
         ]
       );
@@ -3823,11 +3861,15 @@ app.post('/api/fidelizacion/run', async (req, res) => {
         const recency3090 = recency >= 30 && recency <= 90;
         const frequencyScore = Math.min(1, frequency / maxFrequency);
         const monetaryScore = Math.min(1, monetary / maxMonetary);
-        const score =
+        const scoreBase =
           (monthMatch ? config.w_month_match : 0) +
           frequencyScore * config.w_frequency_12m +
           (recency3090 ? config.w_recency_30_90 : 0) +
           monetaryScore * config.w_monetary_12m;
+        const ticketPenaltyPoints = Number(config.ticket_penalty_points) || 0;
+        const ticketPenaltyThreshold = Number(config.ticket_penalty_threshold) || 0;
+        const hasTicketPenalty = ticketPenaltyPoints > 0 && avgTicket <= ticketPenaltyThreshold;
+        const score = hasTicketPenalty ? scoreBase - ticketPenaltyPoints : scoreBase;
 
         const razones = [];
         if (monthMatch) razones.push(`estacionalidad(+${config.w_month_match})`);
@@ -3835,6 +3877,7 @@ app.post('/api/fidelizacion/run', async (req, res) => {
         if (recency3090) razones.push(`recencia ideal: ${recency} dias`);
         razones.push(`monto 12m: ${round2(monetary)}`);
         razones.push(`ticket promedio 12m: ${avgTicket}`);
+        if (hasTicketPenalty) razones.push(`ticket bajo (-${ticketPenaltyPoints})`);
 
         return {
           cliente_id: Number(row.cliente_id) || 0,
