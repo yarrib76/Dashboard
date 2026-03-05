@@ -4266,9 +4266,6 @@ app.get('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
       [recId]
     );
     if (!current) return res.status(404).json({ message: 'Recomendacion no encontrada' });
-    if (!context.isAdmin && Number(current.vendedora_id || 0) !== Number(context.vendedoraId || 0)) {
-      return res.status(403).json({ message: 'Solo podes ver notas de recomendaciones propias' });
-    }
 
     const [rows] = await pool.query(
       `SELECT
@@ -4282,10 +4279,14 @@ app.get('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
        FROM fidelizacion_notas n
        LEFT JOIN users u ON u.id = n.users_id
        WHERE n.recomendacion_id = ?
-       ORDER BY n.id DESC`,
+      ORDER BY n.id DESC`,
       [recId]
     );
-    res.json({ data: rows || [] });
+    const mapped = (rows || []).map((row) => ({
+      ...row,
+      can_edit: context.isAdmin || Number(row.users_id || 0) === Number(context.userId || 0),
+    }));
+    res.json({ data: mapped });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar notas de fidelizacion', error: error.message });
   }
@@ -4308,9 +4309,6 @@ app.post('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
       [recId]
     );
     if (!current) return res.status(404).json({ message: 'Recomendacion no encontrada' });
-    if (!context.isAdmin && Number(current.vendedora_id || 0) !== Number(context.vendedoraId || 0)) {
-      return res.status(403).json({ message: 'Solo podes agregar notas a recomendaciones propias' });
-    }
 
     const [result] = await pool.query(
       `INSERT INTO fidelizacion_notas (recomendacion_id, users_id, nota)
@@ -4320,6 +4318,71 @@ app.post('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
     res.json({ ok: true, id: Number(result.insertId) || 0 });
   } catch (error) {
     res.status(500).json({ message: 'Error al guardar nota de fidelizacion', error: error.message });
+  }
+});
+
+app.put('/api/fidelizacion/notas/:id', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const notaId = Number(req.params.id);
+    const nota = String(req.body?.nota || '').trim();
+    if (!notaId) return res.status(400).json({ message: 'Nota invalida' });
+    if (!nota) return res.status(400).json({ message: 'Nota requerida' });
+
+    const [[current]] = await pool.query(
+      `SELECT id, users_id
+       FROM fidelizacion_notas
+       WHERE id = ?
+       LIMIT 1`,
+      [notaId]
+    );
+    if (!current) return res.status(404).json({ message: 'Nota no encontrada' });
+    if (!context.isAdmin && Number(current.users_id || 0) !== Number(context.userId || 0)) {
+      return res.status(403).json({ message: 'Solo podes editar tus propias notas' });
+    }
+
+    await pool.query(
+      `UPDATE fidelizacion_notas
+       SET nota = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [nota, notaId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar nota de fidelizacion', error: error.message });
+  }
+});
+
+app.delete('/api/fidelizacion/notas/:id', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const notaId = Number(req.params.id);
+    if (!notaId) return res.status(400).json({ message: 'Nota invalida' });
+
+    const [[current]] = await pool.query(
+      `SELECT id, users_id
+       FROM fidelizacion_notas
+       WHERE id = ?
+       LIMIT 1`,
+      [notaId]
+    );
+    if (!current) return res.status(404).json({ message: 'Nota no encontrada' });
+    if (!context.isAdmin && Number(current.users_id || 0) !== Number(context.userId || 0)) {
+      return res.status(403).json({ message: 'Solo podes eliminar tus propias notas' });
+    }
+
+    await pool.query(
+      `DELETE FROM fidelizacion_notas
+       WHERE id = ?
+       LIMIT 1`,
+      [notaId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar nota de fidelizacion', error: error.message });
   }
 });
 

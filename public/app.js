@@ -346,6 +346,7 @@ let fidelizacionRunsRows = [];
 let fidRunsDataTable = null;
 let fidNotasCurrentRecId = 0;
 let fidNotasCurrentClientLabel = '';
+let fidNotasEditingId = null;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -14851,12 +14852,23 @@ function renderFidelizacionNotasList(rows = []) {
   safeRows.forEach((row) => {
     const note = document.createElement('article');
     note.className = 'carritos-nota';
+    const canEdit = !!row.can_edit;
     note.innerHTML = `
       <div class="carritos-nota-meta">
         <span>${escapeAttr(row.vendedora || 'Equipo')}</span>
-        <small>${escapeAttr(formatDateTime(row.created_at || ''))}</small>
+        <small>${escapeAttr(formatDateTime(row.updated_at || row.created_at || ''))}</small>
       </div>
       <p>${escapeAttr(row.nota || '')}</p>
+      ${
+        canEdit
+          ? `<div class="carritos-notas-actions">
+        <button type="button" class="link-btn fid-nota-edit" data-id="${Number(row.id) || 0}" data-text="${escapeAttr(
+              row.nota || ''
+            )}">Editar</button>
+        <button type="button" class="link-btn danger fid-nota-delete" data-id="${Number(row.id) || 0}">Eliminar</button>
+      </div>`
+          : ''
+      }
     `;
     fidNotasList.appendChild(note);
   });
@@ -14879,6 +14891,7 @@ function openFidelizacionNotas(recId, clienteLabel) {
   if (!fidNotasOverlay) return;
   fidNotasCurrentRecId = Number(recId) || 0;
   fidNotasCurrentClientLabel = String(clienteLabel || '').trim();
+  fidNotasEditingId = null;
   if (fidNotasInput) fidNotasInput.value = '';
   if (fidNotasTitle) {
     fidNotasTitle.textContent = fidNotasCurrentClientLabel
@@ -14899,12 +14912,21 @@ async function saveFidelizacionNota() {
   try {
     if (fidNotasSave) fidNotasSave.disabled = true;
     if (fidNotasStatus) fidNotasStatus.textContent = 'Guardando...';
-    await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(fidNotasCurrentRecId)}/notas`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nota }),
-    });
+    if (fidNotasEditingId) {
+      await fetchJSON(`/api/fidelizacion/notas/${encodeURIComponent(fidNotasEditingId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nota }),
+      });
+    } else {
+      await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(fidNotasCurrentRecId)}/notas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nota }),
+      });
+    }
     clearFidNotasAlert(fidNotasCurrentRecId);
+    fidNotasEditingId = null;
     if (fidNotasInput) fidNotasInput.value = '';
     await loadFidelizacionNotas(fidNotasCurrentRecId);
     if (fidNotasStatus) fidNotasStatus.textContent = 'Guardado.';
@@ -15720,13 +15742,52 @@ function initFidelizacion() {
   if (fidMisCards) fidMisCards.addEventListener('click', onMisActionClick);
   if (fidAdminQueueTableBody) fidAdminQueueTableBody.addEventListener('click', onAdminActionClick);
   if (fidAdminQueueCards) fidAdminQueueCards.addEventListener('click', onAdminActionClick);
-  if (fidNotasClose) fidNotasClose.addEventListener('click', () => fidNotasOverlay?.classList.remove('open'));
+  if (fidNotasClose) {
+    fidNotasClose.addEventListener('click', () => {
+      fidNotasEditingId = null;
+      fidNotasOverlay?.classList.remove('open');
+    });
+  }
   if (fidNotasOverlay) {
     fidNotasOverlay.addEventListener('click', (event) => {
-      if (event.target === fidNotasOverlay) fidNotasOverlay.classList.remove('open');
+      if (event.target === fidNotasOverlay) {
+        fidNotasEditingId = null;
+        fidNotasOverlay.classList.remove('open');
+      }
     });
   }
   if (fidNotasSave) fidNotasSave.addEventListener('click', saveFidelizacionNota);
+  if (fidNotasList) {
+    fidNotasList.addEventListener('click', async (event) => {
+      const editBtn = event.target.closest('.fid-nota-edit[data-id]');
+      if (editBtn) {
+        fidNotasEditingId = Number(editBtn.dataset.id) || null;
+        if (fidNotasInput) {
+          fidNotasInput.value = String(editBtn.dataset.text || '');
+          fidNotasInput.focus();
+        }
+        if (fidNotasStatus) fidNotasStatus.textContent = 'Editando nota.';
+        return;
+      }
+      const delBtn = event.target.closest('.fid-nota-delete[data-id]');
+      if (!delBtn) return;
+      const notaId = Number(delBtn.dataset.id) || 0;
+      if (!notaId) return;
+      if (!confirm('Eliminar nota de fidelizacion?')) return;
+      try {
+        if (fidNotasStatus) fidNotasStatus.textContent = 'Eliminando...';
+        await fetchJSON(`/api/fidelizacion/notas/${encodeURIComponent(notaId)}`, { method: 'DELETE' });
+        if (fidNotasEditingId && fidNotasEditingId === notaId) {
+          fidNotasEditingId = null;
+          if (fidNotasInput) fidNotasInput.value = '';
+        }
+        await loadFidelizacionNotas(fidNotasCurrentRecId);
+        if (fidNotasStatus) fidNotasStatus.textContent = 'Nota eliminada.';
+      } catch (error) {
+        if (fidNotasStatus) fidNotasStatus.textContent = error.message || 'Error al eliminar nota.';
+      }
+    });
+  }
   const onRunClick = (event) => {
     const btn = event.target.closest('button[data-action][data-run-id]');
     if (!btn) return;
