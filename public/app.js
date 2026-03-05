@@ -14850,25 +14850,20 @@ function renderFidelizacionNotasList(rows = []) {
     return;
   }
   safeRows.forEach((row) => {
-    const note = document.createElement('article');
+    const note = document.createElement('div');
     note.className = 'carritos-nota';
+    const noteId = Number(row.id) || 0;
     const canEdit = !!row.can_edit;
+    if (fidNotasEditingId && noteId === fidNotasEditingId) note.classList.add('active');
+    note.dataset.id = String(noteId);
+    note.dataset.text = String(row.nota || '');
+    note.dataset.canEdit = canEdit ? '1' : '0';
+    const fecha = row.updated_at || row.created_at || '';
+    const usuario = row.vendedora || '';
     note.innerHTML = `
-      <div class="carritos-nota-meta">
-        <span>${escapeAttr(row.vendedora || 'Equipo')}</span>
-        <small>${escapeAttr(formatDateTime(row.updated_at || row.created_at || ''))}</small>
-      </div>
-      <p>${escapeAttr(row.nota || '')}</p>
-      ${
-        canEdit
-          ? `<div class="carritos-notas-actions">
-        <button type="button" class="link-btn fid-nota-edit" data-id="${Number(row.id) || 0}" data-text="${escapeAttr(
-              row.nota || ''
-            )}">Editar</button>
-        <button type="button" class="link-btn danger fid-nota-delete" data-id="${Number(row.id) || 0}">Eliminar</button>
-      </div>`
-          : ''
-      }
+      <div class="meta">${escapeAttr(usuario)} · ${escapeAttr(formatDateTime(fecha))}</div>
+      <div class="text"><strong>Comentario:</strong> ${escapeAttr(row.nota || '')}</div>
+      ${canEdit ? '<button type="button" class="nota-delete-btn" title="Eliminar nota">🗑️</button>' : ''}
     `;
     fidNotasList.appendChild(note);
   });
@@ -15759,33 +15754,36 @@ function initFidelizacion() {
   if (fidNotasSave) fidNotasSave.addEventListener('click', saveFidelizacionNota);
   if (fidNotasList) {
     fidNotasList.addEventListener('click', async (event) => {
-      const editBtn = event.target.closest('.fid-nota-edit[data-id]');
-      if (editBtn) {
-        fidNotasEditingId = Number(editBtn.dataset.id) || null;
-        if (fidNotasInput) {
-          fidNotasInput.value = String(editBtn.dataset.text || '');
-          fidNotasInput.focus();
+      const delBtn = event.target.closest('.nota-delete-btn');
+      if (delBtn) {
+        const note = delBtn.closest('.carritos-nota');
+        const notaId = Number(note?.dataset.id) || 0;
+        if (!notaId) return;
+        if (!confirm('Eliminar nota de fidelizacion?')) return;
+        try {
+          if (fidNotasStatus) fidNotasStatus.textContent = 'Eliminando...';
+          await fetchJSON(`/api/fidelizacion/notas/${encodeURIComponent(notaId)}`, { method: 'DELETE' });
+          if (fidNotasEditingId && fidNotasEditingId === notaId) {
+            fidNotasEditingId = null;
+            if (fidNotasInput) fidNotasInput.value = '';
+          }
+          await loadFidelizacionNotas(fidNotasCurrentRecId);
+          if (fidNotasStatus) fidNotasStatus.textContent = 'Nota eliminada.';
+        } catch (error) {
+          if (fidNotasStatus) fidNotasStatus.textContent = error.message || 'Error al eliminar nota.';
         }
-        if (fidNotasStatus) fidNotasStatus.textContent = 'Editando nota.';
         return;
       }
-      const delBtn = event.target.closest('.fid-nota-delete[data-id]');
-      if (!delBtn) return;
-      const notaId = Number(delBtn.dataset.id) || 0;
-      if (!notaId) return;
-      if (!confirm('Eliminar nota de fidelizacion?')) return;
-      try {
-        if (fidNotasStatus) fidNotasStatus.textContent = 'Eliminando...';
-        await fetchJSON(`/api/fidelizacion/notas/${encodeURIComponent(notaId)}`, { method: 'DELETE' });
-        if (fidNotasEditingId && fidNotasEditingId === notaId) {
-          fidNotasEditingId = null;
-          if (fidNotasInput) fidNotasInput.value = '';
-        }
-        await loadFidelizacionNotas(fidNotasCurrentRecId);
-        if (fidNotasStatus) fidNotasStatus.textContent = 'Nota eliminada.';
-      } catch (error) {
-        if (fidNotasStatus) fidNotasStatus.textContent = error.message || 'Error al eliminar nota.';
+      const note = event.target.closest('.carritos-nota');
+      if (!note || note.dataset.canEdit !== '1') return;
+      fidNotasEditingId = Number(note.dataset.id) || null;
+      if (fidNotasInput) {
+        fidNotasInput.value = note.dataset.text || '';
+        fidNotasInput.focus();
       }
+      Array.from(fidNotasList.querySelectorAll('.carritos-nota')).forEach((node) => node.classList.remove('active'));
+      note.classList.add('active');
+      if (fidNotasStatus) fidNotasStatus.textContent = 'Editando nota.';
     });
   }
   const onRunClick = (event) => {

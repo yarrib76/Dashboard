@@ -4273,8 +4273,14 @@ app.get('/api/fidelizacion/recomendaciones/:id/notas', async (req, res) => {
          n.recomendacion_id,
          n.users_id,
          n.nota,
-         n.created_at,
-         n.updated_at,
+         COALESCE(
+           DATE_FORMAT(CONVERT_TZ(n.created_at, '+00:00', '-03:00'), '%Y-%m-%d %H:%i:%s'),
+           DATE_FORMAT(n.created_at, '%Y-%m-%d %H:%i:%s')
+         ) AS created_at,
+         COALESCE(
+           DATE_FORMAT(CONVERT_TZ(n.updated_at, '+00:00', '-03:00'), '%Y-%m-%d %H:%i:%s'),
+           DATE_FORMAT(n.updated_at, '%Y-%m-%d %H:%i:%s')
+         ) AS updated_at,
          COALESCE(u.name, '') AS vendedora
        FROM fidelizacion_notas n
        LEFT JOIN users u ON u.id = n.users_id
