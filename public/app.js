@@ -348,6 +348,7 @@ let fidNotasCurrentRecId = 0;
 let fidNotasCurrentClientLabel = '';
 let fidNotasEditingId = null;
 let fidBeneficiosRunId = 0;
+let fidBeneficiosLastJobId = 0;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -586,6 +587,11 @@ const fidBeneficiosForm = document.getElementById('fid-beneficios-form');
 const fidBeneficiosPromptInput = document.getElementById('fid-beneficios-prompt');
 const fidBeneficiosCancelBtn = document.getElementById('fid-beneficios-cancel');
 const fidBeneficiosStatus = document.getElementById('fid-beneficios-status');
+const fidBeneficiosDetalleOverlay = document.getElementById('fid-beneficios-detalle-overlay');
+const fidBeneficiosDetalleTitle = document.getElementById('fid-beneficios-detalle-title');
+const fidBeneficiosDetalleCloseBtn = document.getElementById('fid-beneficios-detalle-close');
+const fidBeneficiosDetalleTableBody = document.querySelector('#fid-beneficios-detalle-table tbody');
+const fidBeneficiosDetalleStatus = document.getElementById('fid-beneficios-detalle-status');
 const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
 const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
 const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
@@ -15405,12 +15411,9 @@ async function openFidelizacionBeneficiosModal(runId) {
   try {
     const res = await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(id)}/beneficios-config`);
     const data = res?.data || {};
+    fidBeneficiosLastJobId = Number(data.last_job_id) || 0;
     if (fidBeneficiosPromptInput) fidBeneficiosPromptInput.value = String(data.prompt || '');
-    if (fidBeneficiosStatus) {
-      fidBeneficiosStatus.textContent = `Total: ${Number(data.total || 0)} | OK: ${Number(data.total_ok || 0)} | Error: ${Number(
-        data.total_error || 0
-      )}`;
-    }
+    renderFidBeneficiosSummary(Number(data.total || 0), Number(data.total_ok || 0), Number(data.total_error || 0));
   } catch (error) {
     if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = error.message || 'Error al cargar configuracion.';
   }
@@ -15418,7 +15421,19 @@ async function openFidelizacionBeneficiosModal(runId) {
 
 function closeFidelizacionBeneficiosModal() {
   fidBeneficiosRunId = 0;
+  fidBeneficiosLastJobId = 0;
   if (fidBeneficiosOverlay) fidBeneficiosOverlay.classList.remove('open');
+}
+
+function renderFidBeneficiosSummary(total, totalOk, totalError) {
+  if (!fidBeneficiosStatus) return;
+  if (!fidBeneficiosLastJobId) {
+    fidBeneficiosStatus.textContent = `Total: ${Number(total || 0)} | OK: ${Number(totalOk || 0)} | Error: ${Number(totalError || 0)}`;
+    return;
+  }
+  fidBeneficiosStatus.innerHTML = `Total: ${Number(total || 0)} | OK: <button type="button" class="link-btn" data-action="view-ok">${Number(
+    totalOk || 0
+  )}</button> | Error: <button type="button" class="link-btn" data-action="view-error">${Number(totalError || 0)}</button>`;
 }
 
 async function applyFidelizacionBeneficios() {
@@ -15441,17 +15456,54 @@ async function applyFidelizacionBeneficios() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt }),
     });
-    if (fidBeneficiosStatus) {
-      fidBeneficiosStatus.textContent = `Actualizado. OK: ${Number(res?.total_ok || 0)} | Error: ${Number(
-        res?.total_error || 0
-      )}`;
-    }
+    fidBeneficiosLastJobId = Number(res?.job_id) || 0;
+    renderFidBeneficiosSummary(Number(res?.total_objetivo || 0), Number(res?.total_ok || 0), Number(res?.total_error || 0));
     fidelizacionMisLoaded = false;
     await loadFidelizacionRuns({ silent: true });
     if (fidelizacionMisLoaded || currentView === 'fidelizacion-mis') await loadFidelizacionMis();
     if (fidelizacionAdminLoaded || currentView === 'fidelizacion-admin') await loadFidelizacionAdminQueue();
   } catch (error) {
     if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = error.message || 'Error al actualizar beneficios.';
+  }
+}
+
+function closeFidelizacionBeneficiosDetalleModal() {
+  if (fidBeneficiosDetalleOverlay) fidBeneficiosDetalleOverlay.classList.remove('open');
+  if (fidBeneficiosDetalleStatus) fidBeneficiosDetalleStatus.textContent = '';
+}
+
+async function openFidelizacionBeneficiosDetalle(estado) {
+  const runId = Number(fidBeneficiosRunId) || 0;
+  const jobId = Number(fidBeneficiosLastJobId) || 0;
+  const state = String(estado || '').toUpperCase();
+  if (!runId || !jobId || !['OK', 'ERROR'].includes(state)) return;
+  if (fidBeneficiosDetalleTitle) fidBeneficiosDetalleTitle.textContent = `Detalle beneficios IA - ${state}`;
+  if (fidBeneficiosDetalleTableBody) fidBeneficiosDetalleTableBody.innerHTML = '';
+  if (fidBeneficiosDetalleStatus) fidBeneficiosDetalleStatus.textContent = 'Cargando...';
+  if (fidBeneficiosDetalleOverlay) fidBeneficiosDetalleOverlay.classList.add('open');
+  try {
+    const q = new URLSearchParams();
+    q.set('job_id', String(jobId));
+    q.set('estado', state);
+    const res = await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(runId)}/beneficios/detalle?${q.toString()}`);
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    rows.forEach((row) => {
+      if (!fidBeneficiosDetalleTableBody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeAttr((row.cliente || '').trim() || `#${Number(row.recomendacion_id) || 0}`)}</td>
+        <td>${formatMoney(Number(row.ticket_promedio || 0))}</td>
+        <td>${escapeAttr(row.beneficio_texto || '-')}</td>
+        <td>${escapeAttr(row.beneficio_regla || '-')}</td>
+        <td>${escapeAttr(row.error_msg || '-')}</td>
+      `;
+      fidBeneficiosDetalleTableBody.appendChild(tr);
+    });
+    if (fidBeneficiosDetalleStatus) {
+      fidBeneficiosDetalleStatus.textContent = rows.length ? '' : 'Sin resultados.';
+    }
+  } catch (error) {
+    if (fidBeneficiosDetalleStatus) fidBeneficiosDetalleStatus.textContent = error.message || 'Error al cargar detalle.';
   }
 }
 
@@ -15918,6 +15970,21 @@ function initFidelizacion() {
     fidBeneficiosForm.addEventListener('submit', (event) => {
       event.preventDefault();
       applyFidelizacionBeneficios();
+    });
+  }
+  if (fidBeneficiosStatus) {
+    fidBeneficiosStatus.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = String(btn.dataset.action || '');
+      if (action === 'view-ok') openFidelizacionBeneficiosDetalle('OK');
+      if (action === 'view-error') openFidelizacionBeneficiosDetalle('ERROR');
+    });
+  }
+  if (fidBeneficiosDetalleCloseBtn) fidBeneficiosDetalleCloseBtn.addEventListener('click', closeFidelizacionBeneficiosDetalleModal);
+  if (fidBeneficiosDetalleOverlay) {
+    fidBeneficiosDetalleOverlay.addEventListener('click', (event) => {
+      if (event.target === fidBeneficiosDetalleOverlay) closeFidelizacionBeneficiosDetalleModal();
     });
   }
   if (fidAdminTableBody) {

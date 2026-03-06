@@ -5025,6 +5025,14 @@ app.get('/api/fidelizacion/runs/:id/beneficios-config', async (req, res) => {
        WHERE run_id = ?`,
       [runId]
     );
+    const [[lastJob]] = await pool.query(
+      `SELECT id
+       FROM fidelizacion_beneficios_job
+       WHERE run_id = ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [runId]
+    );
 
     res.json({
       data: {
@@ -5033,6 +5041,7 @@ app.get('/api/fidelizacion/runs/:id/beneficios-config', async (req, res) => {
         model: runRow.beneficios_model || OPENAI_MODEL || 'gpt-4o-mini',
         updated_by: runRow.beneficios_updated_by || '',
         updated_at: runRow.beneficios_updated_at || null,
+        last_job_id: Number(lastJob?.id) || 0,
         total: Number(stats?.total) || 0,
         total_ok: Number(stats?.total_ok) || 0,
         total_error: Number(stats?.total_error) || 0,
@@ -5040,6 +5049,59 @@ app.get('/api/fidelizacion/runs/:id/beneficios-config', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar configuracion de beneficios IA', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/runs/:id/beneficios/detalle', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver detalle de beneficios IA' });
+    const runId = Number(req.params.id);
+    const estado = String(req.query.estado || '').trim().toUpperCase();
+    let jobId = Number(req.query.job_id) || 0;
+    if (!runId) return res.status(400).json({ message: 'Corrida invalida' });
+    if (!['OK', 'ERROR'].includes(estado)) return res.status(400).json({ message: 'Estado invalido' });
+
+    if (!jobId) {
+      const [[latestJob]] = await pool.query(
+        `SELECT id
+         FROM fidelizacion_beneficios_job
+         WHERE run_id = ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [runId]
+      );
+      jobId = Number(latestJob?.id) || 0;
+    }
+    if (!jobId) return res.json({ data: [], meta: { run_id: runId, job_id: 0, estado } });
+
+    const [rows] = await pool.query(
+      `SELECT
+         d.id,
+         d.job_id,
+         d.recomendacion_id,
+         d.ticket_promedio,
+         d.beneficio_texto,
+         d.beneficio_regla,
+         d.estado,
+         d.error_msg,
+         d.created_at,
+         CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente
+       FROM fidelizacion_beneficios_job_detalle d
+       LEFT JOIN fidelizacion_recomendacion r ON r.id = d.recomendacion_id
+       LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+       WHERE d.job_id = ?
+         AND d.estado = ?
+       ORDER BY d.id ASC`,
+      [jobId, estado]
+    );
+    res.json({
+      data: rows || [],
+      meta: { run_id: runId, job_id: jobId, estado },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar detalle de beneficios IA', error: error.message });
   }
 });
 
