@@ -15913,11 +15913,7 @@ function initFidelizacion() {
   }
   if (fidBeneficiosCloseBtn) fidBeneficiosCloseBtn.addEventListener('click', closeFidelizacionBeneficiosModal);
   if (fidBeneficiosCancelBtn) fidBeneficiosCancelBtn.addEventListener('click', closeFidelizacionBeneficiosModal);
-  if (fidBeneficiosOverlay) {
-    fidBeneficiosOverlay.addEventListener('click', (event) => {
-      if (event.target === fidBeneficiosOverlay) closeFidelizacionBeneficiosModal();
-    });
-  }
+  // No cerrar por click fuera del modal; solo con botones de cierre/cancelar.
   if (fidBeneficiosForm) {
     fidBeneficiosForm.addEventListener('submit', (event) => {
       event.preventDefault();

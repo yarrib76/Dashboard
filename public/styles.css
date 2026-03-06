@@ -2495,7 +2495,23 @@ body.theme-light .fidelizacion-card-reason {
 }
 
 .fid-beneficios-modal {
-  max-width: 840px;
+  max-width: 1080px;
+  width: min(1080px, calc(100vw - 32px));
+}
+
+#fid-beneficios-form {
+  gap: 12px;
+}
+
+#fid-beneficios-form label {
+  display: grid;
+  gap: 6px;
+}
+
+#fid-beneficios-prompt {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
 }
 
 #fid-transfer-form {
