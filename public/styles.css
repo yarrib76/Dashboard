@@ -2494,6 +2494,10 @@ body.theme-light .fidelizacion-card-reason {
   max-width: 540px;
 }
 
+.fid-beneficios-modal {
+  max-width: 840px;
+}
+
 #fid-transfer-form {
   gap: 12px;
 }

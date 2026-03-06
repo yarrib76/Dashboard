@@ -487,6 +487,28 @@ function parseMaybeJson(value) {
   }
 }
 
+function extractJsonObjectFromText(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (_err) {}
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch && fencedMatch[1]) {
+    try {
+      return JSON.parse(fencedMatch[1].trim());
+    } catch (_err) {}
+  }
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch (_err) {}
+  }
+  return null;
+}
+
 function buildFidelizacionParamsJson(config) {
   return {
     cooldown_days: toSafeInt(config.cooldown_days, FIDELIZACION_DEFAULT_CONFIG.cooldown_days, 1, 365),
@@ -4162,6 +4184,10 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
          r.frequency_12m,
          r.monetary_12m,
          r.avg_ticket_12m,
+         r.beneficio_texto,
+         r.beneficio_regla,
+         r.beneficio_estado,
+         r.beneficio_generated_at,
          fn.last_note_at,
          CASE
            WHEN r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
@@ -4935,9 +4961,12 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
          fr.run_date,
          fr.created_at,
          fr.config_id,
+         fr.beneficios_updated_at,
          COUNT(r.id) AS total,
          SUM(r.estado='CERRADA') AS finalizadas,
          SUM(r.resultado IN (?,?)) AS convertidas,
+         SUM(r.beneficio_estado='OK') AS beneficios_ok,
+         SUM(r.beneficio_estado='ERROR') AS beneficios_error,
          COALESCE(
            SUM(
              CASE
@@ -4953,7 +4982,7 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
          ) AS tasa_conversion
        FROM fidelizacion_run fr
        LEFT JOIN fidelizacion_recomendacion r ON r.run_id = fr.id
-       GROUP BY fr.id, fr.run_date, fr.created_at, fr.config_id
+       GROUP BY fr.id, fr.run_date, fr.created_at, fr.config_id, fr.beneficios_updated_at
        ORDER BY fr.run_date DESC, fr.id DESC`,
       [
         resultadoCodes.convertida,
@@ -4967,6 +4996,259 @@ app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
     res.json({ data: rows || [] });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar corridas de fidelizacion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/runs/:id/beneficios-config', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede gestionar beneficios IA' });
+    const runId = Number(req.params.id);
+    if (!runId) return res.status(400).json({ message: 'Corrida invalida' });
+
+    const [[runRow]] = await pool.query(
+      `SELECT id, beneficios_prompt, beneficios_model, beneficios_updated_by, beneficios_updated_at
+       FROM fidelizacion_run
+       WHERE id = ?
+       LIMIT 1`,
+      [runId]
+    );
+    if (!runRow) return res.status(404).json({ message: 'Corrida no encontrada' });
+
+    const [[stats]] = await pool.query(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(beneficio_estado='OK') AS total_ok,
+         SUM(beneficio_estado='ERROR') AS total_error
+       FROM fidelizacion_recomendacion
+       WHERE run_id = ?`,
+      [runId]
+    );
+
+    res.json({
+      data: {
+        run_id: runId,
+        prompt: runRow.beneficios_prompt || '',
+        model: runRow.beneficios_model || OPENAI_MODEL || 'gpt-4o-mini',
+        updated_by: runRow.beneficios_updated_by || '',
+        updated_at: runRow.beneficios_updated_at || null,
+        total: Number(stats?.total) || 0,
+        total_ok: Number(stats?.total_ok) || 0,
+        total_error: Number(stats?.total_error) || 0,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar configuracion de beneficios IA', error: error.message });
+  }
+});
+
+app.put('/api/fidelizacion/runs/:id/beneficios-config', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede gestionar beneficios IA' });
+    const runId = Number(req.params.id);
+    if (!runId) return res.status(400).json({ message: 'Corrida invalida' });
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) return res.status(400).json({ message: 'Prompt requerido' });
+    const model = String(req.body?.model || OPENAI_MODEL || 'gpt-4o-mini').trim();
+    const actor = context.userName || req.user?.name || req.user?.email || '';
+
+    const [upd] = await conn.query(
+      `UPDATE fidelizacion_run
+       SET beneficios_prompt = ?,
+           beneficios_model = ?,
+           beneficios_updated_by = ?,
+           beneficios_updated_at = NOW()
+       WHERE id = ?
+       LIMIT 1`,
+      [prompt, model, actor, runId]
+    );
+    if (!upd?.affectedRows) return res.status(404).json({ message: 'Corrida no encontrada' });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar prompt de beneficios IA', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/fidelizacion/runs/:id/beneficios/actualizar', async (req, res) => {
+  let conn;
+  try {
+    if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+    const runId = Number(req.params.id);
+    if (!runId) return res.status(400).json({ message: 'Corrida invalida' });
+
+    conn = await pool.getConnection();
+    const context = await getFidelizacionUserContext(conn, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede actualizar beneficios IA' });
+    const actor = context.userName || req.user?.name || req.user?.email || '';
+
+    const [[runRow]] = await conn.query(
+      `SELECT id, beneficios_prompt, beneficios_model
+       FROM fidelizacion_run
+       WHERE id = ?
+       LIMIT 1`,
+      [runId]
+    );
+    if (!runRow) return res.status(404).json({ message: 'Corrida no encontrada' });
+
+    const prompt = String(req.body?.prompt || runRow.beneficios_prompt || '').trim();
+    if (!prompt) return res.status(400).json({ message: 'Prompt requerido para generar beneficios' });
+    const model = String(req.body?.model || runRow.beneficios_model || OPENAI_MODEL || 'gpt-4o-mini').trim();
+
+    const [targetRows] = await conn.query(
+      `SELECT id, avg_ticket_12m
+       FROM fidelizacion_recomendacion
+       WHERE run_id = ?
+       ORDER BY id ASC`,
+      [runId]
+    );
+    const targets = (targetRows || []).map((row) => ({
+      recomendacion_id: Number(row.id) || 0,
+      ticket_promedio: Number(row.avg_ticket_12m) || 0,
+    }));
+    if (!targets.length) {
+      return res.status(400).json({ message: 'La corrida no tiene fidelizaciones para procesar' });
+    }
+
+    const completion = await withRetry(() =>
+      openai.chat.completions.create({
+        model,
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Eres un motor de beneficios comerciales. Debes responder SOLO JSON valido y sin texto adicional. ' +
+              'Formato obligatorio: {"results":[{"recomendacion_id":123,"beneficio_texto":"...","beneficio_regla":"...","estado":"OK|ERROR","error_msg":""}]}. ' +
+              'Si no puedes asignar beneficio, devuelve estado="ERROR" y error_msg.',
+          },
+          {
+            role: 'user',
+            content:
+              `Politica de beneficios:\n${prompt}\n\n` +
+              `Clientes a evaluar (ticket promedio 12m):\n${JSON.stringify(targets)}\n\n` +
+              'Reglas de salida: devuelve un objeto por cada recomendacion_id recibido.',
+          },
+        ],
+      })
+    );
+    const rawResponse = String(completion?.choices?.[0]?.message?.content || '').trim();
+    const parsed = extractJsonObjectFromText(rawResponse);
+    const results = Array.isArray(parsed?.results) ? parsed.results : [];
+    const byId = new Map(
+      results
+        .map((row) => ({
+          recomendacion_id: Number(row?.recomendacion_id) || 0,
+          beneficio_texto: String(row?.beneficio_texto || '').trim(),
+          beneficio_regla: String(row?.beneficio_regla || '').trim(),
+          estado: String(row?.estado || 'OK').trim().toUpperCase() === 'ERROR' ? 'ERROR' : 'OK',
+          error_msg: String(row?.error_msg || '').trim(),
+        }))
+        .filter((row) => row.recomendacion_id > 0)
+        .map((row) => [row.recomendacion_id, row])
+    );
+
+    await conn.beginTransaction();
+    const promptHash = crypto.createHash('sha256').update(prompt).digest('hex');
+    const [jobInsert] = await conn.query(
+      `INSERT INTO fidelizacion_beneficios_job
+       (run_id, total_objetivo, total_ok, total_error, prompt_hash, model, status, created_by, created_at)
+       VALUES (?, ?, 0, 0, ?, ?, 'RUNNING', ?, NOW())`,
+      [runId, targets.length, promptHash, model, actor]
+    );
+    const jobId = Number(jobInsert.insertId) || 0;
+
+    let totalOk = 0;
+    let totalError = 0;
+    for (const target of targets) {
+      const mapped = byId.get(target.recomendacion_id);
+      const hasBenefit = Boolean(mapped?.beneficio_texto) && mapped?.estado === 'OK';
+      const estado = hasBenefit ? 'OK' : 'ERROR';
+      const beneficioTexto = hasBenefit ? mapped.beneficio_texto : null;
+      const beneficioRegla = hasBenefit ? mapped.beneficio_regla || null : null;
+      const errorMsg = hasBenefit
+        ? null
+        : mapped?.error_msg || 'IA no devolvio beneficio valido para la recomendacion';
+      if (hasBenefit) totalOk += 1;
+      else totalError += 1;
+
+      await conn.query(
+        `UPDATE fidelizacion_recomendacion
+         SET beneficio_texto = ?,
+             beneficio_regla = ?,
+             beneficio_ticket_promedio = ?,
+             beneficio_estado = ?,
+             beneficio_error = ?,
+             beneficio_generated_at = NOW(),
+             beneficio_generated_by = ?,
+             beneficio_model = ?
+         WHERE id = ?
+         LIMIT 1`,
+        [
+          beneficioTexto,
+          beneficioRegla,
+          target.ticket_promedio,
+          estado,
+          errorMsg,
+          actor,
+          model,
+          target.recomendacion_id,
+        ]
+      );
+
+      await conn.query(
+        `INSERT INTO fidelizacion_beneficios_job_detalle
+         (job_id, recomendacion_id, ticket_promedio, ia_raw_response, beneficio_texto, beneficio_regla, estado, error_msg, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          jobId,
+          target.recomendacion_id,
+          target.ticket_promedio,
+          JSON.stringify(mapped || null),
+          beneficioTexto,
+          beneficioRegla,
+          estado,
+          errorMsg,
+        ]
+      );
+    }
+
+    await conn.query(
+      `UPDATE fidelizacion_beneficios_job
+       SET total_ok = ?, total_error = ?, status = 'DONE', finished_at = NOW()
+       WHERE id = ?
+       LIMIT 1`,
+      [totalOk, totalError, jobId]
+    );
+    await conn.query(
+      `UPDATE fidelizacion_run
+       SET beneficios_prompt = ?,
+           beneficios_model = ?,
+           beneficios_updated_by = ?,
+           beneficios_updated_at = NOW()
+       WHERE id = ?
+       LIMIT 1`,
+      [prompt, model, actor, runId]
+    );
+
+    await conn.commit();
+    res.json({ ok: true, job_id: jobId, total_objetivo: targets.length, total_ok: totalOk, total_error: totalError });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {}
+    }
+    res.status(500).json({ message: 'Error al actualizar beneficios IA', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
@@ -5027,6 +5309,17 @@ app.delete('/api/fidelizacion/runs/:id', async (req, res) => {
       'DELETE FROM fidelizacion_transferencia WHERE run_id = ?',
       [runId]
     );
+    const [delBenefitDetail] = await conn.query(
+      `DELETE d
+       FROM fidelizacion_beneficios_job_detalle d
+       INNER JOIN fidelizacion_beneficios_job j ON j.id = d.job_id
+       WHERE j.run_id = ?`,
+      [runId]
+    );
+    const [delBenefitJobs] = await conn.query(
+      'DELETE FROM fidelizacion_beneficios_job WHERE run_id = ?',
+      [runId]
+    );
 
     const [delRecs] = await conn.query(
       'DELETE FROM fidelizacion_recomendacion WHERE run_id = ?',
@@ -5044,6 +5337,8 @@ app.delete('/api/fidelizacion/runs/:id', async (req, res) => {
         notas: Number(delNotasJoin?.affectedRows) || 0,
         contactos: (Number(delContactoJoin?.affectedRows) || 0) + (Number(delContactoRun?.affectedRows) || 0),
         transferencias: (Number(delTransferJoin?.affectedRows) || 0) + (Number(delTransferRun?.affectedRows) || 0),
+        beneficios_detalle: Number(delBenefitDetail?.affectedRows) || 0,
+        beneficios_jobs: Number(delBenefitJobs?.affectedRows) || 0,
         recomendaciones: Number(delRecs?.affectedRows) || 0,
         corrida: Number(delRun?.affectedRows) || 0,
       },

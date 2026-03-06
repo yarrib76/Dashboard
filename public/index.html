@@ -829,6 +829,7 @@
       <div class="actions between">
         <h3>Corridas Fidelizacion</h3>
         <div class="actions inline">
+          <button id="fid-runs-beneficios" type="button" title="Beneficios IA">&#127873; Beneficios IA</button>
           <button id="fid-runs-open-history" type="button">Ver historico</button>
           <button id="fid-runs-refresh" type="button">Actualizar corridas</button>
         </div>
@@ -993,6 +994,34 @@
           </table>
         </div>
         <p class="status" id="fid-finalizados-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-beneficios-overlay">
+    <div class="modal fid-beneficios-modal">
+      <div class="modal-header">
+        <h3 id="fid-beneficios-title">Beneficios IA por corrida</h3>
+        <button id="fid-beneficios-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <form id="fid-beneficios-form" class="abm-form-grid">
+          <label>
+            <span>Prompt de beneficios</span>
+            <textarea
+              id="fid-beneficios-prompt"
+              rows="8"
+              maxlength="8000"
+              placeholder="Define la politica de beneficios en lenguaje natural..."
+              required
+            ></textarea>
+          </label>
+          <div class="actions inline">
+            <button id="fid-beneficios-apply" type="submit">&#127873; Actualizar beneficios</button>
+            <button id="fid-beneficios-cancel" type="button">Cancelar</button>
+          </div>
+          <p class="status" id="fid-beneficios-status"></p>
+        </form>
       </div>
     </div>
   </div>

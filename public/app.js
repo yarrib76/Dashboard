@@ -347,6 +347,7 @@ let fidRunsDataTable = null;
 let fidNotasCurrentRecId = 0;
 let fidNotasCurrentClientLabel = '';
 let fidNotasEditingId = null;
+let fidBeneficiosRunId = 0;
 const controlOrdenesFilters = {
   orden: '',
   articulo: '',
@@ -543,6 +544,7 @@ const fidReportesStatus = document.getElementById('fid-reportes-status');
 const fidAdminResultadosRecalcularBtn = document.getElementById('fid-admin-resultados-recalcular');
 const fidRunsRefreshBtn = document.getElementById('fid-runs-refresh');
 const fidRunsOpenHistoryBtn = document.getElementById('fid-runs-open-history');
+const fidRunsBeneficiosBtn = document.getElementById('fid-runs-beneficios');
 const fidRunsTableBody = document.querySelector('#fid-runs-table tbody');
 const fidRunsCards = document.getElementById('fid-runs-cards');
 const fidRunsStatus = document.getElementById('fid-runs-status');
@@ -577,6 +579,13 @@ const fidFinalizadosCloseBtn = document.getElementById('fid-finalizados-close');
 const fidFinalizadosTitle = document.getElementById('fid-finalizados-title');
 const fidFinalizadosTableBody = document.querySelector('#fid-finalizados-table tbody');
 const fidFinalizadosStatus = document.getElementById('fid-finalizados-status');
+const fidBeneficiosOverlay = document.getElementById('fid-beneficios-overlay');
+const fidBeneficiosTitle = document.getElementById('fid-beneficios-title');
+const fidBeneficiosCloseBtn = document.getElementById('fid-beneficios-close');
+const fidBeneficiosForm = document.getElementById('fid-beneficios-form');
+const fidBeneficiosPromptInput = document.getElementById('fid-beneficios-prompt');
+const fidBeneficiosCancelBtn = document.getElementById('fid-beneficios-cancel');
+const fidBeneficiosStatus = document.getElementById('fid-beneficios-status');
 const facturaNuevaCalcBtn = document.getElementById('factura-nueva-calculadora');
 const facturaNuevaAddBtn = document.getElementById('factura-nueva-add');
 const facturaNuevaSaveBtn = document.getElementById('factura-nueva-save');
@@ -14803,6 +14812,7 @@ function buildFidActions(row, { adminMode = false } = {}) {
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="contactar" data-id="${row.id}">Contactar</button>`);
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="cerrar" data-id="${row.id}">Cerrar</button>`);
   if (estado === 'CERRADA') buttons.push(`<button type="button" data-action="reabrir" data-id="${row.id}">Reabrir</button>`);
+  buttons.push(`<button type="button" data-action="beneficio" data-id="${row.id}">Beneficio</button>`);
   buttons.push(
     `<button type="button" data-action="notas" data-id="${row.id}"${
       requiresNoteUpdate ? ' class="fid-notas-stale" title="Hace más de 2 días sin notas"' : ''
@@ -15327,6 +15337,7 @@ function renderFidelizacionRuns(rows = []) {
         <td>${formatMoney(row.monto_convertido || 0)}</td>
         <td>${Number(row.tasa_conversion || 0).toFixed(1)}%</td>
         <td class="actions inline no-wrap">
+          <button type="button" class="icon-button" data-action="beneficios-run" data-run-id="${Number(row.id) || 0}" title="Beneficios IA" aria-label="Beneficios IA">&#127873;</button>
           <button type="button" class="icon-button" data-action="ver-run" data-run-id="${Number(row.id) || 0}" title="Ver corrida" aria-label="Ver corrida">&#128065;</button>
           <button type="button" class="icon-button" data-action="eliminar-run" data-run-id="${Number(row.id) || 0}" title="Eliminar corrida" aria-label="Eliminar corrida">&#128465;</button>
         </td>
@@ -15346,6 +15357,7 @@ function renderFidelizacionRuns(rows = []) {
         <p class="fidelizacion-card-meta">Convertidas: ${Number(row.convertidas) || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
         <p class="fidelizacion-card-offer">${formatMoney(row.monto_convertido || 0)}</p>
         <div class="actions inline no-wrap">
+          <button type="button" class="icon-button" data-action="beneficios-run" data-run-id="${Number(row.id) || 0}" title="Beneficios IA" aria-label="Beneficios IA">&#127873;</button>
           <button type="button" class="icon-button" data-action="ver-run" data-run-id="${Number(row.id) || 0}" title="Ver corrida" aria-label="Ver corrida">&#128065;</button>
           <button type="button" class="icon-button" data-action="eliminar-run" data-run-id="${Number(row.id) || 0}" title="Eliminar corrida" aria-label="Eliminar corrida">&#128465;</button>
         </div>
@@ -15376,6 +15388,80 @@ async function deleteFidelizacionRun(runId) {
   } catch (error) {
     setStatusMessage(fidRunsStatus, error.message || 'Error al eliminar corrida.', 'error');
   }
+}
+
+async function openFidelizacionBeneficiosModal(runId) {
+  const id = Number(runId) || 0;
+  if (!id || !fidBeneficiosOverlay) return;
+  fidBeneficiosRunId = id;
+  if (fidBeneficiosTitle) fidBeneficiosTitle.textContent = `Beneficios IA - Corrida #${id}`;
+  if (fidBeneficiosPromptInput) fidBeneficiosPromptInput.value = '';
+  if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = 'Cargando...';
+  fidBeneficiosOverlay.classList.add('open');
+  try {
+    const res = await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(id)}/beneficios-config`);
+    const data = res?.data || {};
+    if (fidBeneficiosPromptInput) fidBeneficiosPromptInput.value = String(data.prompt || '');
+    if (fidBeneficiosStatus) {
+      fidBeneficiosStatus.textContent = `Total: ${Number(data.total || 0)} | OK: ${Number(data.total_ok || 0)} | Error: ${Number(
+        data.total_error || 0
+      )}`;
+    }
+  } catch (error) {
+    if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = error.message || 'Error al cargar configuracion.';
+  }
+}
+
+function closeFidelizacionBeneficiosModal() {
+  fidBeneficiosRunId = 0;
+  if (fidBeneficiosOverlay) fidBeneficiosOverlay.classList.remove('open');
+}
+
+async function applyFidelizacionBeneficios() {
+  const runId = Number(fidBeneficiosRunId) || 0;
+  if (!runId) return;
+  const prompt = String(fidBeneficiosPromptInput?.value || '').trim();
+  if (!prompt) {
+    if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = 'Completa el prompt.';
+    return;
+  }
+  if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = 'Actualizando beneficios IA...';
+  try {
+    await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(runId)}/beneficios-config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const res = await fetchJSON(`/api/fidelizacion/runs/${encodeURIComponent(runId)}/beneficios/actualizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (fidBeneficiosStatus) {
+      fidBeneficiosStatus.textContent = `Actualizado. OK: ${Number(res?.total_ok || 0)} | Error: ${Number(
+        res?.total_error || 0
+      )}`;
+    }
+    fidelizacionMisLoaded = false;
+    await loadFidelizacionRuns({ silent: true });
+    if (fidelizacionMisLoaded || currentView === 'fidelizacion-mis') await loadFidelizacionMis();
+    if (fidelizacionAdminLoaded || currentView === 'fidelizacion-admin') await loadFidelizacionAdminQueue();
+  } catch (error) {
+    if (fidBeneficiosStatus) fidBeneficiosStatus.textContent = error.message || 'Error al actualizar beneficios.';
+  }
+}
+
+function showFidelizacionBeneficio(rec) {
+  const title = rec?.cliente ? `Cliente: ${rec.cliente}` : 'Fidelizacion';
+  const beneficio = String(rec?.beneficio_texto || '').trim();
+  const regla = String(rec?.beneficio_regla || '').trim();
+  const estado = String(rec?.beneficio_estado || '').trim();
+  if (!beneficio) {
+    alert(`${title}\n\nNo hay beneficio generado para esta fidelizacion.`);
+    return;
+  }
+  const extra = [regla ? `Regla: ${regla}` : '', estado ? `Estado: ${estado}` : ''].filter(Boolean).join('\n');
+  alert(`${title}\n\nBeneficio:\n${beneficio}${extra ? `\n\n${extra}` : ''}`);
 }
 
 async function loadFidelizacionRuns({ silent = false } = {}) {
@@ -15559,6 +15645,10 @@ async function doFidelizacionAction(action, id) {
     fidelizacionMisRows.find((row) => Number(row.id) === Number(id)) ||
     fidelizacionAdminRows.find((row) => Number(row.id) === Number(id));
   if (!rec) return;
+  if (action === 'beneficio') {
+    showFidelizacionBeneficio(rec);
+    return;
+  }
   let url = `/api/fidelizacion/recomendaciones/${encodeURIComponent(id)}/${action}`;
   let payload = {};
   if (action === 'tomar') {
@@ -15792,6 +15882,10 @@ function initFidelizacion() {
     const runId = Number(btn.dataset.runId) || 0;
     if (!runId) return;
     const action = String(btn.dataset.action || '').trim();
+    if (action === 'beneficios-run') {
+      openFidelizacionBeneficiosModal(runId);
+      return;
+    }
     if (action === 'ver-run') {
       openFidelizacionDashboardModal({ scope: 'run', runId });
       return;
@@ -15802,6 +15896,30 @@ function initFidelizacion() {
   };
   if (fidRunsTableBody) fidRunsTableBody.addEventListener('click', onRunClick);
   if (fidRunsCards) fidRunsCards.addEventListener('click', onRunClick);
+  if (fidRunsBeneficiosBtn) {
+    fidRunsBeneficiosBtn.addEventListener('click', async () => {
+      if (!fidelizacionRunsLoaded) await loadFidelizacionRuns({ silent: true });
+      const firstRunId = Number(fidelizacionRunsRows?.[0]?.id) || 0;
+      if (!firstRunId) {
+        setStatusMessage(fidRunsStatus, 'No hay corridas disponibles.', 'error');
+        return;
+      }
+      openFidelizacionBeneficiosModal(firstRunId);
+    });
+  }
+  if (fidBeneficiosCloseBtn) fidBeneficiosCloseBtn.addEventListener('click', closeFidelizacionBeneficiosModal);
+  if (fidBeneficiosCancelBtn) fidBeneficiosCancelBtn.addEventListener('click', closeFidelizacionBeneficiosModal);
+  if (fidBeneficiosOverlay) {
+    fidBeneficiosOverlay.addEventListener('click', (event) => {
+      if (event.target === fidBeneficiosOverlay) closeFidelizacionBeneficiosModal();
+    });
+  }
+  if (fidBeneficiosForm) {
+    fidBeneficiosForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      applyFidelizacionBeneficios();
+    });
+  }
   if (fidAdminTableBody) {
     fidAdminTableBody.addEventListener('click', (event) => {
       const btn = event.target.closest('button[data-action="ver-finalizados"][data-vendedora-id]');
