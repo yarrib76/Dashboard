@@ -14977,11 +14977,14 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
     if (tableBody) {
       const tr = document.createElement('tr');
       tr.className = expiredClass.trim();
+      const ticketCell =
+        tableType === 'mis' ? `<td>${formatMoney(Number(row.avg_ticket_12m || 0))}</td>` : '';
       tr.innerHTML = `
         <td>${clientHtml}<br><small>${escapeAttr(row.telefono || '')}</small></td>
         <td>${escapeAttr(formatDateLong(row.run_date || ''))}</td>
         <td>${estadoHtml}</td>
         <td>${Number(row.score || 0).toFixed(2)}</td>
+        ${ticketCell}
         <td>${escapeAttr(row.oferta_detalle || '')}</td>
         <td>${escapeAttr(row.vendedora_nombre || '-')}</td>
         <td class="actions">${actions}</td>
@@ -15002,6 +15005,7 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
         </div>
         <p class="fidelizacion-card-meta">${estadoHtml} · ${escapeAttr(row.telefono || '-')}</p>
         <p class="fidelizacion-card-meta">Corrida: ${escapeAttr(formatDateLong(row.run_date || ''))}</p>
+        ${tableType === 'mis' ? `<p class="fidelizacion-card-meta">Ticket prom.: ${formatMoney(Number(row.avg_ticket_12m || 0))}</p>` : ''}
         <p class="fidelizacion-card-offer">${escapeAttr(row.oferta_detalle || '')}</p>
         <div class="actions">${actions}</div>
       `;
