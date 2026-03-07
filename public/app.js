@@ -316,6 +316,7 @@ let pedidoNuevoArticulosTimer = null;
 let facturaNuevaArticulosTimer = null;
 let facturaNuevaAutorizado = true;
 let facturaNuevaSaving = false;
+let pedidoNuevoSaving = false;
 let facturacionClientesTarget = 'pedido';
 let facturacionArticulosTarget = 'pedido';
 let abmEditContext = null;
@@ -2712,6 +2713,7 @@ async function initPedidoNuevo() {
 
   if (pedidoNuevoSaveBtn) {
     pedidoNuevoSaveBtn.addEventListener('click', async () => {
+      if (pedidoNuevoSaving) return;
       const clienteId = Number(pedidoClienteId?.value) || 1;
       const nroPedido = Number(pedidoNumeroInput?.value) || 0;
       const vendedora = pedidoVendedoraSelect?.value || '';
@@ -2729,6 +2731,9 @@ async function initPedidoNuevo() {
         return;
       }
       setStatusMessage(pedidoNuevoStatus, 'Guardando...');
+      const idempotencyKey = generateIdempotencyKey();
+      pedidoNuevoSaving = true;
+      pedidoNuevoSaveBtn.disabled = true;
       try {
         const payload = {
           cliente_id: clienteId,
@@ -2736,12 +2741,16 @@ async function initPedidoNuevo() {
           vendedora,
           ordenWeb,
           items: pedidoNuevoItems,
+          idempotency_key: idempotencyKey,
         };
         const isEdit = Boolean(pedidoEditandoNumero);
         const targetNumero = isEdit ? pedidoEditandoNumero : nroPedido;
         const res = await fetchJSON(isEdit ? `/api/pedidos/${encodeURIComponent(targetNumero)}` : '/api/pedidos', {
           method: isEdit ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-idempotency-key': idempotencyKey,
+          },
           body: JSON.stringify({ ...payload, nroPedido: targetNumero }),
         });
         setStatusMessage(pedidoNuevoStatus, `Pedido ${res?.nroPedido || ''} guardado.`, 'ok');
@@ -2755,6 +2764,9 @@ async function initPedidoNuevo() {
         if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = '';
       } catch (error) {
         setStatusMessage(pedidoNuevoStatus, error.message || 'Error al guardar pedido.', 'error');
+      } finally {
+        pedidoNuevoSaving = false;
+        pedidoNuevoSaveBtn.disabled = false;
       }
     });
   }
@@ -14963,6 +14975,13 @@ function getWhatsAppGreetingByHour() {
   if (hour >= 5 && hour < 12) return 'Buen día';
   if (hour >= 12 && hour < 20) return 'Buenas tardes';
   return 'Buenas noches';
+}
+
+function generateIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `pedido-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
 }
 
 function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = false, tableType = '' } = {}) {

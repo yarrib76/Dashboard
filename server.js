@@ -70,6 +70,8 @@ const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
 const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
+const LOGS_DIR = path.join(__dirname, 'logs');
+const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -120,6 +122,85 @@ function formatDateLocal(dateObj) {
   const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
   const dd = String(dateObj.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function ensureFacturasErrorLogInitialized() {
+  try {
+    if (!fs.existsSync(LOGS_DIR)) {
+      fs.mkdirSync(LOGS_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(FACTURAS_ERROR_LOG_PATH)) {
+      const initLine = `[${formatDateTimeLocal(new Date())}] Inicializacion de Log${os.EOL}`;
+      fs.writeFileSync(FACTURAS_ERROR_LOG_PATH, initLine, { encoding: 'utf8' });
+    }
+  } catch (error) {
+    console.error('[facturas-log-init] error', error);
+  }
+}
+
+function appendFacturaErrorLog(entry) {
+  try {
+    const line = `${JSON.stringify(entry)}${os.EOL}`;
+    fs.appendFileSync(FACTURAS_ERROR_LOG_PATH, line, { encoding: 'utf8' });
+  } catch (error) {
+    console.error('[facturas-log-write] error', error);
+  }
+}
+
+function buildFacturaErrorEntry(req, payloadValidation, error) {
+  const payload = payloadValidation?.data || req.body || {};
+  const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+  const items = rawItems.map((item) => ({
+    articulo: String(item?.articulo || ''),
+    cantidad: Number(item?.cantidad) || 0,
+    precioUnitario: Number(item?.precioUnitario) || 0,
+  }));
+  const subtotalEstimado = items.reduce(
+    (acc, item) => acc + Number(item.cantidad || 0) * Number(item.precioUnitario || 0),
+    0
+  );
+  const normalizedKey = normalizeIdempotencyKey(
+    req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+  );
+  return {
+    timestamp: formatDateTimeLocal(new Date()),
+    route: `${req.method} ${req.originalUrl || req.url || '/api/facturas'}`,
+    user: {
+      id: req.user?.id ?? null,
+      name: req.user?.name ?? null,
+      role: req.user?.role ?? null,
+    },
+    request: {
+      idempotency_key: normalizedKey || null,
+      cliente_id: payload?.cliente_id ?? null,
+      vendedora: payload?.vendedora ?? null,
+      tipo_pago_id: payload?.tipo_pago_id ?? null,
+      esPedido: payload?.esPedido ?? null,
+      nroPedido: payload?.nroPedido ?? null,
+      listoParaEnvio: payload?.listoParaEnvio ?? null,
+      porcentajeDescuento: payload?.porcentajeDescuento ?? null,
+      envio: payload?.envio ?? null,
+      pagoMixto: payload?.pagoMixto ?? null,
+      items_count: items.length,
+      subtotal_estimado: Number(subtotalEstimado.toFixed(2)),
+      items,
+    },
+    validation: {
+      ok: payloadValidation?.ok ?? null,
+      message: payloadValidation?.message || null,
+    },
+    error: {
+      code: error?.code || null,
+      errno: error?.errno || null,
+      sqlState: error?.sqlState || null,
+      sqlMessage: error?.sqlMessage || null,
+      message: error?.message || 'Unknown error',
+      stack: String(error?.stack || '')
+        .split('\n')
+        .slice(0, 8)
+        .join('\n'),
+    },
+  };
 }
 
 function getTnubeConnection(storeId) {
@@ -7931,8 +8012,12 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
 
 app.post('/api/pedidos', requireAuth, async (req, res) => {
   let connection;
+  let idempotencyKey = '';
   try {
     const { cliente_id, vendedora, ordenWeb = 0, items = [], nroPedido } = req.body || {};
+    idempotencyKey = normalizeIdempotencyKey(
+      req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+    );
     const clienteId = Number(cliente_id) || 1;
     if (!vendedora) {
       return res.status(400).json({ message: 'vendedora requerida' });
@@ -7946,6 +8031,23 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
     }
     connection = await pool.getConnection();
     await connection.beginTransaction();
+    if (idempotencyKey) {
+      const [[existingPedido]] = await connection.query(
+        `SELECT nropedido
+         FROM ${DB_NAME}.controlpedidos
+         WHERE idempotency_key = ?
+         LIMIT 1`,
+        [idempotencyKey]
+      );
+      if (existingPedido?.nropedido) {
+        await connection.commit();
+        return res.json({
+          ok: true,
+          nroPedido: Number(existingPedido.nropedido) || 0,
+          idempotentReplay: true,
+        });
+      }
+    }
     let attempts = 0;
     while (attempts < 5) {
       const [[existsRow]] = await connection.query(
@@ -8008,9 +8110,9 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
     const totalWeb = Number(ordenWeb) ? total : 0;
     await connection.query(
       `INSERT INTO ${DB_NAME}.controlpedidos
-       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, totalweb, instancia)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)`,
-      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, totalWeb, instancia]
+       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, totalweb, instancia, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?, ?)`,
+      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, totalWeb, instancia, idempotencyKey || null]
     );
     for (const item of processedItems) {
       await connection.query(
@@ -8042,6 +8144,26 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
         /* ignore */
       }
     }
+    if (idempotencyKey && error?.code === 'ER_DUP_ENTRY') {
+      try {
+        const [[existingPedido]] = await pool.query(
+          `SELECT nropedido
+           FROM ${DB_NAME}.controlpedidos
+           WHERE idempotency_key = ?
+           LIMIT 1`,
+          [idempotencyKey]
+        );
+        if (existingPedido?.nropedido) {
+          return res.json({
+            ok: true,
+            nroPedido: Number(existingPedido.nropedido) || 0,
+            idempotentReplay: true,
+          });
+        }
+      } catch (_err) {
+        // ignore y responder error original
+      }
+    }
     res.status(500).json({ message: 'Error al crear pedido', error: error.message });
   } finally {
     if (connection) connection.release();
@@ -8050,8 +8172,9 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
 
 app.post('/api/facturas', requireAuth, async (req, res) => {
   let connection;
+  let payloadValidation = null;
   try {
-    const payloadValidation = validateFacturaPayload(req.body || {});
+    payloadValidation = validateFacturaPayload(req.body || {});
     if (!payloadValidation.ok) {
       return res.status(400).json({ message: payloadValidation.message });
     }
@@ -8264,6 +8387,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
         /* ignore */
       }
     }
+    appendFacturaErrorLog(buildFacturaErrorEntry(req, payloadValidation, error));
     res.status(500).json({ message: 'Error al crear factura', error: error.message });
   } finally {
     if (connection) connection.release();
@@ -9424,6 +9548,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+ensureFacturasErrorLogInitialized();
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
 });
