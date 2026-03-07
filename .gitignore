@@ -5,4 +5,4 @@ Dokerfile
 logoviamore.png
 logosamira.png
 docs/
-facturas-error.log
+logs/

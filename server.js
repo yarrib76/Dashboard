@@ -72,6 +72,7 @@ const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/pr
 const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
 const LOGS_DIR = path.join(__dirname, 'logs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
+const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -138,12 +139,35 @@ function ensureFacturasErrorLogInitialized() {
   }
 }
 
+function ensurePedidosErrorLogInitialized() {
+  try {
+    if (!fs.existsSync(LOGS_DIR)) {
+      fs.mkdirSync(LOGS_DIR, { recursive: true });
+    }
+    if (!fs.existsSync(PEDIDOS_ERROR_LOG_PATH)) {
+      const initLine = `[${formatDateTimeLocal(new Date())}] Inicializacion de Log${os.EOL}`;
+      fs.writeFileSync(PEDIDOS_ERROR_LOG_PATH, initLine, { encoding: 'utf8' });
+    }
+  } catch (error) {
+    console.error('[pedidos-log-init] error', error);
+  }
+}
+
 function appendFacturaErrorLog(entry) {
   try {
     const line = `${JSON.stringify(entry)}${os.EOL}`;
     fs.appendFileSync(FACTURAS_ERROR_LOG_PATH, line, { encoding: 'utf8' });
   } catch (error) {
     console.error('[facturas-log-write] error', error);
+  }
+}
+
+function appendPedidoErrorLog(entry) {
+  try {
+    const line = `${JSON.stringify(entry)}${os.EOL}`;
+    fs.appendFileSync(PEDIDOS_ERROR_LOG_PATH, line, { encoding: 'utf8' });
+  } catch (error) {
+    console.error('[pedidos-log-write] error', error);
   }
 }
 
@@ -188,6 +212,53 @@ function buildFacturaErrorEntry(req, payloadValidation, error) {
     validation: {
       ok: payloadValidation?.ok ?? null,
       message: payloadValidation?.message || null,
+    },
+    error: {
+      code: error?.code || null,
+      errno: error?.errno || null,
+      sqlState: error?.sqlState || null,
+      sqlMessage: error?.sqlMessage || null,
+      message: error?.message || 'Unknown error',
+      stack: String(error?.stack || '')
+        .split('\n')
+        .slice(0, 8)
+        .join('\n'),
+    },
+  };
+}
+
+function buildPedidoErrorEntry(req, error) {
+  const payload = req.body || {};
+  const rawItems = Array.isArray(payload?.items) ? payload.items : [];
+  const items = rawItems.map((item) => ({
+    articulo: String(item?.articulo || ''),
+    cantidad: Number(item?.cantidad) || 0,
+    precioUnitario: Number(item?.precioUnitario) || 0,
+  }));
+  const totalEstimado = items.reduce(
+    (acc, item) => acc + Number(item.cantidad || 0) * Number(item.precioUnitario || 0),
+    0
+  );
+  const normalizedKey = normalizeIdempotencyKey(
+    req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+  );
+  return {
+    timestamp: formatDateTimeLocal(new Date()),
+    route: `${req.method} ${req.originalUrl || req.url || '/api/pedidos'}`,
+    user: {
+      id: req.user?.id ?? null,
+      name: req.user?.name ?? null,
+      role: req.user?.role ?? null,
+    },
+    request: {
+      idempotency_key: normalizedKey || null,
+      cliente_id: payload?.cliente_id ?? null,
+      vendedora: payload?.vendedora ?? null,
+      ordenWeb: payload?.ordenWeb ?? null,
+      nroPedido: payload?.nroPedido ?? null,
+      items_count: items.length,
+      total_estimado: Number(totalEstimado.toFixed(2)),
+      items,
     },
     error: {
       code: error?.code || null,
@@ -8164,6 +8235,7 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
         // ignore y responder error original
       }
     }
+    appendPedidoErrorLog(buildPedidoErrorEntry(req, error));
     res.status(500).json({ message: 'Error al crear pedido', error: error.message });
   } finally {
     if (connection) connection.release();
@@ -9549,6 +9621,7 @@ app.get('*', (req, res) => {
 });
 
 ensureFacturasErrorLogInitialized();
+ensurePedidosErrorLogInitialized();
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
 });
