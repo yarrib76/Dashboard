@@ -10158,7 +10158,6 @@ function renderControlOrdenesTable(rows) {
     )}" data-estado="${row.ordenControlada}">${closeIcon}</button>
       </td>
       <td>${escapeAttr(row.proveedor)}</td>
-      <td>${formatMoney(row.precioArgen)}</td>
     `;
     controlOrdenesTableBody.appendChild(tr);
   });
@@ -10391,7 +10390,6 @@ async function exportControlOrdenesXlsx() {
     'PVenta',
     'Notas',
     'Proveedor',
-    'PreOrigen',
     'Estado',
   ];
   const sheetRows = rows.map((row) => [
@@ -10404,7 +10402,6 @@ async function exportControlOrdenesXlsx() {
     row.pventa ?? 0,
     row.cantNotas ?? 0,
     row.proveedor,
-    row.precioArgen ?? 0,
     getControlOrdenEstadoLabel(row.ordenControlada),
   ]);
   const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sheetRows]);
