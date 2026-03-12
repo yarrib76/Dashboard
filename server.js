@@ -8307,10 +8307,21 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
     const fecha = formatDateLocal(new Date());
     const cajera = req.user?.name || '';
     const processedItems = [];
+    const processedItemsBySourceOrder = [];
     let subtotal = 0;
     let gananciaTotal = 0;
     let precioArgentina = 0;
-    for (const item of items) {
+    const itemsForStockLock = (Array.isArray(items) ? items : [])
+      .map((item, sourceIndex) => ({ item, sourceIndex }))
+      .sort((a, b) => {
+        const articuloA = String(a.item?.articulo || '').trim();
+        const articuloB = String(b.item?.articulo || '').trim();
+        if (articuloA < articuloB) return -1;
+        if (articuloA > articuloB) return 1;
+        return a.sourceIndex - b.sourceIndex;
+      });
+    for (const wrapped of itemsForStockLock) {
+      const item = wrapped.item || {};
       const articulo = String(item.articulo || '').trim();
       const cantidad = Number(item.cantidad) || 0;
       if (!articulo || cantidad <= 0) continue;
@@ -8333,6 +8344,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
       gananciaTotal += ganancia;
       precioArgentina += precioArgen * cantidad;
       processedItems.push({
+        sourceIndex: wrapped.sourceIndex,
         articulo,
         detalle: art.Detalle,
         cantidad,
@@ -8350,6 +8362,9 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
       await connection.rollback();
       return res.status(400).json({ message: 'items invalidos' });
     }
+    processedItemsBySourceOrder.push(
+      ...processedItems.slice().sort((a, b) => a.sourceIndex - b.sourceIndex)
+    );
     const pct = Number(porcentajeDescuento) || 0;
     const envioValue = Number(envio) || 0;
     const totalDescuento = pct > 0 ? subtotal * (1 - pct / 100) : null;
@@ -8357,7 +8372,7 @@ app.post('/api/facturas', requireAuth, async (req, res) => {
     if (pct > 0) {
       gananciaTotal = Number(totalDescuento) - precioArgentina;
     }
-    for (const item of processedItems) {
+    for (const item of processedItemsBySourceOrder) {
       await connection.query(
         `INSERT INTO ${DB_NAME}.factura
          (NroFactura, Articulo, Detalle, Cantidad, PrecioArgen, PrecioUnitario, PrecioVenta, Ganancia, Descuento, Cajera, Vendedora, Fecha, Estado)
