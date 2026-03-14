@@ -1062,6 +1062,7 @@ const dashboardComparativoMonthTo = document.getElementById('dashboard-comparati
 const dashboardComparativoMode = document.getElementById('dashboard-comparativo-mode');
 const dashboardComparativoEntity = document.getElementById('dashboard-comparativo-entity');
 const dashboardComparativoEntityWrap = document.getElementById('dashboard-comparativo-entity-wrap');
+const dashboardComparativoAllYears = document.getElementById('dashboard-comparativo-all-years');
 const dashboardComparativoRefresh = document.getElementById('dashboard-comparativo-refresh');
 const dashboardComparativoSummary = document.getElementById('dashboard-comparativo-summary');
 let clientesPage = 1;
@@ -8491,17 +8492,26 @@ function initMonthRangeSelect(selectEl, selectedValue) {
 function updateDashboardComparativoLabels() {
   const mode = String(dashboardComparativoMode?.value || 'cantidad');
   const entity = mode === 'monto' ? 'facturas' : String(dashboardComparativoEntity?.value || 'pedidos');
+  const allYears = dashboardComparativoAllYears?.checked === true;
   if (dashboardComparativoEntityWrap) {
     dashboardComparativoEntityWrap.style.display = mode === 'cantidad' ? '' : 'none';
   }
+  if (dashboardComparativoYearA) dashboardComparativoYearA.disabled = allYears;
+  if (dashboardComparativoYearB) dashboardComparativoYearB.disabled = allYears;
   let title = 'Cantidad de pedidos por mes';
   let subtitle = 'Comparación interanual del mismo período mensual.';
   if (mode === 'cantidad' && entity === 'facturas') {
     title = 'Cantidad de facturas por mes';
-    subtitle = 'Comparación interanual de facturas emitidas en el rango seleccionado.';
+    subtitle = allYears
+      ? 'Comparación general de facturas emitidas para todos los años en el rango seleccionado.'
+      : 'Comparación interanual de facturas emitidas en el rango seleccionado.';
   } else if (mode === 'monto') {
     title = 'Facturación real comparable por mes';
-    subtitle = 'Comparación del año más reciente en nominal contra el año más viejo ajustado por inflación al mismo mes.';
+    subtitle = allYears
+      ? 'Comparación general: último año nominal y años anteriores ajustados por inflación al mismo mes.'
+      : 'Comparación del año más reciente en nominal contra el año más viejo ajustado por inflación al mismo mes.';
+  } else if (allYears) {
+    subtitle = 'Comparación general para todos los años en el rango seleccionado.';
   }
   if (dashboardComparativoTitle) dashboardComparativoTitle.textContent = title;
   if (dashboardComparativoSubtitle) dashboardComparativoSubtitle.textContent = subtitle;
@@ -8529,6 +8539,17 @@ function getCrecimientoRealLabel(realPct) {
 
 function normalizeDashboardComparativoSeriesOrder(series = []) {
   return [...series].sort((a, b) => Number(a?.year || 0) - Number(b?.year || 0));
+}
+
+function getDashboardComparativoAllYearsRange() {
+  const years = Array.from(dashboardComparativoYearA?.options || [])
+    .map((option) => Number(option.value))
+    .filter((value) => Number.isFinite(value));
+  if (!years.length) {
+    const currentYear = new Date().getFullYear();
+    return { minYear: currentYear - 20, maxYear: currentYear };
+  }
+  return { minYear: Math.min(...years), maxYear: Math.max(...years) };
 }
 
 function buildDashboardComparativoMontoModel(payload = {}, inflationPayload = {}) {
@@ -8585,15 +8606,157 @@ function buildDashboardComparativoMontoModel(payload = {}, inflationPayload = {}
   };
 }
 
-function renderDashboardComparativoSummary(mode) {
+function buildDashboardComparativoMontoAllYearsModel(payload = {}, inflationPayload = {}) {
+  const labels = Array.isArray(payload?.labels) ? payload.labels : [];
+  const nominalSeries = normalizeDashboardComparativoSeriesOrder(payload?.series || []);
+  const ticketSeries = normalizeDashboardComparativoSeriesOrder(payload?.ticketSeries || []);
+  const inflationSeries = normalizeDashboardComparativoSeriesOrder(inflationPayload?.allSeries || []);
+  const monthFrom = Number(payload?.meta?.month_from || 1);
+  if (!nominalSeries.length || !inflationSeries.length) return null;
+  const latestYear = Number(nominalSeries[nominalSeries.length - 1]?.year || 0);
+  const inflationIndexByMonth = new Map();
+  let cumulativeIndex = 1;
+  const minYear = Number(inflationSeries[0]?.year || latestYear);
+  for (let year = minYear; year <= latestYear; year += 1) {
+    const yearSeries = inflationSeries.find((item) => Number(item?.year || 0) === year) || {};
+    const monthlyValues = Array.isArray(yearSeries.values) ? yearSeries.values : [];
+    for (let month = 1; month <= 12; month += 1) {
+      cumulativeIndex *= 1 + (Number(monthlyValues[month - 1]) || 0) / 100;
+      inflationIndexByMonth.set(`${year}-${month}`, cumulativeIndex);
+    }
+  }
+  return {
+    labels,
+    latestYear,
+    series: nominalSeries.map((seriesItem) => {
+      const year = Number(seriesItem?.year || 0);
+      const nominalValues = Array.isArray(seriesItem.values)
+        ? seriesItem.values.map((value) => Number(value) || 0)
+        : [];
+      if (year === latestYear) {
+        return { year, isLatest: true, values: nominalValues };
+      }
+      const adjustedValues = nominalValues.map((value, offset) => {
+        const month = monthFrom + offset;
+        const sourceIndex = inflationIndexByMonth.get(`${year}-${month}`) || 1;
+        const latestIndex = inflationIndexByMonth.get(`${latestYear}-${month}`) || 1;
+        if (!(sourceIndex > 0)) return 0;
+        return Number(((Number(value) || 0) * (latestIndex / sourceIndex)).toFixed(2));
+      });
+      return { year, isLatest: false, values: adjustedValues };
+    }),
+    ticketSeries: ticketSeries.map((seriesItem) => {
+      const year = Number(seriesItem?.year || 0);
+      const nominalValues = Array.isArray(seriesItem.values)
+        ? seriesItem.values.map((value) => Number(value) || 0)
+        : [];
+      if (year === latestYear) {
+        return { year, isLatest: true, values: nominalValues };
+      }
+      const adjustedValues = nominalValues.map((value, offset) => {
+        const month = monthFrom + offset;
+        const sourceIndex = inflationIndexByMonth.get(`${year}-${month}`) || 1;
+        const latestIndex = inflationIndexByMonth.get(`${latestYear}-${month}`) || 1;
+        if (!(sourceIndex > 0)) return 0;
+        return Number(((Number(value) || 0) * (latestIndex / sourceIndex)).toFixed(2));
+      });
+      return { year, isLatest: false, values: adjustedValues };
+    }),
+  };
+}
+
+function renderDashboardComparativoAllYearsRanking(payload = {}, datasets = []) {
   if (!dashboardComparativoSummary) return;
-  const montoModel = dashboardComparativoInflationState.montoModel;
-  if (mode !== 'monto' || !montoModel) {
+  const labels = Array.isArray(payload?.labels) ? payload.labels : [];
+  let series = Array.isArray(payload?.series) ? payload.series : [];
+  let ticketSeries = Array.isArray(payload?.ticketSeries) ? payload.ticketSeries : [];
+  const mode = String(payload?.meta?.mode || 'cantidad');
+  if (!labels.length || !series.length) {
+    dashboardComparativoSummary.innerHTML = '';
+    dashboardComparativoSummary.style.display = 'none';
+    dashboardComparativoSummary.classList.remove('ranking');
+    return;
+  }
+  if (payload?.meta?.all_years && mode === 'monto' && dashboardComparativoInflationState.montoModel) {
+    series = (dashboardComparativoInflationState.montoModel.series || []).map((item) => ({
+      year: item.year,
+      values: item.values,
+    }));
+    ticketSeries = (dashboardComparativoInflationState.montoModel.ticketSeries || []).map((item) => ({
+      year: item.year,
+      values: item.values,
+    }));
+  }
+  dashboardComparativoSummary.style.display = 'flex';
+  dashboardComparativoSummary.classList.add('ranking');
+  const formatRankingValue = (value, avgTicket = 0) => {
+    const avgText = avgTicket > 0 ? ` (${formatMoney(avgTicket)})` : '';
+    if (mode === 'monto') return `${formatMoney(value)}${avgText}`;
+    return `${String(Math.round(value))}${avgText}`;
+  };
+  const selectedMonthIndex =
+    dashboardComparativoInflationState.selectedMonthIndex == null
+      ? Math.max(0, labels.length - 1)
+      : Math.min(Math.max(0, Number(dashboardComparativoInflationState.selectedMonthIndex) || 0), labels.length - 1);
+  dashboardComparativoInflationState.selectedMonthIndex = selectedMonthIndex;
+  const selectedLabel = labels[selectedMonthIndex] || '';
+  const ranking = series
+    .map((seriesItem, idx) => {
+      const dataset = datasets[idx] || {};
+      const ticketValues =
+        (ticketSeries.find((item) => Number(item?.year) === Number(seriesItem?.year)) || {})?.values || [];
+      return {
+        year: seriesItem?.year,
+        value: Number((seriesItem?.values || [])[selectedMonthIndex] ?? 0),
+        avgTicket: Number(ticketValues[selectedMonthIndex] ?? 0),
+        color: dataset.borderColor || colorByIndex(idx, 0.95),
+      };
+    })
+    .filter((item) => Number.isFinite(item.value) && item.value !== 0)
+    .sort((a, b) => b.value - a.value);
+  if (!ranking.length) {
     dashboardComparativoSummary.innerHTML = '';
     dashboardComparativoSummary.style.display = 'none';
     return;
   }
+  const items = ranking
+    .map(
+      (item) => `
+        <div class="dashboard-comparativo-ranking-item">
+          <span class="dashboard-comparativo-ranking-label">
+            <span class="dashboard-comparativo-ranking-swatch" style="background:${item.color}"></span>
+            <span>${item.year}</span>
+          </span>
+          <span class="dashboard-comparativo-ranking-value">${formatRankingValue(item.value, item.avgTicket)}</span>
+        </div>
+      `
+    )
+    .join('');
+  dashboardComparativoSummary.innerHTML = `
+    <div class="dashboard-comparativo-ranking-card">
+      <strong>${selectedLabel}</strong>
+      <div class="dashboard-comparativo-ranking-list">${items}</div>
+    </div>
+  `;
+}
+
+function renderDashboardComparativoSummary(mode) {
+  if (!dashboardComparativoSummary) return;
+  if (dashboardComparativoAllYears?.checked) {
+    dashboardComparativoSummary.innerHTML = '';
+    dashboardComparativoSummary.style.display = 'none';
+    dashboardComparativoSummary.classList.remove('ranking');
+    return;
+  }
+  const montoModel = dashboardComparativoInflationState.montoModel;
+  if (mode !== 'monto' || !montoModel) {
+    dashboardComparativoSummary.innerHTML = '';
+    dashboardComparativoSummary.style.display = 'none';
+    dashboardComparativoSummary.classList.remove('ranking');
+    return;
+  }
   dashboardComparativoSummary.style.display = 'flex';
+  dashboardComparativoSummary.classList.remove('ranking');
   const { labels = [], base, current, baseAdjustedValues } = montoModel;
   const selectedMonthIndex =
     dashboardComparativoInflationState.selectedMonthIndex == null
@@ -8659,7 +8822,21 @@ function renderDashboardComparativo(payload = {}) {
   const ctx = canvas.getContext('2d');
   const mode = String(payload?.meta?.mode || 'cantidad');
   let datasets;
-  if (mode === 'monto' && dashboardComparativoInflationState.montoModel) {
+  if (payload?.meta?.all_years && mode === 'monto' && dashboardComparativoInflationState.montoModel) {
+    const allYearsModel = dashboardComparativoInflationState.montoModel;
+    datasets = (allYearsModel.series || []).map((series, idx) => ({
+      label: series.isLatest ? `${series.year} nominal` : `${series.year} ajustado a ${allYearsModel.latestYear}`,
+      data: series.values,
+      borderColor: colorByIndex(idx, series.isLatest ? 0.95 : 0.8),
+      backgroundColor: colorByIndex(idx, series.isLatest ? 0.18 : 0.1),
+      tension: 0.28,
+      borderWidth: series.isLatest ? 3 : 2,
+      pointRadius: series.isLatest ? 4 : 3,
+      pointHoverRadius: series.isLatest ? 6 : 5,
+      fill: false,
+      borderDash: series.isLatest ? undefined : [6, 5],
+    }));
+  } else if (mode === 'monto' && dashboardComparativoInflationState.montoModel) {
     const { base, current, baseAdjustedValues } = dashboardComparativoInflationState.montoModel;
     datasets = [
       {
@@ -8721,8 +8898,13 @@ function renderDashboardComparativo(payload = {}) {
       responsive: true,
       interaction: { mode: 'index', intersect: false },
       onClick(_, elements) {
-        if (!elements?.length || !dashboardComparativoInflationState.montoModel) return;
+        if (!elements?.length) return;
         dashboardComparativoInflationState.selectedMonthIndex = Number(elements[0].index) || 0;
+        if (payload?.meta?.all_years) {
+          renderDashboardComparativoAllYearsRanking(payload, datasets);
+          return;
+        }
+        if (!dashboardComparativoInflationState.montoModel) return;
         renderDashboardComparativoSummary(String(payload?.meta?.mode || 'cantidad'));
       },
       plugins: {
@@ -8733,6 +8915,7 @@ function renderDashboardComparativo(payload = {}) {
               const value = Number(context.parsed?.y) || 0;
               const label = context.dataset?.label || '';
               if (mode === 'monto') {
+                if (payload?.meta?.all_years) return `${label}: ${formatMoney(value)}`;
                 const selectedMonthIndex = Number(context.dataIndex) || 0;
                 const monthLabel =
                   dashboardComparativoInflationState.montoModel?.labels?.[selectedMonthIndex] || '';
@@ -8760,6 +8943,9 @@ function renderDashboardComparativo(payload = {}) {
       },
     },
   });
+  if (payload?.meta?.all_years) {
+    renderDashboardComparativoAllYearsRanking(payload, datasets);
+  }
 }
 
 async function loadDashboardComparativo() {
@@ -8770,27 +8956,33 @@ async function loadDashboardComparativo() {
     const monthFrom = Number(dashboardComparativoMonthFrom?.value || 1);
     const monthTo = Number(dashboardComparativoMonthTo?.value || 12);
     const mode = String(dashboardComparativoMode?.value || 'cantidad');
+    const allYears = dashboardComparativoAllYears?.checked === true;
     const entity = mode === 'monto' ? 'facturas' : String(dashboardComparativoEntity?.value || 'pedidos');
+    const { minYear, maxYear } = allYears
+      ? getDashboardComparativoAllYearsRange()
+      : {
+          minYear: Math.min(yearA, yearB),
+          maxYear: Math.max(yearA, yearB),
+        };
     if (monthFrom > monthTo) {
       setStatus(statusDashboardComparativo, 'El mes desde no puede ser mayor que el mes hasta.', true);
       return;
     }
     setStatus(statusDashboardComparativo, 'Cargando...');
     const params = new URLSearchParams({
-      year_a: String(yearA),
-      year_b: String(yearB),
+      year_a: String(allYears ? minYear : yearA),
+      year_b: String(allYears ? maxYear : yearB),
       month_from: String(monthFrom),
       month_to: String(monthTo),
       mode,
     });
     params.set('entity', entity);
+    if (allYears) params.set('all_years', 'true');
     dashboardComparativoInflationState.payload = null;
     dashboardComparativoInflationState.montoModel = null;
     dashboardComparativoInflationState.selectedMonthIndex = null;
     const payload = await fetchJSON(`/api/dashboard/comparativo-anual?${params.toString()}`);
     if (mode === 'monto') {
-      const minYear = Math.min(yearA, yearB);
-      const maxYear = Math.max(yearA, yearB);
       const inflationParams = new URLSearchParams({
         year_a: String(minYear),
         year_b: String(maxYear),
@@ -8800,14 +8992,20 @@ async function loadDashboardComparativo() {
       dashboardComparativoInflationState.payload = await fetchJSON(
         `/api/dashboard/inflacion-estimada?${inflationParams.toString()}`
       );
-      dashboardComparativoInflationState.montoModel = buildDashboardComparativoMontoModel(
-        payload,
-        dashboardComparativoInflationState.payload
-      );
+      dashboardComparativoInflationState.montoModel = allYears
+        ? buildDashboardComparativoMontoAllYearsModel(payload, dashboardComparativoInflationState.payload)
+        : buildDashboardComparativoMontoModel(payload, dashboardComparativoInflationState.payload);
     }
     renderDashboardComparativo(payload);
-    renderDashboardComparativoSummary(mode);
-    setStatus(statusDashboardComparativo, `${yearA} vs ${yearB} | ${monthNames[monthFrom - 1]} a ${monthNames[monthTo - 1]}`);
+    if (!allYears) {
+      renderDashboardComparativoSummary(mode);
+    }
+    setStatus(
+      statusDashboardComparativo,
+      allYears
+        ? `Todos los años | ${monthNames[monthFrom - 1]} a ${monthNames[monthTo - 1]}`
+        : `${yearA} vs ${yearB} | ${monthNames[monthFrom - 1]} a ${monthNames[monthTo - 1]}`
+    );
   } catch (error) {
     setStatus(statusDashboardComparativo, error.message || 'Error cargando comparativo anual.', true);
   }
@@ -12245,6 +12443,11 @@ if (dashboardComparativoMode) {
 }
 if (dashboardComparativoEntity) {
   dashboardComparativoEntity.addEventListener('change', () => {
+    updateDashboardComparativoLabels();
+  });
+}
+if (dashboardComparativoAllYears) {
+  dashboardComparativoAllYears.addEventListener('change', () => {
     updateDashboardComparativoLabels();
   });
 }

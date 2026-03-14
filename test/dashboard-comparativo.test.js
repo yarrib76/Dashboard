@@ -5,6 +5,7 @@ const {
   buildComparativoSeries,
   computeInflacionSeries,
   buildDashboardComparativoPayload,
+  buildDashboardComparativoAllYearsPayload,
   buildInflacionApiPayload,
   computeInflacionAcumulada,
   computeMontoRealSeries,
@@ -87,6 +88,31 @@ test('buildDashboardComparativoPayload devuelve dos series alineadas', () => {
     month_from: 1,
     month_to: 2,
   });
+});
+
+test('buildDashboardComparativoAllYearsPayload devuelve una serie por año en el rango', () => {
+  const res = buildDashboardComparativoAllYearsPayload(
+    {
+      yearA: 2023,
+      yearB: 2025,
+      monthFrom: 1,
+      monthTo: 2,
+      mode: 'cantidad',
+      entity: 'pedidos',
+    },
+    [
+      { anio: 2023, mes: 1, valor: 3 },
+      { anio: 2024, mes: 2, valor: 7 },
+      { anio: 2025, mes: 1, valor: 11 },
+    ]
+  );
+  assert.deepEqual(res.labels, ['Ene', 'Feb']);
+  assert.deepEqual(res.series, [
+    { year: 2023, values: [3, 0] },
+    { year: 2024, values: [0, 7] },
+    { year: 2025, values: [11, 0] },
+  ]);
+  assert.equal(res.meta.all_years, true);
 });
 
 test('computeInflacionSeries toma el ultimo precio del mes y calcula variacion', () => {

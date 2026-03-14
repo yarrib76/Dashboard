@@ -8,6 +8,7 @@ const { processAbmBatch } = require('./lib/abmBatchService');
 const {
   validateDashboardComparativoParams,
   buildDashboardComparativoPayload,
+  buildDashboardComparativoAllYearsPayload,
   buildInflacionApiPayload,
 } = require('./lib/dashboardComparativo');
 const { normalizeIdempotencyKey, validateFacturaPayload } = require('./lib/facturas');
@@ -7385,6 +7386,9 @@ app.get('/api/dashboard/comparativo-anual', async (req, res) => {
       return res.status(400).json({ message: validation.message });
     }
     const { yearA, yearB, monthFrom, monthTo, mode, entity } = validation.data;
+    const allYears = String(req.query?.all_years || '').trim().toLowerCase() === 'true';
+    const minYear = Math.min(yearA, yearB);
+    const maxYear = Math.max(yearA, yearB);
 
     const queryParams = [monthFrom, monthTo];
     let sql = '';
@@ -7393,45 +7397,51 @@ app.get('/api/dashboard/comparativo-anual', async (req, res) => {
       sql = `SELECT
                YEAR(cp.ultactualizacion) AS anio,
                MONTH(cp.ultactualizacion) AS mes,
-               COUNT(*) AS valor
+               COUNT(*) AS valor,
+               ROUND(SUM(cp.total), 2) AS monto
              FROM controlpedidos cp
              WHERE MONTH(cp.ultactualizacion) BETWEEN ? AND ?
                AND cp.total > 1
                AND cp.estado <> 2
                AND cp.ordenWeb > 0
-               AND YEAR(cp.ultactualizacion) IN (?, ?)
+               AND YEAR(cp.ultactualizacion) ${allYears ? 'BETWEEN ? AND ?' : 'IN (?, ?)'}
              GROUP BY YEAR(cp.ultactualizacion), MONTH(cp.ultactualizacion)
              ORDER BY anio, mes`;
     } else if (mode === 'cantidad' && entity === 'facturas') {
       sql = `SELECT
                YEAR(f.fecha) AS anio,
                MONTH(f.fecha) AS mes,
-               COUNT(*) AS valor
+               COUNT(*) AS valor,
+               ROUND(SUM(CASE WHEN f.Descuento IS NOT NULL THEN f.Descuento ELSE f.Total END), 2) AS monto
              FROM facturah f
              LEFT JOIN controlpedidos cp ON cp.nrofactura = f.nrofactura
              WHERE MONTH(f.fecha) BETWEEN ? AND ?
                AND (f.Estado IS NULL OR f.Estado <> 2)
                AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
                AND f.Total > 0
-               AND YEAR(f.fecha) IN (?, ?)
+               AND YEAR(f.fecha) ${allYears ? 'BETWEEN ? AND ?' : 'IN (?, ?)'}
              GROUP BY YEAR(f.fecha), MONTH(f.fecha)
              ORDER BY anio, mes`;
     } else {
       sql = `SELECT
                YEAR(f.fecha) AS anio,
                MONTH(f.fecha) AS mes,
+               COUNT(*) AS cantidad,
                ROUND(SUM(CASE WHEN f.Descuento IS NOT NULL THEN f.Descuento ELSE f.Total END), 2) AS valor
              FROM facturah f
              WHERE MONTH(f.fecha) BETWEEN ? AND ?
                AND (f.Estado IS NULL OR f.Estado <> 2)
                AND f.Total > 0
-               AND YEAR(f.fecha) IN (?, ?)
+               AND YEAR(f.fecha) ${allYears ? 'BETWEEN ? AND ?' : 'IN (?, ?)'}
              GROUP BY YEAR(f.fecha), MONTH(f.fecha)
              ORDER BY anio, mes`;
     }
 
-    queryParams.push(yearA, yearB);
+    queryParams.push(allYears ? minYear : yearA, allYears ? maxYear : yearB);
     const [rows] = await pool.query(sql, queryParams);
+    if (allYears) {
+      return res.json(buildDashboardComparativoAllYearsPayload(validation.data, rows || []));
+    }
     const rowsYearA = rows.filter((row) => Number(row.anio) === yearA);
     const rowsYearB = rows.filter((row) => Number(row.anio) === yearB);
 

@@ -465,6 +465,25 @@ input[type='month'] {
   color: var(--muted);
 }
 
+.dashboard-comparativo-toggle {
+  justify-content: flex-end;
+}
+
+.dashboard-comparativo-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 4px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.dashboard-comparativo-checkbox input {
+  width: 16px;
+  height: 16px;
+}
+
 .dashboard-comparativo-field select {
   background: var(--panel-strong);
   border: 1px solid var(--border);
@@ -475,6 +494,11 @@ input[type='month'] {
   outline: none;
   min-width: 0;
   width: 100%;
+}
+
+.dashboard-comparativo-field select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .dashboard-comparativo-refresh {
@@ -531,6 +555,59 @@ input[type='month'] {
   color: var(--muted);
   font-size: 11px;
   margin-top: 4px;
+}
+
+.dashboard-comparativo-summary.ranking {
+  overflow: auto;
+  max-height: 720px;
+}
+
+.dashboard-comparativo-ranking-card {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.dashboard-comparativo-ranking-card strong {
+  display: block;
+  font-size: 18px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.dashboard-comparativo-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dashboard-comparativo-ranking-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.dashboard-comparativo-ranking-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dashboard-comparativo-ranking-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.dashboard-comparativo-ranking-value {
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {
