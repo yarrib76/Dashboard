@@ -8501,7 +8501,7 @@ function updateDashboardComparativoLabels() {
     subtitle = 'Comparación interanual de facturas emitidas en el rango seleccionado.';
   } else if (mode === 'monto') {
     title = 'Facturación real comparable por mes';
-    subtitle = 'Comparación en moneda constante, con referencia nominal, usando inflación de ArgentinaDatos.';
+    subtitle = 'Comparación del año más reciente en nominal contra el año más viejo ajustado por inflación al mismo mes.';
   }
   if (dashboardComparativoTitle) dashboardComparativoTitle.textContent = title;
   if (dashboardComparativoSubtitle) dashboardComparativoSubtitle.textContent = subtitle;
@@ -8536,7 +8536,6 @@ function buildDashboardComparativoMontoModel(payload = {}, inflationPayload = {}
   const nominalSeries = normalizeDashboardComparativoSeriesOrder(payload?.series || []);
   const inflationSeries = normalizeDashboardComparativoSeriesOrder(inflationPayload?.allSeries || []);
   const monthFrom = Number(payload?.meta?.month_from || 1);
-  const monthTo = Number(payload?.meta?.month_to || 12);
   if (nominalSeries.length < 2 || inflationSeries.length < 2) return null;
   const minYear = Number(nominalSeries[0]?.year || 0);
   const maxYear = Number(nominalSeries[nominalSeries.length - 1]?.year || 0);
@@ -8550,41 +8549,39 @@ function buildDashboardComparativoMontoModel(payload = {}, inflationPayload = {}
       inflationIndexByMonth.set(`${year}-${month}`, cumulativeIndex);
     }
   }
-  const baseYear = maxYear;
-  const baseMonth = monthTo;
-  const baseIndex = inflationIndexByMonth.get(`${baseYear}-${baseMonth}`) || 1;
   const enrichedSeries = nominalSeries.map((series) => {
     const year = Number(series?.year || 0);
     const inflation = inflationSeries.find((item) => Number(item?.year || 0) === year) || {};
     const monthlyInflation = Array.isArray(inflation.values) ? inflation.values.map((value) => Number(value) || 0) : [];
     const nominalValues = Array.isArray(series.values) ? series.values.map((value) => Number(value) || 0) : [];
-    const realValues = nominalValues.map((value, offset) => {
-      const month = monthFrom + offset;
-      const currentIndex = inflationIndexByMonth.get(`${year}-${month}`) || 1;
-      if (!(currentIndex > 0)) return 0;
-      return Number(((Number(value) || 0) * (baseIndex / currentIndex)).toFixed(2));
-    });
     return {
       year,
       nominalValues,
       monthlyInflation,
-      realValues,
     };
   });
   const base = enrichedSeries[0];
   const current = enrichedSeries[1];
+  const baseAdjustedValues = base.nominalValues.map((value, offset) => {
+    const month = monthFrom + offset;
+    const baseMonthIndex = inflationIndexByMonth.get(`${base.year}-${month}`) || 1;
+    const currentMonthIndex = inflationIndexByMonth.get(`${current.year}-${month}`) || 1;
+    if (!(baseMonthIndex > 0)) return 0;
+    return Number(((Number(value) || 0) * (currentMonthIndex / baseMonthIndex)).toFixed(2));
+  });
+  const inflationBetweenYearsValues = base.nominalValues.map((_, offset) => {
+    const month = monthFrom + offset;
+    const baseMonthIndex = inflationIndexByMonth.get(`${base.year}-${month}`) || 1;
+    const currentMonthIndex = inflationIndexByMonth.get(`${current.year}-${month}`) || 1;
+    if (!(baseMonthIndex > 0)) return null;
+    return Number((((currentMonthIndex / baseMonthIndex) - 1) * 100).toFixed(2));
+  });
   return {
     labels,
     base,
     current,
-    baseCurrencyLabel: `${monthNames[baseMonth - 1] || ''} ${baseYear}`,
-    getInflationBetweenYears(monthIndex) {
-      const month = monthFrom + monthIndex;
-      const baseMonthIndex = inflationIndexByMonth.get(`${base.year}-${month}`) || 1;
-      const currentMonthIndex = inflationIndexByMonth.get(`${current.year}-${month}`) || 1;
-      if (!(baseMonthIndex > 0)) return null;
-      return Number((((currentMonthIndex / baseMonthIndex) - 1) * 100).toFixed(2));
-    },
+    baseAdjustedValues,
+    inflationBetweenYearsValues,
   };
 }
 
@@ -8614,10 +8611,10 @@ function renderDashboardComparativoSummary(mode) {
     current.nominalValues[selectedMonthIndex]
   );
   const realVariationPct = computeVariacionInteranualPct(
-    base.realValues[selectedMonthIndex],
-    current.realValues[selectedMonthIndex]
+    baseAdjustedValues[selectedMonthIndex],
+    current.nominalValues[selectedMonthIndex]
   );
-  const inflationBetweenYearsPct = montoModel.getInflationBetweenYears(selectedMonthIndex);
+  const inflationBetweenYearsPct = Number(montoModel.inflationBetweenYearsValues[selectedMonthIndex]);
   const growthLabel = getCrecimientoRealLabel(realVariationPct);
   const inflationSource = dashboardComparativoInflationState.payload?.source;
   dashboardComparativoSummary.innerHTML = `
@@ -8644,8 +8641,8 @@ function renderDashboardComparativoSummary(mode) {
     </div>
     <div class="dashboard-comparativo-summary-card">
       <span>Base monetaria</span>
-      <strong>${montoModel.baseCurrencyLabel}</strong>
-      <small>Valores expresados en esa moneda</small>
+      <strong>${selectedMonthLabel} ${current.year}</strong>
+      <small>${current.year} se toma nominal; ${base.year} se ajusta a ese mismo mes</small>
     </div>
     <div class="dashboard-comparativo-summary-card">
       <span>Fuente inflación</span>
@@ -8663,7 +8660,7 @@ function renderDashboardComparativo(payload = {}) {
   const mode = String(payload?.meta?.mode || 'cantidad');
   let datasets;
   if (mode === 'monto' && dashboardComparativoInflationState.montoModel) {
-    const { base, current } = dashboardComparativoInflationState.montoModel;
+    const { base, current, baseAdjustedValues } = dashboardComparativoInflationState.montoModel;
     datasets = [
       {
         label: `${base.year} nominal`,
@@ -8678,20 +8675,8 @@ function renderDashboardComparativo(payload = {}) {
         borderDash: [4, 4],
       },
       {
-        label: `${current.year} nominal`,
-        data: current.nominalValues,
-        borderColor: colorByIndex(1, 0.45),
-        backgroundColor: colorByIndex(1, 0.08),
-        tension: 0.28,
-        borderWidth: 2,
-        pointRadius: 2,
-        pointHoverRadius: 4,
-        fill: false,
-        borderDash: [4, 4],
-      },
-      {
-        label: `${base.year} real`,
-        data: base.realValues,
+        label: `${base.year} ajustado a ${current.year}`,
+        data: baseAdjustedValues,
         borderColor: colorByIndex(0, 0.95),
         backgroundColor: colorByIndex(0, 0.18),
         tension: 0.28,
@@ -8701,8 +8686,8 @@ function renderDashboardComparativo(payload = {}) {
         fill: false,
       },
       {
-        label: `${current.year} real`,
-        data: current.realValues,
+        label: `${current.year} nominal`,
+        data: current.nominalValues,
         borderColor: colorByIndex(1, 0.95),
         backgroundColor: colorByIndex(1, 0.18),
         tension: 0.28,
@@ -8748,7 +8733,11 @@ function renderDashboardComparativo(payload = {}) {
               const value = Number(context.parsed?.y) || 0;
               const label = context.dataset?.label || '';
               if (mode === 'monto') {
-                const currencyLabel = dashboardComparativoInflationState.montoModel?.baseCurrencyLabel;
+                const selectedMonthIndex = Number(context.dataIndex) || 0;
+                const monthLabel =
+                  dashboardComparativoInflationState.montoModel?.labels?.[selectedMonthIndex] || '';
+                const currentYear = dashboardComparativoInflationState.montoModel?.current?.year || '';
+                const currencyLabel = monthLabel && currentYear ? `${monthLabel} ${currentYear}` : '';
                 return `${label}: ${formatMoney(value)}${currencyLabel ? ` (${currencyLabel})` : ''}`;
               }
               return `${label}: ${value}`;
