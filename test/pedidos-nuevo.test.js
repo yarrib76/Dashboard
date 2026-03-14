@@ -40,8 +40,8 @@ test('computePedidoTotals aplica recargo cuando no hay descuento', () => {
   });
   assert.equal(res.subtotal, 200);
   assert.equal(res.totalConDescuento, 0);
-  assert.equal(res.totalConRecargo, 240);
-  assert.equal(res.totalConCorreo, 250);
+  assert.equal(res.totalConRecargo, 252);
+  assert.equal(res.totalConCorreo, 252);
 });
 
 test('validatePedidoStock rechaza cantidades mayores al stock', () => {

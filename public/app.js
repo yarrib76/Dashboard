@@ -1478,11 +1478,11 @@ function updatePedidoNuevoTotals() {
   if (pedidoRecargoSelect) pedidoRecargoSelect.disabled = aplicaDescuento;
   const descuentoPct = aplicaDescuento ? Number(pedidoDescuentoSelect?.value || 0) : 0;
   const recargoPct = aplicaDescuento ? 0 : Number(pedidoRecargoSelect?.value || 0);
-  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
-  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : 0;
-  const base = descuentoPct > 0 ? totalConDescuento : recargoPct > 0 ? totalConRecargo : subtotal;
   const correo = Number(pedidoCorreoInput?.value) || 0;
-  const totalConCorreo = base + correo;
+  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
+  const totalConRecargo = recargoPct > 0 ? (subtotal + correo) * (1 + recargoPct / 100) : 0;
+  const totalConCorreo =
+    descuentoPct > 0 ? totalConDescuento + correo : recargoPct > 0 ? totalConRecargo : subtotal + correo;
   if (pedidoTotalInput) pedidoTotalInput.value = subtotal ? subtotal.toFixed(2) : '';
   if (pedidoDescuentoTotalInput) {
     pedidoDescuentoTotalInput.value = descuentoPct > 0 ? totalConDescuento.toFixed(2) : '0';
@@ -1558,11 +1558,9 @@ async function printPedidoNuevoPdf() {
   const recargoPct = pedidoDescuentoCheck?.checked ? 0 : Number(pedidoRecargoSelect?.value || 0);
   const correo = Number(pedidoCorreoInput?.value) || 0;
   const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : subtotal;
-  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : subtotal;
-  let base = subtotal;
-  if (descuentoPct > 0) base = totalConDescuento;
-  else if (recargoPct > 0) base = totalConRecargo;
-  const totalConCorreo = base + correo;
+  const baseConCorreo = subtotal + correo;
+  const totalConRecargo = recargoPct > 0 ? baseConCorreo * (1 + recargoPct / 100) : subtotal;
+  const totalConCorreo = descuentoPct > 0 ? totalConDescuento + correo : recargoPct > 0 ? totalConRecargo : subtotal + correo;
   let fy = finalY + 10;
   if (descuentoPct > 0) {
     doc.text(
@@ -1571,16 +1569,26 @@ async function printPedidoNuevoPdf() {
       fy
     );
   } else if (recargoPct > 0) {
-    doc.text(
-      `Total: ${formatMoney(subtotal)}  Recargo ${recargoPct}% = ${formatMoney(totalConRecargo)}`,
-      margin,
-      fy
-    );
+    if (correo > 0) {
+      doc.text(`Total: ${formatMoney(subtotal)}  Envio: ${formatMoney(correo)}`, margin, fy);
+      fy += 8;
+      doc.text(
+        `Recargo ${recargoPct}% sobre Total + Envio = ${formatMoney(totalConRecargo)}`,
+        margin,
+        fy
+      );
+    } else {
+      doc.text(
+        `Total: ${formatMoney(subtotal)}  Recargo ${recargoPct}% sobre Total = ${formatMoney(totalConRecargo)}`,
+        margin,
+        fy
+      );
+    }
   } else {
     doc.text(`Total: ${formatMoney(subtotal)}`, margin, fy);
   }
   fy += 8;
-  if (correo > 0) {
+  if (correo > 0 && recargoPct <= 0) {
     doc.text(`Envio: ${formatMoney(correo)}  Total Con Envio: ${formatMoney(totalConCorreo)}`, margin, fy);
   }
   doc.save(`pedido-${pedidoNumero || 'nuevo'}.pdf`);
@@ -1649,17 +1657,28 @@ async function printFacturaPdf() {
       fy
     );
   } else if (totals.recargoPct > 0) {
-    doc.text(
-      `Total: ${totals.subtotal.toFixed(2)}  Recargo ${totals.recargoPct}% = ${totals.totalConRecargo.toFixed(2)}`,
-      margin,
-      fy
-    );
+    const envio = Number(facturaEnvioInput?.value) || 0;
+    if (envio > 0) {
+      doc.text(`Total: ${totals.subtotal.toFixed(2)}  Envio: ${envio.toFixed(2)}`, margin, fy);
+      fy += 6;
+      doc.text(
+        `Recargo ${totals.recargoPct}% sobre Total + Envio = ${totals.totalConRecargo.toFixed(2)}`,
+        margin,
+        fy
+      );
+    } else {
+      doc.text(
+        `Total: ${totals.subtotal.toFixed(2)}  Recargo ${totals.recargoPct}% sobre Total = ${totals.totalConRecargo.toFixed(2)}`,
+        margin,
+        fy
+      );
+    }
   } else {
     doc.text(`Total: ${totals.subtotal.toFixed(2)}`, margin, fy);
   }
   fy += 6;
   const envio = Number(facturaEnvioInput?.value) || 0;
-  if (envio > 0) {
+  if (envio > 0 && totals.recargoPct <= 0) {
     doc.text(`Envio: ${envio.toFixed(2)}  Total Con Envio: ${totals.totalConEnvio.toFixed(2)}`, margin, fy);
   }
   const facturaNumero = facturaNumeroInput?.value || 'nueva';
@@ -1913,11 +1932,11 @@ function updateFacturaNuevaTotals() {
   const descuentoPct = aplicaDescuento ? Number(facturaDescuentoSelect?.value || 0) : 0;
   if (facturaDescuentoPctInput) facturaDescuentoPctInput.value = String(descuentoPct);
   const recargoPct = aplicaDescuento ? 0 : Number(facturaRecargoSelect?.value || 0);
-  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
-  const totalConRecargo = recargoPct > 0 ? subtotal * (1 + recargoPct / 100) : 0;
-  const base = descuentoPct > 0 ? totalConDescuento : recargoPct > 0 ? totalConRecargo : subtotal;
   const envio = Number(facturaEnvioInput?.value) || 0;
-  const totalConEnvio = base + envio;
+  const totalConDescuento = descuentoPct > 0 ? subtotal * (1 - descuentoPct / 100) : 0;
+  const totalConRecargo = recargoPct > 0 ? (subtotal + envio) * (1 + recargoPct / 100) : 0;
+  const totalConEnvio =
+    descuentoPct > 0 ? totalConDescuento + envio : recargoPct > 0 ? totalConRecargo : subtotal + envio;
   setValueOrText(facturaSubtotalEl, subtotal ? subtotal.toFixed(2) : '0');
   setValueOrText(facturaTotalDescuentoEl, descuentoPct > 0 ? totalConDescuento.toFixed(2) : '0');
   setValueOrText(facturaTotalEnvioEl, totalConEnvio ? totalConEnvio.toFixed(2) : '0');
@@ -5531,8 +5550,33 @@ function parsePedidoTotal(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function updatePedidoTicketUI() {
+function computePedidoTicketTotals() {
   const total = Number.isFinite(pedidoTicketCurrentTotal) ? pedidoTicketCurrentTotal : 0;
+  const hasDescuento = Boolean(pedidoTicketDescuentoCheck?.checked);
+  const descuentoPct = hasDescuento ? Number(pedidoTicketDescuentoSelect?.value || 0) : 0;
+  const recargoPct = hasDescuento ? 0 : Number(pedidoTicketRecargoSelect?.value || 0);
+  const aplicaDescuento = hasDescuento && descuentoPct > 0;
+  const aplicaRecargo = !hasDescuento && recargoPct > 0;
+  const correoValue = parsePedidoTotal((pedidoTicketCorreo?.value || '').trim());
+  const totalConDescuento = total * (1 - descuentoPct / 100);
+  const totalConEnvio = total + correoValue;
+  const totalConRecargo = totalConEnvio * (1 + recargoPct / 100);
+  const totalFinal = aplicaDescuento ? totalConDescuento + correoValue : aplicaRecargo ? totalConRecargo : totalConEnvio;
+  return {
+    total,
+    descuentoPct,
+    recargoPct,
+    aplicaDescuento,
+    aplicaRecargo,
+    correoValue,
+    totalConDescuento,
+    totalConEnvio,
+    totalConRecargo,
+    totalFinal,
+  };
+}
+
+function updatePedidoTicketUI() {
   const hasDescuento = Boolean(pedidoTicketDescuentoCheck?.checked);
   if (pedidoTicketDescuentoSelect) {
     pedidoTicketDescuentoSelect.disabled = !hasDescuento;
@@ -5540,25 +5584,16 @@ function updatePedidoTicketUI() {
   if (pedidoTicketRecargoSelect) {
     pedidoTicketRecargoSelect.disabled = hasDescuento;
   }
-  const descuentoPct = hasDescuento ? Number(pedidoTicketDescuentoSelect?.value || 0) : 0;
-  const recargoPct = hasDescuento ? 0 : Number(pedidoTicketRecargoSelect?.value || 0);
-  const aplicaDescuento = hasDescuento && descuentoPct > 0;
-  const aplicaRecargo = !hasDescuento && recargoPct > 0;
-  const totalConDescuento = total * (1 - descuentoPct / 100);
-  const totalConRecargo = total * (1 + recargoPct / 100);
-  if (pedidoTicketTotal) pedidoTicketTotal.textContent = formatMoney(total);
+  const totals = computePedidoTicketTotals();
+  if (pedidoTicketTotal) pedidoTicketTotal.textContent = formatMoney(totals.total);
   if (pedidoTicketDescuentoTotal) {
-    pedidoTicketDescuentoTotal.textContent = aplicaDescuento ? formatMoney(totalConDescuento) : formatMoney(0);
+    pedidoTicketDescuentoTotal.textContent = totals.aplicaDescuento ? formatMoney(totals.totalConDescuento) : formatMoney(0);
   }
   if (pedidoTicketRecargoTotal) {
-    pedidoTicketRecargoTotal.textContent = aplicaRecargo ? formatMoney(totalConRecargo) : formatMoney(0);
+    pedidoTicketRecargoTotal.textContent = totals.aplicaRecargo ? formatMoney(totals.totalConRecargo) : formatMoney(0);
   }
   if (pedidoTicketSummary) {
-    const correoRaw = (pedidoTicketCorreo?.value || '').trim();
-    const correoValue = parsePedidoTotal(correoRaw);
-    const base = aplicaDescuento ? totalConDescuento : aplicaRecargo ? totalConRecargo : total;
-    const totalConCorreo = base + correoValue;
-    pedidoTicketSummary.textContent = formatMoney(totalConCorreo);
+    pedidoTicketSummary.textContent = formatMoney(totals.totalFinal);
   }
 }
 
@@ -5720,39 +5755,37 @@ async function printPedidoTicketPdf() {
       doc.text(formatMoney(totalLinea), colTotal, y, { align: 'right' });
       y += rowHeight + 2;
     });
-    const total = Number.isFinite(pedidoTicketCurrentTotal) ? pedidoTicketCurrentTotal : 0;
-    const hasDescuento = Boolean(pedidoTicketDescuentoCheck?.checked);
-    const descuentoPct = hasDescuento ? Number(pedidoTicketDescuentoSelect?.value || 0) : 0;
-    const recargoPct = hasDescuento ? 0 : Number(pedidoTicketRecargoSelect?.value || 0);
-    const aplicaDescuento = hasDescuento && descuentoPct > 0;
-    const aplicaRecargo = !hasDescuento && recargoPct > 0;
-    const correoValue = parsePedidoTotal((pedidoTicketCorreo?.value || '').trim());
-    const totalConDescuento = total * (1 - descuentoPct / 100);
-    const totalConEnvio = total + correoValue;
-    const totalConEnvioConDescuento = totalConDescuento + correoValue;
-    const totalConRecargo = totalConEnvio * (1 + recargoPct / 100);
+    const totals = computePedidoTicketTotals();
     const footerLines = [];
-    if (aplicaDescuento) {
+    if (totals.aplicaDescuento) {
       footerLines.push(
-        `Total: ${formatMoney(total)}  ${descuentoPct}% de Descuento = ${formatMoney(totalConDescuento)}`
+        `Total: ${formatMoney(totals.total)}  ${totals.descuentoPct}% de Descuento = ${formatMoney(
+          totals.totalConDescuento
+        )}`
       );
-      if (correoValue > 0) {
+      if (totals.correoValue > 0) {
         footerLines.push(
-          `Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvioConDescuento)}`
+          `Envio: ${formatMoney(totals.correoValue)}  Total Con Envio: ${formatMoney(totals.totalFinal)}`
         );
       }
-    } else if (aplicaRecargo) {
-      footerLines.push(`Total: ${formatMoney(total)}`);
-      if (correoValue > 0) {
-        footerLines.push(`Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvio)}`);
+    } else if (totals.aplicaRecargo) {
+      footerLines.push(`Total: ${formatMoney(totals.total)}`);
+      if (totals.correoValue > 0) {
+        footerLines.push(
+          `Envio: ${formatMoney(totals.correoValue)}  Total + Envio: ${formatMoney(totals.totalConEnvio)}`
+        );
+        footerLines.push(
+          `Recargo: ${totals.recargoPct}% sobre Total + Envio = ${formatMoney(totals.totalConRecargo)}`
+        );
+      } else {
+        footerLines.push(`Recargo: ${totals.recargoPct}% sobre Total = ${formatMoney(totals.totalConRecargo)}`);
       }
-      footerLines.push(
-        `Recargo: ${recargoPct}%  Total Con Recargo Mercado Pago: ${formatMoney(totalConRecargo)}`
-      );
     } else {
-      footerLines.push(`Total: ${formatMoney(total)}`);
-      if (correoValue > 0) {
-        footerLines.push(`Envio: ${formatMoney(correoValue)}  Total Con Envio: ${formatMoney(totalConEnvio)}`);
+      footerLines.push(`Total: ${formatMoney(totals.total)}`);
+      if (totals.correoValue > 0) {
+        footerLines.push(
+          `Envio: ${formatMoney(totals.correoValue)}  Total Con Envio: ${formatMoney(totals.totalConEnvio)}`
+        );
       }
     }
     y += 12;
