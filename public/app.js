@@ -8594,7 +8594,7 @@ function renderDashboardComparativoSummary(mode) {
     return;
   }
   dashboardComparativoSummary.style.display = 'flex';
-  const { labels = [], base, current } = montoModel;
+  const { labels = [], base, current, baseAdjustedValues } = montoModel;
   const selectedMonthIndex =
     dashboardComparativoInflationState.selectedMonthIndex == null
       ? Math.max(0, labels.length - 1)
