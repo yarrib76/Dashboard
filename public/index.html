@@ -49,6 +49,10 @@
             <span class="icon">📊</span>
             <span class="label">Dashboard</span>
           </button>
+          <button class="menu-item" data-target="dashboard-comparativo">
+            <span class="icon">📈</span>
+            <span class="label">Comparativo</span>
+          </button>
           <button class="menu-item" data-target="panel-control">
             <span class="icon">🧭</span>
             <span class="label">Panel de Control</span>
@@ -417,6 +421,59 @@
               </label>
             </div>
             <p class="status" id="status-pedidos-clientes"></p>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid view hidden" id="view-dashboard-comparativo">
+        <article class="card wide">
+          <div class="actions dashboard-comparativo-header">
+            <div class="heading">
+              <h2 id="dashboard-comparativo-title">Cantidad de pedidos por mes</h2>
+            </div>
+            <div class="dashboard-comparativo-controls">
+              <label class="dashboard-comparativo-field">
+                <span>Año 1</span>
+                <select id="dashboard-comparativo-year-a"></select>
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Año 2</span>
+                <select id="dashboard-comparativo-year-b"></select>
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Desde</span>
+                <select id="dashboard-comparativo-month-from"></select>
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Hasta</span>
+                <select id="dashboard-comparativo-month-to"></select>
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Métrica</span>
+                <select id="dashboard-comparativo-mode">
+                  <option value="cantidad">Cantidad</option>
+                  <option value="monto">Monto</option>
+                </select>
+              </label>
+              <label class="dashboard-comparativo-field" id="dashboard-comparativo-entity-wrap">
+                <span>Tipo</span>
+                <select id="dashboard-comparativo-entity">
+                  <option value="pedidos">Pedidos</option>
+                  <option value="facturas">Facturas</option>
+                </select>
+              </label>
+              <button id="dashboard-comparativo-refresh" class="dashboard-comparativo-refresh" type="button">Actualizar</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p id="dashboard-comparativo-subtitle">Comparación interanual del mismo período mensual.</p>
+            <div class="dashboard-comparativo-content">
+              <div class="chart-wrap tall dashboard-comparativo-chart">
+                <canvas id="chart-dashboard-comparativo"></canvas>
+              </div>
+              <aside class="dashboard-comparativo-summary" id="dashboard-comparativo-summary"></aside>
+            </div>
+            <p class="status" id="status-dashboard-comparativo"></p>
           </div>
         </article>
       </section>
