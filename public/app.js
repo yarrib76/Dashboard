@@ -1545,7 +1545,12 @@ async function printPedidoNuevoPdf() {
   }
   y += 8;
   const headers = ['Cant', 'Detalle', 'Unitario', 'Total'];
-  const body = pedidoNuevoItems.map((item) => [
+  const pdfItems = [...pedidoNuevoItems].sort((a, b) =>
+    String(a?.detalle || a?.articulo || '').localeCompare(String(b?.detalle || b?.articulo || ''), 'es', {
+      sensitivity: 'base',
+    })
+  );
+  const body = pdfItems.map((item) => [
     String(item.cantidad),
     item.detalle || item.articulo,
     formatMoney(item.precioUnitario),
