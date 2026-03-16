@@ -1638,7 +1638,12 @@ async function printFacturaPdf() {
   const y = 6;
   const tableWidth = doc.internal.pageSize.getWidth() - margin * 2;
   const headers = ['Cant', 'Detalle', 'Unitario', 'Total'];
-  const body = facturaNuevaItems.map((item) => [
+  const pdfItems = [...facturaNuevaItems].sort((a, b) =>
+    String(a?.detalle || a?.articulo || '').localeCompare(String(b?.detalle || b?.articulo || ''), 'es', {
+      sensitivity: 'base',
+    })
+  );
+  const body = pdfItems.map((item) => [
     String(item.cantidad),
     wrapDetalle(item.detalle || item.articulo, 14),
     item.precioUnitario.toFixed ? item.precioUnitario.toFixed(2) : String(item.precioUnitario || 0),
