@@ -2811,26 +2811,33 @@ app.get('/api/empleados', async (req, res) => {
        FROM users u
        LEFT JOIN (
          SELECT
-           f.id_user,
+           fd.id_user,
            CAST(SUM(
              CASE
-               WHEN DAYOFWEEK(f.fecha_ingreso) = 7 AND TIMEDIFF(TIME(f.fecha_ingreso), '09:00:00') BETWEEN '00:00:01' AND '00:05:00' THEN 1
-               WHEN DAYOFWEEK(f.fecha_ingreso) <> 7 AND TIMEDIFF(TIME(f.fecha_ingreso), COALESCE(u2.hora_ingreso, '09:00:00')) BETWEEN '00:00:01' AND '00:05:00' THEN 1
+               WHEN DAYOFWEEK(fd.primera_entrada) = 7 AND TIMEDIFF(TIME(fd.primera_entrada), '09:00:00') BETWEEN '00:00:01' AND '00:05:00' THEN 1
+               WHEN DAYOFWEEK(fd.primera_entrada) <> 7 AND TIMEDIFF(TIME(fd.primera_entrada), COALESCE(u2.hora_ingreso, '09:00:00')) BETWEEN '00:00:01' AND '00:05:00' THEN 1
                ELSE 0
              END
            ) AS SIGNED) AS alertas,
            CAST(SUM(
              CASE
-               WHEN DAYOFWEEK(f.fecha_ingreso) = 7 AND TIMEDIFF(TIME(f.fecha_ingreso), '09:00:00') > '00:05:00' THEN 1
-               WHEN DAYOFWEEK(f.fecha_ingreso) <> 7 AND TIMEDIFF(TIME(f.fecha_ingreso), COALESCE(u2.hora_ingreso, '09:00:00')) > '00:05:00' THEN 1
-            ELSE 0
-          END
-        ) AS SIGNED) AS tardes
-         FROM fichaje f
-        JOIN users u2 ON u2.id = f.id_user
-        WHERE f.fecha_ingreso >= ?
-          AND f.fecha_ingreso < ?
-        GROUP BY f.id_user
+               WHEN DAYOFWEEK(fd.primera_entrada) = 7 AND TIMEDIFF(TIME(fd.primera_entrada), '09:00:00') > '00:05:00' THEN 1
+               WHEN DAYOFWEEK(fd.primera_entrada) <> 7 AND TIMEDIFF(TIME(fd.primera_entrada), COALESCE(u2.hora_ingreso, '09:00:00')) > '00:05:00' THEN 1
+               ELSE 0
+             END
+           ) AS SIGNED) AS tardes
+         FROM (
+           SELECT
+             f.id_user,
+             DATE(f.fecha_ingreso) AS dia_fichaje,
+             MIN(f.fecha_ingreso) AS primera_entrada
+           FROM fichaje f
+           WHERE f.fecha_ingreso >= ?
+             AND f.fecha_ingreso < ?
+           GROUP BY f.id_user, DATE(f.fecha_ingreso)
+         ) fd
+        JOIN users u2 ON u2.id = fd.id_user
+        GROUP BY fd.id_user
        ) fa ON fa.id_user = u.id
        LEFT JOIN (
          SELECT
@@ -8742,19 +8749,26 @@ app.get('/api/comisiones/tardes', async (req, res) => {
        FROM users u
        LEFT JOIN (
          SELECT
-           f.id_user,
+           fd.id_user,
            CAST(SUM(
              CASE
-               WHEN DAYOFWEEK(f.fecha_ingreso) = 7 AND TIMEDIFF(TIME(f.fecha_ingreso), '09:00:00') > '00:05:00' THEN 1
-               WHEN DAYOFWEEK(f.fecha_ingreso) <> 7 AND TIMEDIFF(TIME(f.fecha_ingreso), COALESCE(u2.hora_ingreso, '09:00:00')) > '00:05:00' THEN 1
+               WHEN DAYOFWEEK(fd.primera_entrada) = 7 AND TIMEDIFF(TIME(fd.primera_entrada), '09:00:00') > '00:05:00' THEN 1
+               WHEN DAYOFWEEK(fd.primera_entrada) <> 7 AND TIMEDIFF(TIME(fd.primera_entrada), COALESCE(u2.hora_ingreso, '09:00:00')) > '00:05:00' THEN 1
                ELSE 0
              END
            ) AS SIGNED) AS tardes
-         FROM fichaje f
-         INNER JOIN users u2 ON u2.id = f.id_user
-         WHERE f.fecha_ingreso >= ?
-           AND f.fecha_ingreso < ?
-         GROUP BY f.id_user
+         FROM (
+           SELECT
+             f.id_user,
+             DATE(f.fecha_ingreso) AS dia_fichaje,
+             MIN(f.fecha_ingreso) AS primera_entrada
+           FROM fichaje f
+           WHERE f.fecha_ingreso >= ?
+             AND f.fecha_ingreso < ?
+           GROUP BY f.id_user, DATE(f.fecha_ingreso)
+         ) fd
+         INNER JOIN users u2 ON u2.id = fd.id_user
+         GROUP BY fd.id_user
        ) t ON t.id_user = u.id
        WHERE u.id_roles NOT IN (1, 4)
        ORDER BY COALESCE(t.tardes, 0) DESC, u.name ASC`,
