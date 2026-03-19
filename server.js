@@ -522,6 +522,9 @@ const pool = mysql.createPool({
 
 let userRoleColumn = null;
 let userRoleChecked = false;
+let cachedFichajeUserColumns = { codigo: null, foto: null };
+let fichajeUserColumnsChecked = false;
+const FICHAJE_IDEMPOTENCY_WINDOW_MS = 60 * 1000;
 
 async function getUserRoleColumn() {
   if (userRoleChecked) return userRoleColumn;
@@ -643,6 +646,158 @@ function parseMaybeJson(value) {
   } catch (_err) {
     return null;
   }
+}
+
+async function getFichajeUserColumns() {
+  if (fichajeUserColumnsChecked) return cachedFichajeUserColumns;
+  fichajeUserColumnsChecked = true;
+  try {
+    const [rows] = await pool.query(
+      `SELECT COLUMN_NAME
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'users'
+         AND COLUMN_NAME IN ('codigo', 'foto')
+       ORDER BY FIELD(COLUMN_NAME, 'codigo', 'foto')`
+    );
+    const names = new Set((rows || []).map((row) => String(row.COLUMN_NAME || '').trim()));
+    cachedFichajeUserColumns = {
+      codigo: names.has('codigo') ? 'codigo' : null,
+      foto: names.has('foto') ? 'foto' : null,
+    };
+  } catch (_err) {
+    cachedFichajeUserColumns = { codigo: null, foto: null };
+  }
+  return cachedFichajeUserColumns;
+}
+
+function buildDayBounds(baseDate = new Date()) {
+  const start = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(),
+    0,
+    0,
+    0,
+    0
+  );
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return {
+    start,
+    end,
+    startSql: formatDateTimeLocal(start),
+    endSql: formatDateTimeLocal(end),
+  };
+}
+
+function resolvePublicAssetUrl(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return null;
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const normalized = raw.replace(/^\/+/, '').replace(/\\/g, '/');
+  const candidates = [];
+  if (normalized) {
+    candidates.push(normalized);
+    candidates.push(`imagenes/${normalized}`);
+    candidates.push(`refresh/${normalized}`);
+  }
+
+  for (const candidate of candidates) {
+    const absolutePath = path.join(__dirname, 'public', candidate);
+    if (fs.existsSync(absolutePath)) {
+      return `/${candidate.replace(/\\/g, '/')}`;
+    }
+  }
+  return null;
+}
+
+function serializeFichajeRow(row) {
+  if (!row) return null;
+  return {
+    id_fichaje: Number(row.id_fichaje) || null,
+    fecha_ingreso: row.fecha_ingreso || null,
+    fecha_egreso: row.fecha_egreso || null,
+  };
+}
+
+function buildFichajeApiResponse({ ok, status, message, empleado = null, fichaje = null }) {
+  return {
+    ok: !!ok,
+    status: status || 'unknown',
+    message: message || '',
+    empleado: empleado
+      ? {
+          id: Number(empleado.id) || null,
+          name: empleado.name || '',
+          fotoUrl: empleado.fotoUrl || null,
+        }
+      : null,
+    fichaje: serializeFichajeRow(fichaje),
+  };
+}
+
+async function findEmployeeByCode(codigo, conn = pool) {
+  const normalizedCode = String(codigo || '').trim();
+  if (!normalizedCode) return null;
+
+  const columns = await getFichajeUserColumns();
+  if (!columns.codigo) {
+    const error = new Error('La columna users.codigo no está disponible');
+    error.code = 'FICHAJE_CODIGO_COLUMN_MISSING';
+    throw error;
+  }
+
+  const fotoSelect = columns.foto ? `, ${columns.foto} AS foto` : ', NULL AS foto';
+  const [rows] = await conn.query(
+    `SELECT id, name${fotoSelect}
+     FROM users
+     WHERE ${columns.codigo} = ?
+     LIMIT 1`,
+    [normalizedCode]
+  );
+  const row = rows?.[0];
+  if (!row) return null;
+
+  return {
+    id: Number(row.id) || null,
+    name: row.name || '',
+    fotoUrl: resolvePublicAssetUrl(row.foto),
+  };
+}
+
+async function findOpenFichajeForToday(userId, conn, dayBounds, lock = false) {
+  const forUpdate = lock ? ' FOR UPDATE' : '';
+  const [rows] = await conn.query(
+    `SELECT id_fichaje, fecha_ingreso, fecha_egreso
+     FROM fichaje
+     WHERE id_user = ?
+       AND fecha_ingreso >= ?
+       AND fecha_ingreso < ?
+       AND fecha_egreso IS NULL
+     ORDER BY fecha_ingreso DESC
+     LIMIT 1${forUpdate}`,
+    [userId, dayBounds.startSql, dayBounds.endSql]
+  );
+  return rows?.[0] || null;
+}
+
+async function findRecentFichajeAction(userId, action, conn, baseDate = new Date(), lock = false) {
+  const actionColumn = action === 'egreso' ? 'fecha_egreso' : 'fecha_ingreso';
+  const threshold = formatDateTimeLocal(new Date(baseDate.getTime() - FICHAJE_IDEMPOTENCY_WINDOW_MS));
+  const forUpdate = lock ? ' FOR UPDATE' : '';
+  const [rows] = await conn.query(
+    `SELECT id_fichaje, fecha_ingreso, fecha_egreso
+     FROM fichaje
+     WHERE id_user = ?
+       AND ${actionColumn} IS NOT NULL
+       AND ${actionColumn} >= ?
+     ORDER BY ${actionColumn} DESC
+     LIMIT 1${forUpdate}`,
+    [userId, threshold]
+  );
+  return rows?.[0] || null;
 }
 
 function extractJsonObjectFromText(raw) {
@@ -3338,8 +3493,243 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login' || req.path === '/health' || req.path.startsWith('/public/')) return next();
+  if (
+    req.path === '/login' ||
+    req.path === '/health' ||
+    req.path.startsWith('/public/') ||
+    req.path.startsWith('/fichaje')
+  ) {
+    return next();
+  }
   return requireAuth(req, res, next); 
+});
+
+app.get('/api/fichaje/empleado', async (req, res) => {
+  try {
+    const codigo = String(req.query.codigo || '').trim();
+    if (!codigo) {
+      return res.status(400).json({ ok: false, message: 'Codigo requerido', empleado: null });
+    }
+
+    const empleado = await findEmployeeByCode(codigo);
+    if (!empleado) {
+      return res.status(404).json({ ok: false, message: 'Empleado no encontrado', empleado: null });
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Empleado encontrado',
+      empleado: {
+        id: empleado.id,
+        name: empleado.name,
+        fotoUrl: empleado.fotoUrl || null,
+      },
+    });
+  } catch (error) {
+    const status = error?.code === 'FICHAJE_CODIGO_COLUMN_MISSING' ? 500 : 500;
+    return res.status(status).json({
+      ok: false,
+      message:
+        error?.code === 'FICHAJE_CODIGO_COLUMN_MISSING'
+          ? 'La configuración de fichaje no está disponible en esta base.'
+          : 'No se pudo consultar el empleado',
+      empleado: null,
+      error: error.message,
+    });
+  }
+});
+
+async function processFichajeAction(action, codigo) {
+  const normalizedAction = action === 'egreso' ? 'egreso' : 'ingreso';
+  const normalizedCode = String(codigo || '').trim();
+  if (!normalizedCode) {
+    return {
+      httpStatus: 400,
+      payload: buildFichajeApiResponse({
+        ok: false,
+        status: 'invalid_request',
+        message: 'Codigo requerido',
+      }),
+    };
+  }
+
+  const conn = await pool.getConnection();
+  let transactionStarted = false;
+  try {
+    await conn.beginTransaction();
+    transactionStarted = true;
+
+    const empleado = await findEmployeeByCode(normalizedCode, conn);
+    if (!empleado) {
+      await conn.rollback();
+      return {
+        httpStatus: 404,
+        payload: buildFichajeApiResponse({
+          ok: false,
+          status: 'not_found',
+          message: 'Empleado no encontrado',
+        }),
+      };
+    }
+
+    const now = new Date();
+    const nowSql = formatDateTimeLocal(now);
+    const dayBounds = buildDayBounds(now);
+
+    if (normalizedAction === 'ingreso') {
+      const fichajeAbierto = await findOpenFichajeForToday(empleado.id, conn, dayBounds, true);
+      if (fichajeAbierto) {
+        const diffMs = now.getTime() - new Date(fichajeAbierto.fecha_ingreso).getTime();
+        const isDuplicate = diffMs <= FICHAJE_IDEMPOTENCY_WINDOW_MS;
+        await conn.commit();
+        transactionStarted = false;
+        return {
+          httpStatus: isDuplicate ? 200 : 409,
+          payload: buildFichajeApiResponse({
+            ok: isDuplicate,
+            status: isDuplicate ? 'duplicate_ignored' : 'already_open',
+            message:
+              isDuplicate
+                ? 'Ingreso ya registrado hace instantes.'
+                : 'Ya existe un ingreso abierto para hoy.',
+            empleado,
+            fichaje: fichajeAbierto,
+          }),
+        };
+      }
+
+      const [result] = await conn.query(
+        `INSERT INTO fichaje (fecha_ingreso, id_user)
+         VALUES (?, ?)`,
+        [nowSql, empleado.id]
+      );
+      const created = {
+        id_fichaje: result.insertId,
+        fecha_ingreso: nowSql,
+        fecha_egreso: null,
+      };
+      await conn.commit();
+      transactionStarted = false;
+      return {
+        httpStatus: 200,
+        payload: buildFichajeApiResponse({
+          ok: true,
+          status: 'created',
+          message: 'Ingreso registrado correctamente.',
+          empleado,
+          fichaje: created,
+        }),
+      };
+    }
+
+    const fichajeAbierto = await findOpenFichajeForToday(empleado.id, conn, dayBounds, true);
+    if (fichajeAbierto) {
+      await conn.query(
+        `UPDATE fichaje
+         SET fecha_egreso = ?
+         WHERE id_fichaje = ?
+         LIMIT 1`,
+        [nowSql, fichajeAbierto.id_fichaje]
+      );
+      const updated = {
+        ...fichajeAbierto,
+        fecha_egreso: nowSql,
+      };
+      await conn.commit();
+      transactionStarted = false;
+      return {
+        httpStatus: 200,
+        payload: buildFichajeApiResponse({
+          ok: true,
+          status: 'updated',
+          message: 'Egreso registrado correctamente.',
+          empleado,
+          fichaje: updated,
+        }),
+      };
+    }
+
+    const fichajeReciente = await findRecentFichajeAction(empleado.id, 'egreso', conn, now, true);
+    if (fichajeReciente) {
+      await conn.commit();
+      transactionStarted = false;
+      return {
+        httpStatus: 200,
+        payload: buildFichajeApiResponse({
+          ok: true,
+          status: 'duplicate_ignored',
+          message: 'Egreso ya registrado hace instantes.',
+          empleado,
+          fichaje: fichajeReciente,
+        }),
+      };
+    }
+
+    await conn.commit();
+    transactionStarted = false;
+    return {
+      httpStatus: 409,
+      payload: buildFichajeApiResponse({
+        ok: false,
+        status: 'no_open_shift',
+        message: 'No hay un ingreso pendiente para cerrar hoy.',
+        empleado,
+      }),
+    };
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await conn.rollback();
+      } catch (_rollbackError) {
+        /* ignore */
+      }
+    }
+    if (error?.code === 'FICHAJE_CODIGO_COLUMN_MISSING') {
+      return {
+        httpStatus: 500,
+        payload: buildFichajeApiResponse({
+          ok: false,
+          status: 'config_error',
+          message: 'La configuración de fichaje no está disponible en esta base.',
+        }),
+      };
+    }
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+app.post('/api/fichaje/ingreso', async (req, res) => {
+  try {
+    const result = await processFichajeAction('ingreso', req.body?.codigo);
+    res.status(result.httpStatus).json(result.payload);
+  } catch (error) {
+    res.status(500).json(
+      buildFichajeApiResponse({
+        ok: false,
+        status: 'server_error',
+        message: 'No se pudo registrar el ingreso.',
+        empleado: null,
+      })
+    );
+  }
+});
+
+app.post('/api/fichaje/egreso', async (req, res) => {
+  try {
+    const result = await processFichajeAction('egreso', req.body?.codigo);
+    res.status(result.httpStatus).json(result.payload);
+  } catch (error) {
+    res.status(500).json(
+      buildFichajeApiResponse({
+        ok: false,
+        status: 'server_error',
+        message: 'No se pudo registrar el egreso.',
+        empleado: null,
+      })
+    );
+  }
 });
 
 app.get('/api/me', (req, res) => {
@@ -9751,6 +10141,10 @@ app.get('/login', (req, res) => {
     return res.redirect('/');
   }
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.get('/fichaje', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'fichaje.html'));
 });
 
 app.get('/', (req, res) => {

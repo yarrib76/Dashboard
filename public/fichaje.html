@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fichaje | Donatella</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/fichaje.css" />
+  </head>
+  <body>
+    <div class="fichaje-page">
+      <div class="glow glow-left"></div>
+      <div class="glow glow-right"></div>
+
+      <main class="terminal-shell">
+        <section class="hero-panel">
+          <div class="brand-row">
+            <div class="brand-mark">DJ</div>
+            <div>
+              <p class="eyebrow">Terminal de asistencia</p>
+              <h1>Sistema de Fichaje</h1>
+            </div>
+          </div>
+
+          <p class="hero-copy">
+            Acceso directo para registrar ingreso o egreso sin entrar al dashboard.
+          </p>
+
+          <div class="clock-panel">
+            <p class="clock-label">Hora actual</p>
+            <p class="clock-value" id="clock-value">--:--:--</p>
+            <p class="date-value" id="date-value">-- --- ----</p>
+          </div>
+
+          <div class="hero-notes">
+            <div class="note-chip">
+              <span class="note-chip-dot"></span>
+              Reintentos dentro de 60s no duplican fichajes.
+            </div>
+            <div class="note-chip">
+              <span class="note-chip-dot"></span>
+              Compatible con lector de código y teclado.
+            </div>
+          </div>
+        </section>
+
+        <section class="console-panel">
+          <div class="panel-header">
+            <div>
+              <p class="eyebrow">Operacion</p>
+              <h2>Selecciona la acción</h2>
+            </div>
+            <p class="scan-hint">Primero elegí la acción, luego escaneá el código.</p>
+          </div>
+
+          <div class="action-grid" id="action-grid">
+            <button class="action-btn action-btn-ingreso" type="button" data-action="ingreso">
+              <span class="action-kicker">Entrada</span>
+              <strong>Ingreso</strong>
+              <small>Registra apertura de jornada</small>
+            </button>
+            <button class="action-btn action-btn-egreso" type="button" data-action="egreso">
+              <span class="action-kicker">Salida</span>
+              <strong>Egreso</strong>
+              <small>Registra cierre de jornada</small>
+            </button>
+          </div>
+
+          <div class="scanner-card">
+            <label class="field-label" for="codigo-input">Codigo del empleado</label>
+            <div class="scan-input-row">
+              <input
+                id="codigo-input"
+                type="password"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Escanear o escribir codigo"
+                disabled
+              />
+              <button id="clear-button" class="ghost-btn" type="button" disabled>Limpiar</button>
+            </div>
+
+            <div class="employee-card is-empty" id="employee-card">
+              <img id="employee-photo" src="/sinfoto.png" alt="Foto del empleado" />
+              <div class="employee-meta">
+                <p class="employee-name" id="employee-name">Esperando lectura</p>
+                <p class="employee-subtitle" id="employee-subtitle">
+                  Selecciona una acción para habilitar el lector.
+                </p>
+                <p class="employee-code" id="employee-code">Sin código leído</p>
+              </div>
+            </div>
+
+            <div class="cta-row">
+              <button id="confirm-button" class="confirm-btn" type="button" disabled>
+                Confirmar
+              </button>
+              <button id="reset-button" class="ghost-btn" type="button">Reiniciar</button>
+            </div>
+
+            <div class="message-board idle" id="message-board" aria-live="polite">
+              <p class="message-title" id="message-title">Terminal lista</p>
+              <p class="message-text" id="message-text">
+                Elige si vas a registrar un ingreso o un egreso.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/fichaje.js"></script>
+  </body>
+</html>
