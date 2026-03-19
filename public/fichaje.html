@@ -76,9 +76,13 @@
             <div class="scan-input-row">
               <input
                 id="codigo-input"
-                type="password"
+                type="text"
                 inputmode="numeric"
-                autocomplete="off"
+                autocomplete="one-time-code"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                data-lpignore="true"
                 placeholder="Escanear o escribir codigo"
                 disabled
               />
