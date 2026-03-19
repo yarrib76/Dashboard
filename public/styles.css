@@ -3376,6 +3376,7 @@ body.theme-light .pedido-notas-badge {
   flex-direction: column;
   gap: 6px;
   min-height: 110px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .day-card .day-number {
@@ -3415,23 +3416,70 @@ body.theme-light .pedido-notas-badge {
 }
 
 .day-card.green {
-  background: rgba(107, 230, 169, 0.12);
-  border-color: rgba(107, 230, 169, 0.6);
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(22, 163, 74, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.18);
 }
 
 .day-card.yellow {
-  background: rgba(251, 191, 36, 0.12);
-  border-color: rgba(251, 191, 36, 0.6);
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(217, 119, 6, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
 }
 
 .day-card.red {
-  background: rgba(251, 113, 133, 0.12);
-  border-color: rgba(251, 113, 133, 0.6);
+  background: rgba(244, 63, 94, 0.16);
+  border-color: rgba(225, 29, 72, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.16);
 }
 
 .day-card.gray {
-  background: rgba(203, 213, 225, 0.12);
-  border-color: rgba(203, 213, 225, 0.6);
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.1);
+}
+
+body.theme-light .day-card.green {
+  background: #d9f8e7;
+  border-color: #22a45a;
+  box-shadow: inset 0 0 0 1px rgba(34, 164, 90, 0.18);
+}
+
+body.theme-light .day-card.yellow {
+  background: #fff0bf;
+  border-color: #e0a100;
+  box-shadow: inset 0 0 0 1px rgba(224, 161, 0, 0.18);
+}
+
+body.theme-light .day-card.red {
+  background: #ffe0e5;
+  border-color: #ef476f;
+  box-shadow: inset 0 0 0 1px rgba(239, 71, 111, 0.18);
+}
+
+body.theme-light .day-card.gray {
+  background: #eef2f7;
+  border-color: #c5d0df;
+}
+
+body.theme-light .day-card.green .day-number,
+body.theme-light .day-card.green .status {
+  color: #166534;
+}
+
+body.theme-light .day-card.yellow .day-number,
+body.theme-light .day-card.yellow .status {
+  color: #92400e;
+}
+
+body.theme-light .day-card.red .day-number,
+body.theme-light .day-card.red .status {
+  color: #9f1239;
+}
+
+body.theme-light .day-card.gray .day-number,
+body.theme-light .day-card.gray .status {
+  color: #475569;
 }
 .transport-btn {
   display: inline-flex;
