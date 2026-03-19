@@ -148,6 +148,10 @@ const userRoleSelect = document.getElementById('user-role-select');
 const userVendedoraSelect = document.getElementById('user-vendedora-select');
 const userHoraIngreso = document.getElementById('user-hora-ingreso');
 const userHoraEgreso = document.getElementById('user-hora-egreso');
+const userPhotoPreview = document.getElementById('user-photo-preview');
+const userPhotoInput = document.getElementById('user-photo-input');
+const userPhotoUpload = document.getElementById('user-photo-upload');
+const userPhotoRemove = document.getElementById('user-photo-remove');
 const userPassInput = document.getElementById('user-pass-input');
 const userPassConfirm = document.getElementById('user-pass-confirm');
 const userPassSave = document.getElementById('user-pass-save');
@@ -13927,6 +13931,7 @@ let usersSearchTerm = '';
 let usersPage = 1;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
+const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
 
 function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
@@ -14258,6 +14263,17 @@ function renderUserForm() {
   if (userVendedoraSelect) userVendedoraSelect.value = user.id_vendedoras ? String(user.id_vendedoras) : '';
   if (userHoraIngreso) userHoraIngreso.value = user.hora_ingreso || '';
   if (userHoraEgreso) userHoraEgreso.value = user.hora_egreso || '';
+  if (userPhotoPreview) userPhotoPreview.src = user.fotoUrl || USER_PHOTO_PLACEHOLDER;
+  if (userPhotoRemove) userPhotoRemove.disabled = !user.foto;
+  if (userPhotoInput) userPhotoInput.value = '';
+}
+
+function mergeUpdatedUser(updatedUser) {
+  if (!updatedUser || !updatedUser.id) return;
+  const idx = usersData.findIndex((u) => String(u.id) === String(updatedUser.id));
+  if (idx >= 0) {
+    usersData[idx] = { ...usersData[idx], ...updatedUser };
+  }
 }
 
 async function initUsersModule() {
@@ -14293,13 +14309,66 @@ async function initUsersModule() {
           throw new Error(text || `Error ${res.status}`);
         }
         const updated = await res.json();
-        const idx = usersData.findIndex((u) => String(u.id) === String(user.id));
-        if (idx >= 0) usersData[idx] = updated.user;
+        mergeUpdatedUser(updated.user);
         renderUsersList();
         renderUserForm();
         if (usersStatus) usersStatus.textContent = 'Usuario actualizado.';
       } catch (error) {
         if (usersStatus) usersStatus.textContent = error.message || 'No se pudo guardar.';
+      }
+    });
+  if (userPhotoUpload)
+    userPhotoUpload.addEventListener('click', async () => {
+      const user = usersData.find((u) => String(u.id) === currentUserId);
+      const file = userPhotoInput?.files?.[0];
+      if (!user) return;
+      if (!file) {
+        if (usersStatus) usersStatus.textContent = 'Selecciona una imagen antes de subirla.';
+        return;
+      }
+      try {
+        if (usersStatus) usersStatus.textContent = 'Subiendo foto...';
+        const formData = new FormData();
+        formData.append('foto', file);
+        const res = await fetch(`/api/config/usuarios/${encodeURIComponent(user.id)}/foto`, {
+          method: 'POST',
+          body: formData,
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || `Error ${res.status}`);
+        }
+        mergeUpdatedUser(payload.user);
+        renderUsersList();
+        renderUserForm();
+        if (usersStatus) usersStatus.textContent = 'Foto actualizada.';
+      } catch (error) {
+        if (usersStatus) usersStatus.textContent = error.message || 'No se pudo subir la foto.';
+      }
+    });
+  if (userPhotoRemove)
+    userPhotoRemove.addEventListener('click', async () => {
+      const user = usersData.find((u) => String(u.id) === currentUserId);
+      if (!user) return;
+      if (!user.foto) {
+        if (usersStatus) usersStatus.textContent = 'El usuario no tiene foto cargada.';
+        return;
+      }
+      try {
+        if (usersStatus) usersStatus.textContent = 'Eliminando foto...';
+        const res = await fetch(`/api/config/usuarios/${encodeURIComponent(user.id)}/foto`, {
+          method: 'DELETE',
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.message || `Error ${res.status}`);
+        }
+        mergeUpdatedUser(payload.user);
+        renderUsersList();
+        renderUserForm();
+        if (usersStatus) usersStatus.textContent = 'Foto eliminada.';
+      } catch (error) {
+        if (usersStatus) usersStatus.textContent = error.message || 'No se pudo eliminar la foto.';
       }
     });
   if (usersSearch)

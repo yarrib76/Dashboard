@@ -2481,6 +2481,20 @@
             </div>
             <div class="tab-panel active" id="tab-user-edit">
               <div class="abm-form-grid">
+                <div class="user-photo-card abm-span-2">
+                  <div class="user-photo-preview-wrap">
+                    <img id="user-photo-preview" class="user-photo-preview" src="/sinfoto.png" alt="Foto de usuario" />
+                  </div>
+                  <div class="user-photo-fields">
+                    <p class="user-photo-title">Foto del vendedor</p>
+                    <p class="user-photo-help">Se utiliza en fichaje y otras vistas públicas.</p>
+                    <input type="file" id="user-photo-input" accept="image/png,image/jpeg,image/webp,image/gif" />
+                    <div class="actions inline user-photo-actions">
+                      <button type="button" id="user-photo-upload">Subir o reemplazar</button>
+                      <button type="button" id="user-photo-remove" class="abm-link-btn">Quitar foto</button>
+                    </div>
+                  </div>
+                </div>
                 <label class="abm-span-2">
                   <span>Nombre</span>
                   <input type="text" id="user-name-input" />

@@ -29,6 +29,7 @@ const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
 const fsp = fs.promises;
+const EMP_PHOTO_PUBLIC_PREFIX = '/empleados-fotos';
 
 if (typeof dns.setDefaultResultOrder === 'function') {
   dns.setDefaultResultOrder('ipv4first');
@@ -74,11 +75,16 @@ const SESSION_MAX_IDLE_MINUTES = Math.max(1, Number(requiredEnv('TIEMP_SESSION',
 const DB_CONNECT_TIMEOUT_MS = Number(process.env.DB_CONNECT_TIMEOUT_MS || 20000);
 const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
+const EMP_PHOTO_STORAGE_DIR = process.env.EMP_PHOTO_DIR || '/app/fotos_empleados';
+const EMP_PHOTO_MAX_BYTES = Number(process.env.EMP_PHOTO_MAX_BYTES || 5 * 1024 * 1024);
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
 const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
 const LOGS_DIR = path.join(__dirname, 'logs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
+
+fs.mkdirSync(EMP_PHOTO_STORAGE_DIR, { recursive: true });
+app.use(EMP_PHOTO_PUBLIC_PREFIX, express.static(EMP_PHOTO_STORAGE_DIR));
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -713,6 +719,121 @@ function resolvePublicAssetUrl(rawValue) {
   return null;
 }
 
+function normalizeEmployeePhotoValue(rawValue) {
+  const raw = String(rawValue || '').trim().replace(/\\/g, '/');
+  if (!raw) return '';
+  if (raw.startsWith(`${EMP_PHOTO_PUBLIC_PREFIX}/`)) {
+    return path.posix.basename(raw);
+  }
+  if (raw.startsWith('/')) {
+    return path.posix.basename(raw);
+  }
+  return path.posix.basename(raw);
+}
+
+function buildEmployeePhotoUrl(rawValue) {
+  const normalized = normalizeEmployeePhotoValue(rawValue);
+  if (!normalized) return null;
+  return `${EMP_PHOTO_PUBLIC_PREFIX}/${encodeURIComponent(normalized)}`;
+}
+
+function getEmployeePhotoDiskPath(rawValue) {
+  const normalized = normalizeEmployeePhotoValue(rawValue);
+  if (!normalized) return null;
+  return path.join(EMP_PHOTO_STORAGE_DIR, normalized);
+}
+
+function ensureSafeUploadFileName(fileName, fallbackExt = '.jpg') {
+  const safeBase = String(fileName || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const ext = path.extname(safeBase || '').toLowerCase() || fallbackExt;
+  return { baseName: path.basename(safeBase || 'archivo', ext), ext };
+}
+
+function inferImageExtension(contentType, originalName) {
+  const byType = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/gif': '.gif',
+  };
+  const normalizedType = String(contentType || '').trim().toLowerCase();
+  if (byType[normalizedType]) return byType[normalizedType];
+  const ext = path.extname(String(originalName || '')).toLowerCase();
+  if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext)) {
+    return ext === '.jpeg' ? '.jpg' : ext;
+  }
+  return '.jpg';
+}
+
+async function parseSingleMultipartFile(req, fieldName) {
+  const contentType = String(req.headers['content-type'] || '');
+  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  if (!boundaryMatch) {
+    const error = new Error('Boundary multipart faltante');
+    error.code = 'UPLOAD_BOUNDARY_MISSING';
+    throw error;
+  }
+
+  const boundary = `--${boundaryMatch[1] || boundaryMatch[2]}`;
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    totalBytes += chunk.length;
+    if (totalBytes > EMP_PHOTO_MAX_BYTES + 1024 * 1024) {
+      const error = new Error('Archivo demasiado grande');
+      error.code = 'UPLOAD_TOO_LARGE';
+      throw error;
+    }
+    chunks.push(chunk);
+  }
+
+  const bodyBuffer = Buffer.concat(chunks);
+  const bodyText = bodyBuffer.toString('latin1');
+  const parts = bodyText.split(boundary).slice(1, -1);
+
+  for (const part of parts) {
+    const cleaned = part.startsWith('\r\n') ? part.slice(2) : part;
+    const headerEnd = cleaned.indexOf('\r\n\r\n');
+    if (headerEnd === -1) continue;
+    const headerText = cleaned.slice(0, headerEnd);
+    const nameMatch = headerText.match(/name="([^"]+)"/i);
+    if (!nameMatch || nameMatch[1] !== fieldName) continue;
+    const fileNameMatch = headerText.match(/filename="([^"]*)"/i);
+    const typeMatch = headerText.match(/Content-Type:\s*([^\r\n]+)/i);
+    let contentText = cleaned.slice(headerEnd + 4);
+    if (contentText.endsWith('\r\n')) {
+      contentText = contentText.slice(0, -2);
+    }
+    const fileBuffer = Buffer.from(contentText, 'latin1');
+    return {
+      fileName: fileNameMatch?.[1] || '',
+      contentType: typeMatch?.[1] || 'application/octet-stream',
+      buffer: fileBuffer,
+    };
+  }
+
+  const error = new Error('Archivo no enviado');
+  error.code = 'UPLOAD_FILE_MISSING';
+  throw error;
+}
+
+async function removeManagedEmployeePhoto(rawValue) {
+  const diskPath = getEmployeePhotoDiskPath(rawValue);
+  if (!diskPath) return;
+  try {
+    await fsp.unlink(diskPath);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
+
 function serializeFichajeRow(row) {
   if (!row) return null;
   return {
@@ -763,7 +884,7 @@ async function findEmployeeByCode(codigo, conn = pool) {
   return {
     id: Number(row.id) || null,
     name: row.name || '',
-    fotoUrl: resolvePublicAssetUrl(row.foto),
+    fotoUrl: buildEmployeePhotoUrl(row.foto) || resolvePublicAssetUrl(row.foto),
   };
 }
 
@@ -6318,11 +6439,17 @@ app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
 app.get('/api/config/usuarios', async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        ORDER BY name`
     );
-    res.json({ data: rows || [] });
+    res.json({
+      data: (rows || []).map((row) => ({
+        ...row,
+        foto: row.foto || '',
+        fotoUrl: buildEmployeePhotoUrl(row.foto) || resolvePublicAssetUrl(row.foto) || null,
+      })),
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar usuarios', error: error.message });
   }
@@ -6370,15 +6497,137 @@ app.put('/api/config/usuarios/:id', async (req, res) => {
       ]
     );
     const [[row]] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        WHERE id = ?
        LIMIT 1`,
       [userId]
     );
-    res.json({ ok: true, user: row || {} });
+    res.json({
+      ok: true,
+      user: row
+        ? {
+            ...row,
+            foto: row.foto || '',
+            fotoUrl: buildEmployeePhotoUrl(row.foto) || resolvePublicAssetUrl(row.foto) || null,
+          }
+        : {},
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar usuario', error: error.message });
+  }
+});
+
+app.post('/api/config/usuarios/:id/foto', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
+
+    const upload = await parseSingleMultipartFile(req, 'foto');
+    const mime = String(upload.contentType || '').toLowerCase();
+    if (!mime.startsWith('image/')) {
+      return res.status(400).json({ message: 'El archivo debe ser una imagen.' });
+    }
+    if (!upload.buffer?.length) {
+      return res.status(400).json({ message: 'Archivo vacio.' });
+    }
+    if (upload.buffer.length > EMP_PHOTO_MAX_BYTES) {
+      return res.status(400).json({ message: 'La imagen supera el tamaño máximo permitido.' });
+    }
+
+    const [[currentUser]] = await pool.query(
+      `SELECT id, foto
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+    if (!currentUser) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const safeExt = inferImageExtension(mime, upload.fileName);
+    const fileName = `user-${userId}-${Date.now()}${safeExt}`;
+    const destination = path.join(EMP_PHOTO_STORAGE_DIR, fileName);
+
+    await fsp.writeFile(destination, upload.buffer);
+    await pool.query('UPDATE users SET foto = ? WHERE id = ? LIMIT 1', [fileName, userId]);
+    await removeManagedEmployeePhoto(currentUser.foto);
+
+    const [[row]] = await pool.query(
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    res.json({
+      ok: true,
+      user: row
+        ? {
+            ...row,
+            foto: row.foto || '',
+            fotoUrl: buildEmployeePhotoUrl(row.foto) || null,
+          }
+        : {},
+    });
+  } catch (error) {
+    const msgByCode = {
+      UPLOAD_BOUNDARY_MISSING: 'Upload inválido: falta boundary multipart.',
+      UPLOAD_FILE_MISSING: 'No se recibió ninguna imagen.',
+      UPLOAD_TOO_LARGE: 'La imagen supera el tamaño máximo permitido.',
+    };
+    const statusByCode = {
+      UPLOAD_BOUNDARY_MISSING: 400,
+      UPLOAD_FILE_MISSING: 400,
+      UPLOAD_TOO_LARGE: 413,
+    };
+    res
+      .status(statusByCode[error?.code] || 500)
+      .json({ message: msgByCode[error?.code] || 'Error al subir foto', error: error.message });
+  }
+});
+
+app.delete('/api/config/usuarios/:id/foto', async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
+
+    const [[currentUser]] = await pool.query(
+      `SELECT id, foto
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+    if (!currentUser) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    await removeManagedEmployeePhoto(currentUser.foto);
+    await pool.query('UPDATE users SET foto = NULL WHERE id = ? LIMIT 1', [userId]);
+
+    const [[row]] = await pool.query(
+      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userId]
+    );
+
+    res.json({
+      ok: true,
+      user: row
+        ? {
+            ...row,
+            foto: row.foto || '',
+            fotoUrl: buildEmployeePhotoUrl(row.foto) || null,
+          }
+        : {},
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar foto', error: error.message });
   }
 });
 
