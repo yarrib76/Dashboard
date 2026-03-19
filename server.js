@@ -734,6 +734,8 @@ function normalizeEmployeePhotoValue(rawValue) {
 function buildEmployeePhotoUrl(rawValue) {
   const normalized = normalizeEmployeePhotoValue(rawValue);
   if (!normalized) return null;
+  const diskPath = path.join(EMP_PHOTO_STORAGE_DIR, normalized);
+  if (!fs.existsSync(diskPath)) return null;
   return `${EMP_PHOTO_PUBLIC_PREFIX}/${encodeURIComponent(normalized)}`;
 }
 
