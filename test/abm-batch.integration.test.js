@@ -32,12 +32,9 @@ test('ABM batch integration', async (t) => {
        FROM INFORMATION_SCHEMA.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE()
          AND COLUMN_NAME = 'Observaciones'
-         AND TABLE_NAME IN ('articulos', 'compras')`
+         AND TABLE_NAME = 'compras'`
     );
-    const map = new Map(rows.map((r) => [r.TABLE_NAME, r.maxLen]));
-    const artLen = map.get('articulos') || 200;
-    const compLen = map.get('compras') || 200;
-    return Math.min(artLen, compLen);
+    return Number(rows[0]?.maxLen) || 200;
   };
 
   const buildItemFromRow = (row, idx, overrides = {}) => {
@@ -87,7 +84,7 @@ test('ABM batch integration', async (t) => {
       const ordenCompra = baseOrden + 900000;
 
       const [rows] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor
+        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 100`
@@ -130,7 +127,7 @@ test('ABM batch integration', async (t) => {
         assert.equal(Number(after.Gastos) || 0, gastosFinal);
         assert.equal(Number(after.Ganancia) || 0, gananciaFinal);
         assert.equal(after.Proveedor || '', item.proveedor || '');
-        assert.equal(after.Observaciones || '', item.observaciones || '');
+        assert.equal(after.Observaciones || '', rows.find((row) => row.Articulo === item.articulo)?.Observaciones || '');
         assert.equal(Number(after.Cantidad) || 0, expectedCantidad);
       });
 
@@ -195,7 +192,7 @@ test('ABM batch integration', async (t) => {
     try {
       await conn.beginTransaction();
       const [[row]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor
+        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 1`
@@ -221,7 +218,7 @@ test('ABM batch integration', async (t) => {
     try {
       await conn.beginTransaction();
       const [[row]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor
+        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 1`
@@ -256,7 +253,7 @@ test('ABM batch integration', async (t) => {
     try {
       await conn.beginTransaction();
       const [[row]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor
+        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 1`
@@ -294,7 +291,7 @@ test('ABM batch integration', async (t) => {
     try {
       await conn.beginTransaction();
       const [[row]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor
+        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 1`
@@ -317,7 +314,13 @@ test('ABM batch integration', async (t) => {
         [row.Articulo]
       );
       assert.equal(after?.Proveedor || '', '');
-      assert.ok((after?.Observaciones || '').startsWith('OBS'));
+      assert.equal(after?.Observaciones || '', row.Observaciones || '');
+
+      const [[compra]] = await conn.query(
+        'SELECT Observaciones FROM compras WHERE OrdenCompra = ? AND Articulo = ? LIMIT 1',
+        [ordenCompra, row.Articulo]
+      );
+      assert.ok((compra?.Observaciones || '').startsWith('OBS'));
       await conn.rollback();
     } finally {
       conn.release();

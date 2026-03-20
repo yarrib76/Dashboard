@@ -104,7 +104,7 @@ test('ABM create integration', async (t) => {
       assert.equal(Number(artRow.Gastos) || 0, 0);
       assert.equal(Number(artRow.Ganancia) || 0, 0);
       assert.equal(artRow.Proveedor || '', proveedor);
-      assert.equal(artRow.Observaciones || '', payload.observaciones);
+      assert.notEqual(artRow.Observaciones || '', payload.observaciones);
 
       const [comprasCols] = await conn.query(
         `SELECT COLUMN_NAME
