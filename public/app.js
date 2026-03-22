@@ -3662,6 +3662,13 @@ function initMercaderiaFotos() {
       }
     });
   }
+  if (mercFotosTableEl) {
+    mercFotosTableEl.addEventListener('click', (event) => {
+      const img = event.target.closest('.merc-fotos-thumb');
+      if (!img) return;
+      openMercImage(img.src);
+    });
+  }
 }
 
 function closeMercIa() {
