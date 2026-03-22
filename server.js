@@ -589,6 +589,7 @@ const ROLE_PERMISSIONS = [
   'facturas',
   'comisiones',
   'mercaderia',
+  'mercaderia-fotos',
   'abm',
   'control-ordenes',
   'ecommerce',
@@ -7826,6 +7827,50 @@ app.get('/api/mercaderia/image', async (req, res) => {
     res.json({ articulo, imagessrc: row?.imagessrc || '' });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar imagen', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
+  try {
+    const limit = Number.parseInt(req.query.limit, 10);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      return res.status(400).json({ message: 'limit debe ser un entero mayor a 0' });
+    }
+
+    const safeLimit = Math.min(limit, 500);
+    const [rows] = await pool.query(
+      `SELECT
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         COALESCE(art.Cantidad, 0) AS cantidad,
+         COALESCE(status.imagessrc, '') AS fotoUrl
+       FROM articulos AS art
+       LEFT JOIN statusecomercesincro AS status
+         ON status.articulo = art.Articulo
+        AND status.id_provecomerce = (
+          SELECT prov.id
+          FROM provecomerce AS prov
+          WHERE TIME(prov.fecha) >= '06:00:00'
+            AND TIME(prov.fecha) <= '06:00:10'
+          ORDER BY prov.id DESC
+          LIMIT 1
+        )
+       ORDER BY art.Detalle ASC, art.Articulo ASC
+       LIMIT ?`,
+      [safeLimit]
+    );
+
+    res.json({
+      total: rows.length,
+      data: (rows || []).map((row) => ({
+        articulo: row.articulo || '',
+        detalle: row.detalle || '',
+        cantidad: Number(row.cantidad) || 0,
+        fotoUrl: row.fotoUrl || '',
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar fotos de mercaderia', error: error.message });
   }
 });
 

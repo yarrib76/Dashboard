@@ -3001,6 +3001,24 @@ body.theme-light .pedido-notas-badge {
   margin-left: auto;
 }
 
+.merc-fotos-controls {
+  align-items: end;
+}
+
+.merc-fotos-controls label {
+  min-width: 220px;
+}
+
+.merc-fotos-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  display: block;
+}
+
 .barcode-body {
   display: flex;
   flex-direction: column;

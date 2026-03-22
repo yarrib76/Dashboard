@@ -384,6 +384,7 @@ const viewPedidos = document.getElementById('view-pedidos');
 const viewPedidosTodos = document.getElementById('view-pedidos-todos');
 const viewPedidosNuevo = document.getElementById('view-pedidos-nuevo');
 const viewMercaderia = document.getElementById('view-mercaderia');
+const viewMercaderiaFotos = document.getElementById('view-mercaderia-fotos');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
@@ -419,6 +420,10 @@ const mercSearch = document.getElementById('merc-search');
 const mercBuscarBtn = document.getElementById('merc-buscar');
 const mercExportBtn = document.getElementById('merc-export');
 const mercGraficarBtn = document.getElementById('merc-graficar');
+const mercFotosLimitInput = document.getElementById('merc-fotos-limit');
+const mercFotosRefreshBtn = document.getElementById('merc-fotos-refresh');
+const mercFotosStatus = document.getElementById('merc-fotos-status');
+const mercFotosTableEl = document.getElementById('mercaderia-fotos-table');
 const mercTableBody = document.querySelector('#merc-table tbody');
 const mercStatus = document.getElementById('merc-status');
 const statPendientesControl = document.getElementById('stat-pendientes-control');
@@ -1103,6 +1108,8 @@ const mercProveedorSet = new Set();
 const mercMesSet = new Set();
 let mercImgZoom = 1;
 let mercChart = null;
+let mercFotosDataTable = null;
+let mercFotosLoaded = false;
 let abmDataTable = null;
 let abmLoaded = false;
 let abmRowsCache = [];
@@ -3561,6 +3568,99 @@ function initMercaderia() {
   }
   // primera carga
   loadMercaderia();
+}
+
+function validateMercaderiaFotosLimit() {
+  const raw = String(mercFotosLimitInput?.value || '').trim();
+  if (!raw) throw new Error('Ingresa una cantidad de artículos.');
+  if (!/^[0-9]+$/.test(raw)) throw new Error('La cantidad debe ser un entero mayor a 0.');
+  const limit = Number.parseInt(raw, 10);
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error('La cantidad debe ser un entero mayor a 0.');
+  }
+  return limit;
+}
+
+async function loadMercaderiaFotos() {
+  if (!mercFotosTableEl) return;
+  try {
+    const limit = validateMercaderiaFotosLimit();
+    if (mercFotosStatus) mercFotosStatus.textContent = 'Cargando...';
+    const res = await fetchJSON(`/api/mercaderia/fotos?limit=${encodeURIComponent(limit)}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (mercFotosDataTable) {
+      mercFotosDataTable.clear();
+      mercFotosDataTable.rows.add(rows);
+      mercFotosDataTable.draw();
+    } else {
+      const dtAvailable = window.DataTable || (await ensureDataTable());
+      if (dtAvailable) {
+        mercFotosDataTable = new DataTable('#mercaderia-fotos-table', {
+          data: rows,
+          pageLength: 20,
+          lengthMenu: [20, 50, 100],
+          deferRender: true,
+          autoWidth: false,
+          order: [[0, 'asc']],
+          columns: [
+            { data: 'detalle', defaultContent: '' },
+            { data: 'cantidad', defaultContent: 0 },
+            {
+              data: 'fotoUrl',
+              orderable: false,
+              searchable: false,
+              render: (data, type) => {
+                if (type !== 'display') return data || '';
+                return formatMercaderiaFotoCell(data || '');
+              },
+            },
+          ],
+          language: {
+            search: 'Buscar:',
+            lengthMenu: 'Mostrar _MENU_',
+            info: 'Mostrando _START_ a _END_ de _TOTAL_',
+            infoEmpty: 'Sin resultados',
+            emptyTable: 'Sin artículos.',
+            paginate: {
+              first: 'Primero',
+              last: 'Ultimo',
+              next: 'Siguiente',
+              previous: 'Anterior',
+            },
+          },
+          columnDefs: [
+            { targets: 1, width: '110px' },
+            { targets: 2, width: '140px' },
+          ],
+        });
+      }
+    }
+    mercFotosLoaded = true;
+    if (mercFotosStatus) mercFotosStatus.textContent = rows.length ? `Resultados: ${rows.length}` : 'Sin resultados.';
+  } catch (error) {
+    mercFotosLoaded = false;
+    if (mercFotosStatus) {
+      mercFotosStatus.textContent = error.message || 'Error al cargar fotos de mercadería.';
+    }
+  }
+}
+
+function initMercaderiaFotos() {
+  if (!viewMercaderiaFotos) return;
+  if (mercFotosLimitInput && !mercFotosLimitInput.value) mercFotosLimitInput.value = '20';
+  if (mercFotosRefreshBtn) {
+    mercFotosRefreshBtn.addEventListener('click', () => {
+      loadMercaderiaFotos();
+    });
+  }
+  if (mercFotosLimitInput) {
+    mercFotosLimitInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loadMercaderiaFotos();
+      }
+    });
+  }
 }
 
 function closeMercIa() {
@@ -12225,6 +12325,11 @@ function resolvePermissionKey(target) {
   return target;
 }
 
+function formatMercaderiaFotoCell(url) {
+  const src = url || '/sinfoto.png';
+  return `<img src="${escapeAttr(src)}" alt="Foto de articulo" class="merc-fotos-thumb" loading="lazy" onerror="this.onerror=null;this.src='/sinfoto.png';">`;
+}
+
 function attachFloatingModalDrag(overlay) {
   if (!overlay) return;
   const modal = overlay.querySelector('.modal');
@@ -12314,6 +12419,7 @@ function getFirstAllowedView(perms = {}) {
       'pedidos-todos',
       'pedidos-nuevo',
       'mercaderia',
+      'mercaderia-fotos',
       'abm',
       'control-ordenes',
       'ecommerce-imagenweb',
@@ -13900,6 +14006,7 @@ const permissionGroups = [
     title: 'Mercaderia',
     items: [
       { key: 'mercaderia', label: 'Articulos Mas Vendido' },
+      { key: 'mercaderia-fotos', label: 'Mercaderia - Fotos' },
       { key: 'abm', label: 'ABM Articulos' },
       { key: 'control-ordenes', label: 'Control Ordenes' },
     ],
@@ -14047,6 +14154,7 @@ function renderPermissions() {
   const submenuMap = {
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
+    mercaderia: ['mercaderia-fotos', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
   };
@@ -16805,6 +16913,7 @@ function switchView(target) {
       viewPedidosTodos,
       viewPedidosNuevo,
       viewMercaderia,
+      viewMercaderiaFotos,
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
@@ -16845,10 +16954,11 @@ function switchView(target) {
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
-        viewMercaderia,
-        viewAbm,
-        viewControlOrdenes,
-        viewEcommerceImagenweb,
+      viewMercaderia,
+      viewMercaderiaFotos,
+      viewAbm,
+      viewControlOrdenes,
+      viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
       viewCajas,
@@ -16919,6 +17029,9 @@ function switchView(target) {
   } else if (target === 'mercaderia') {
       viewMercaderia.classList.remove('hidden');
       loadMercaderia();
+  } else if (target === 'mercaderia-fotos') {
+    viewMercaderiaFotos.classList.remove('hidden');
+    loadMercaderiaFotos();
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     abmLoaded = false;
@@ -17007,6 +17120,7 @@ initSalonResumen();
 initFidelizacion();
 initPedidosResumen();
 initMercaderia();
+initMercaderiaFotos();
 initAbm();
 initControlOrdenes();
 initEcommerceImagenweb();
