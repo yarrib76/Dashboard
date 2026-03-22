@@ -3647,7 +3647,8 @@ async function loadMercaderiaFotos() {
 
 function initMercaderiaFotos() {
   if (!viewMercaderiaFotos) return;
-  if (mercFotosLimitInput && !mercFotosLimitInput.value) mercFotosLimitInput.value = '20';
+  if (mercFotosLimitInput) mercFotosLimitInput.value = '';
+  if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa una cantidad de artículos y presiona Actualizar.';
   if (mercFotosRefreshBtn) {
     mercFotosRefreshBtn.addEventListener('click', () => {
       loadMercaderiaFotos();
@@ -17031,7 +17032,7 @@ function switchView(target) {
       loadMercaderia();
   } else if (target === 'mercaderia-fotos') {
     viewMercaderiaFotos.classList.remove('hidden');
-    loadMercaderiaFotos();
+    if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa una cantidad de artículos y presiona Actualizar.';
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     abmLoaded = false;
