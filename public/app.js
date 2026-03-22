@@ -3572,11 +3572,11 @@ function initMercaderia() {
 
 function validateMercaderiaFotosLimit() {
   const raw = String(mercFotosLimitInput?.value || '').trim();
-  if (!raw) throw new Error('Ingresa una cantidad de artículos.');
-  if (!/^[0-9]+$/.test(raw)) throw new Error('La cantidad debe ser un entero mayor a 0.');
+  if (!raw) throw new Error('Ingresa un stock mínimo.');
+  if (!/^[0-9]+$/.test(raw)) throw new Error('El stock mínimo debe ser un entero mayor a 0.');
   const limit = Number.parseInt(raw, 10);
   if (!Number.isInteger(limit) || limit <= 0) {
-    throw new Error('La cantidad debe ser un entero mayor a 0.');
+    throw new Error('El stock mínimo debe ser un entero mayor a 0.');
   }
   return limit;
 }
@@ -3636,7 +3636,7 @@ async function loadMercaderiaFotos() {
       }
     }
     mercFotosLoaded = true;
-    if (mercFotosStatus) mercFotosStatus.textContent = rows.length ? `Resultados: ${rows.length}` : 'Sin resultados.';
+    if (mercFotosStatus) mercFotosStatus.textContent = rows.length ? `Resultados: ${rows.length}` : 'Sin resultados para ese stock mínimo.';
   } catch (error) {
     mercFotosLoaded = false;
     if (mercFotosStatus) {
@@ -3648,7 +3648,7 @@ async function loadMercaderiaFotos() {
 function initMercaderiaFotos() {
   if (!viewMercaderiaFotos) return;
   if (mercFotosLimitInput) mercFotosLimitInput.value = '';
-  if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa una cantidad de artículos y presiona Actualizar.';
+  if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa un stock mínimo y presiona Actualizar.';
   if (mercFotosRefreshBtn) {
     mercFotosRefreshBtn.addEventListener('click', () => {
       loadMercaderiaFotos();
@@ -17032,7 +17032,7 @@ function switchView(target) {
       loadMercaderia();
   } else if (target === 'mercaderia-fotos') {
     viewMercaderiaFotos.classList.remove('hidden');
-    if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa una cantidad de artículos y presiona Actualizar.';
+    if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa un stock mínimo y presiona Actualizar.';
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     abmLoaded = false;
