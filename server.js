@@ -7832,12 +7832,11 @@ app.get('/api/mercaderia/image', async (req, res) => {
 
 app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
   try {
-    const limit = Number.parseInt(req.query.limit, 10);
-    if (!Number.isInteger(limit) || limit <= 0) {
+    const minStock = Number.parseInt(req.query.limit, 10);
+    if (!Number.isInteger(minStock) || minStock <= 0) {
       return res.status(400).json({ message: 'limit debe ser un entero mayor a 0' });
     }
 
-    const safeLimit = Math.min(limit, 500);
     const [rows] = await pool.query(
       `SELECT
          art.Articulo AS articulo,
@@ -7855,9 +7854,10 @@ app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
           ORDER BY prov.id DESC
           LIMIT 1
         )
+       WHERE COALESCE(art.Cantidad, 0) >= ?
        ORDER BY art.Detalle ASC, art.Articulo ASC
-       LIMIT ?`,
-      [safeLimit]
+      `,
+      [minStock]
     );
 
     res.json({
