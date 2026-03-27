@@ -8842,7 +8842,6 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'items invalidos' });
     }
     total = computePedidoSubtotal(processedItems);
-    const totalWeb = Number(ordenWeb) ? total : 0;
     await connection.query(
       `UPDATE ${DB_NAME}.controlpedidos
        SET id_cliente = ?,
@@ -8850,12 +8849,11 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
            total = ?,
            ordenWeb = ?,
            local = ?,
-           totalweb = ?,
            instancia = ?,
            ultactualizacion = ?
        WHERE nropedido = ?
        LIMIT 1`,
-      [clienteId, vendedora, total, ordenWeb, local, totalWeb, instancia, fecha, nroPedido]
+      [clienteId, vendedora, total, ordenWeb, local, instancia, fecha, nroPedido]
     );
     await connection.query(`DELETE FROM ${DB_NAME}.pedidotemp WHERE NroPedido = ?`, [nroPedido]);
     for (const item of processedItems) {
@@ -8991,12 +8989,11 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'items invalidos' });
     }
     total = computePedidoSubtotal(processedItems);
-    const totalWeb = Number(ordenWeb) ? total : 0;
     await connection.query(
       `INSERT INTO ${DB_NAME}.controlpedidos
-       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, totalweb, instancia, idempotency_key)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?, ?)`,
-      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, totalWeb, instancia, idempotencyKey || null]
+       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, instancia, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)`,
+      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, instancia, idempotencyKey || null]
     );
     for (const item of processedItems) {
       await connection.query(
