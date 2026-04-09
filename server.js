@@ -5557,6 +5557,16 @@ app.post('/api/fidelizacion/recomendaciones/:id/reabrir', async (req, res) => {
       return res.status(403).json({ message: 'Solo podes reabrir recomendaciones propias' });
     }
     await conn.query(
+      `DELETE FROM fidelizacion_contacto
+       WHERE recomendacion_id = ?`,
+      [recId]
+    );
+    await conn.query(
+      `DELETE FROM fidelizacion_notas
+       WHERE recomendacion_id = ?`,
+      [recId]
+    );
+    await conn.query(
       `UPDATE fidelizacion_recomendacion
        SET estado = 'PENDIENTE',
            resultado = NULL,
