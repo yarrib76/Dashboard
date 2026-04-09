@@ -6176,7 +6176,7 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
                SUM(
                  CASE
                    WHEN r.resultado IN (?,?)
-                   THEN r.conversion_amount
+                   THEN COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0)
                    ELSE 0
                  END
                ), 0
@@ -6184,6 +6184,7 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
              ROUND(AVG(r.score), 2) AS score_prom,
              ROUND(AVG(TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at)), 1) AS hs_a_contacto
            FROM fidelizacion_recomendacion r
+           LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
            LEFT JOIN vendedores v ON v.Id = r.vendedora_id
            GROUP BY r.vendedora_id, v.Nombre, v.Apellido
            ORDER BY convertidas DESC, tasa_conversion DESC, finalizados DESC`
@@ -6199,7 +6200,7 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
                SUM(
                  CASE
                    WHEN r.resultado IN (?,?)
-                   THEN r.conversion_amount
+                   THEN COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0)
                    ELSE 0
                  END
                ), 0
@@ -6207,6 +6208,7 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
              ROUND(AVG(r.score), 2) AS score_prom,
              ROUND(AVG(TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at)), 1) AS hs_a_contacto
            FROM fidelizacion_recomendacion r
+           LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
            LEFT JOIN vendedores v ON v.Id = r.vendedora_id
            WHERE r.run_id = ?
            GROUP BY r.vendedora_id, v.Nombre, v.Apellido
@@ -6262,10 +6264,19 @@ app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
          SUM(r.estado = 'CERRADA') AS finalizados,
          SUM(r.contactado_at IS NOT NULL) AS contactados,
          SUM(r.resultado IN (?,?)) AS convertidos,
-         ROUND(SUM(CASE WHEN r.resultado IN (?,?) THEN COALESCE(r.conversion_amount, 0) ELSE 0 END), 2) AS conversion_amount,
+         ROUND(
+           SUM(
+             CASE
+               WHEN r.resultado IN (?,?) THEN COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0)
+               ELSE 0
+             END
+           ),
+           2
+         ) AS conversion_amount,
          ROUND(AVG(r.score), 2) AS score_promedio,
        ROUND(AVG(CASE WHEN r.contactado_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) END), 2) AS horas_a_contacto
        FROM fidelizacion_recomendacion r
+       LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
        WHERE r.run_id = ?
          AND (r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))
@@ -6355,7 +6366,7 @@ app.get('/api/fidelizacion/reportes/admin/finalizados', async (req, res) => {
          r.pedido_id,
          cp.nropedido AS nro_pedido,
          r.converted_at,
-         r.conversion_amount
+         COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0) AS conversion_amount
        FROM fidelizacion_recomendacion r
        LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
