@@ -5371,7 +5371,7 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
       `SELECT cp.id, cp.fecha, cp.total
        FROM controlpedidos cp
        WHERE cp.id_cliente = ?
-         AND cp.fecha >= ?
+         AND cp.fecha >= DATE(?)
        ORDER BY cp.fecha ASC
        LIMIT 1`,
       [Number(current.cliente_id), current.created_at]
