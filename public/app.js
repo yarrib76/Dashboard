@@ -339,6 +339,8 @@ let fidelizacionAdminLoaded = false;
 let fidelizacionContext = null;
 let fidelizacionMisRows = [];
 let fidelizacionMisEstado = 'PENDIENTE';
+let fidMisCardFilterTerm = '';
+let fidMisCardSearchTimer = null;
 let fidelizacionAdminRows = [];
 let fidelizacionAdminEstado = 'TODOS';
 let fidelizacionVendedoras = [];
@@ -536,6 +538,7 @@ const fidResultadosRecalcularBtn = document.getElementById('fid-resultados-recal
 const fidTabs = document.getElementById('fid-tabs');
 const fidMisTableBody = document.querySelector('#fid-mis-table tbody');
 const fidMisCards = document.getElementById('fid-mis-cards');
+const fidMisMobileSearchInput = document.getElementById('fid-mis-mobile-search-input');
 const fidMisStatus = document.getElementById('fid-mis-status');
 const fidNotasOverlay = document.getElementById('fid-notas-overlay');
 const fidNotasTitle = document.getElementById('fid-notas-title');
@@ -6905,6 +6908,15 @@ function initAbm() {
       abmCardSearchTimer = setTimeout(() => {
         abmCardFilterTerm = abmMobileSearchInput.value || '';
         resetAbmCards();
+      }, 200);
+    });
+  }
+  if (fidMisMobileSearchInput) {
+    fidMisMobileSearchInput.addEventListener('input', () => {
+      if (fidMisCardSearchTimer) clearTimeout(fidMisCardSearchTimer);
+      fidMisCardSearchTimer = setTimeout(() => {
+        fidMisCardFilterTerm = fidMisMobileSearchInput.value || '';
+        renderFidelizacionMisRows(fidelizacionMisRows);
       }, 200);
     });
   }
@@ -13802,6 +13814,9 @@ function syncMobileLayout() {
   const cajasCierreTable = document.getElementById('cajas-cierre-table');
   if (cajasCierreTable) cajasCierreTable.style.display = isMobile ? 'none' : '';
   if (cajasCierreCards) cajasCierreCards.style.display = isMobile ? 'grid' : '';
+  if (fidelizacionMisRows.length && !viewFidelizacionMis?.classList.contains('hidden')) {
+    renderFidelizacionMisRows(fidelizacionMisRows);
+  }
   updatePedidoCardsVisibility();
   if (
     !isMobile &&
@@ -15856,7 +15871,10 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
 
 function renderFidelizacionMisRows(rows = []) {
   fidelizacionMisRows = Array.isArray(rows) ? rows : [];
-  renderFidelizacionQueueRows(fidelizacionMisRows, {
+  const visibleRows = document.body.classList.contains('is-mobile')
+    ? filterFidelizacionRows(fidelizacionMisRows, fidMisCardFilterTerm)
+    : fidelizacionMisRows;
+  renderFidelizacionQueueRows(visibleRows, {
     tableBody: fidMisTableBody,
     cards: fidMisCards,
     adminMode: false,
@@ -15872,6 +15890,19 @@ function renderFidelizacionAdminRows(rows = []) {
     adminMode: true,
     tableType: 'admin',
   });
+}
+
+function filterFidelizacionRows(rows, term) {
+  const clean = String(term || '').trim();
+  if (!clean) return rows;
+  return rows.filter((row) =>
+    textMatchesAllTokens(
+      `${row.cliente || ''} ${row.telefono || ''} ${row.oferta_detalle || ''} ${row.vendedora_nombre || ''} ${
+        row.estado || ''
+      }`,
+      clean
+    )
+  );
 }
 
 async function loadFidelizacionContext() {
