@@ -15622,6 +15622,16 @@ function buildFidActions(row, { adminMode = false } = {}) {
   const estado = String(row.estado || '').toUpperCase();
   const buttons = [];
   const requiresNoteUpdate = Number(row.requires_note_update || 0) === 1;
+  const hasNotes = Boolean(String(row.last_note_at || '').trim());
+  let notasClass = '';
+  let notasTitle = '';
+  if (!hasNotes) {
+    notasClass = 'fid-notas-missing';
+    notasTitle = 'Sin notas';
+  } else if (requiresNoteUpdate) {
+    notasClass = 'fid-notas-stale';
+    notasTitle = 'Hace más de 2 días sin notas';
+  }
   const isMine =
     Number(fidelizacionContext?.vendedoraId || 0) > 0 &&
     Number(row.vendedora_id || 0) === Number(fidelizacionContext?.vendedoraId || 0);
@@ -15635,8 +15645,8 @@ function buildFidActions(row, { adminMode = false } = {}) {
   buttons.push(`<button type="button" data-action="beneficio" data-id="${row.id}">Beneficio</button>`);
   buttons.push(
     `<button type="button" data-action="notas" data-id="${row.id}"${
-      requiresNoteUpdate ? ' class="fid-notas-stale" title="Hace más de 2 días sin notas"' : ''
-    }>Notas</button>`
+      notasClass ? ` class="${notasClass}"` : ''
+    }${notasTitle ? ` title="${notasTitle}"` : ''}>Notas</button>`
   );
   return buttons.join(' ');
 }
@@ -15663,6 +15673,7 @@ function clearFidNotasAlert(recId) {
       : row
   );
   document.querySelectorAll(`button[data-action="notas"][data-id="${targetId}"]`).forEach((btn) => {
+    btn.classList.remove('fid-notas-missing');
     btn.classList.remove('fid-notas-stale');
     btn.removeAttribute('title');
   });
