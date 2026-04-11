@@ -16157,7 +16157,7 @@ function renderFidelizacionReportesAdmin(rows = []) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${escapeAttr(row.vendedora || '')}</td>
-        <td>${row.total_gestionados || 0}</td>
+        <td><button type="button" class="fid-report-click" data-action="ver-gestionados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.total_gestionados || 0}</button></td>
         <td><button type="button" class="fid-report-click" data-action="ver-finalizados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.finalizados || 0}</button></td>
         <td>${Number(row.tasa_finalizacion || 0).toFixed(1)}%</td>
         <td>${row.convertidas || 0}</td>
@@ -16176,7 +16176,7 @@ function renderFidelizacionReportesAdmin(rows = []) {
           <p class="fidelizacion-card-title">${escapeAttr(row.vendedora || '')}</p>
           <span class="fidelizacion-card-score">${row.total_gestionados || 0}</span>
         </div>
-        <p class="fidelizacion-card-meta">Total gestionados: ${row.total_gestionados || 0}</p>
+        <p class="fidelizacion-card-meta">Total gestionados: <button type="button" class="link-btn" data-action="ver-gestionados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.total_gestionados || 0}</button></p>
         <p class="fidelizacion-card-meta">Finalizados: ${row.finalizados || 0} (${Number(row.tasa_finalizacion || 0).toFixed(1)}%)</p>
         <p class="fidelizacion-card-meta">Convertidas: ${row.convertidas || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
         <p class="fidelizacion-card-offer">${formatMoney(row.monto_conversion || 0)}</p>
@@ -16451,6 +16451,39 @@ async function loadFidelizacionFinalizadosDetalle(vendedoraId, vendedoraLabel) {
     setStatusMessage(fidFinalizadosStatus, rows.length ? '' : 'Sin resultados para esta vendedora.');
   } catch (error) {
     setStatusMessage(fidFinalizadosStatus, error.message || 'Error al cargar detalle de finalizados.', 'error');
+  }
+}
+
+async function loadFidelizacionGestionadosDetalle(vendedoraId, vendedoraLabel) {
+  fidFinalizadosDataTable = destroyFidelizacionDataTable(fidFinalizadosDataTable);
+  if (fidFinalizadosTableBody) fidFinalizadosTableBody.innerHTML = '';
+  if (fidFinalizadosTitle) fidFinalizadosTitle.textContent = `Gestionados - ${vendedoraLabel || 'Sin asignar'}`;
+  setStatusMessage(fidFinalizadosStatus, 'Cargando...');
+  try {
+    const query = new URLSearchParams();
+    query.set('scope', fidReportScope === 'all' ? 'all' : 'run');
+    if (fidReportScope !== 'all' && fidReportRunId) query.set('run_id', String(fidReportRunId));
+    query.set('vendedora_id', String(vendedoraId ?? 'null'));
+    const res = await fetchJSON(`/api/fidelizacion/reportes/admin/gestionados?${query.toString()}`);
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    rows.forEach((row) => {
+      if (!fidFinalizadosTableBody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${Number(row.id) || 0}</td>
+        <td>${escapeAttr(row.cliente || '')}</td>
+        <td>${escapeAttr(row.resultado || row.estado || '-')}</td>
+        <td>${escapeAttr(row.closed_reason || '-')}</td>
+        <td>${escapeAttr(formatDateTime(row.closed_at || ''))}</td>
+        <td>${row.nro_pedido ? Number(row.nro_pedido) : row.pedido_id ? Number(row.pedido_id) : '-'}</td>
+        <td>${row.conversion_amount == null ? '-' : formatMoney(row.conversion_amount || 0)}</td>
+      `;
+      fidFinalizadosTableBody.appendChild(tr);
+    });
+    fidFinalizadosDataTable = initFidelizacionDataTable('#fid-finalizados-table');
+    setStatusMessage(fidFinalizadosStatus, rows.length ? '' : 'Sin resultados para esta vendedora.');
+  } catch (error) {
+    setStatusMessage(fidFinalizadosStatus, error.message || 'Error al cargar detalle de gestionados.', 'error');
   }
 }
 
@@ -16870,12 +16903,36 @@ function initFidelizacion() {
   }
   if (fidAdminTableBody) {
     fidAdminTableBody.addEventListener('click', (event) => {
-      const btn = event.target.closest('button[data-action="ver-finalizados"][data-vendedora-id]');
+      const btn = event.target.closest('button[data-vendedora-id]');
       if (!btn) return;
+      const action = String(btn.dataset.action || '').trim();
       const vendedoraIdRaw = String(btn.dataset.vendedoraId || 'null').trim();
       const vendedoraLabel = String(btn.dataset.vendedora || 'Sin asignar').trim() || 'Sin asignar';
       if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
-      loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+      if (action === 'ver-gestionados') {
+        loadFidelizacionGestionadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+        return;
+      }
+      if (action === 'ver-finalizados') {
+        loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+      }
+    });
+  }
+  if (fidAdminCards) {
+    fidAdminCards.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-vendedora-id]');
+      if (!btn) return;
+      const action = String(btn.dataset.action || '').trim();
+      const vendedoraIdRaw = String(btn.dataset.vendedoraId || 'null').trim();
+      const vendedoraLabel = String(btn.dataset.vendedora || 'Sin asignar').trim() || 'Sin asignar';
+      if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
+      if (action === 'ver-gestionados') {
+        loadFidelizacionGestionadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+        return;
+      }
+      if (action === 'ver-finalizados') {
+        loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+      }
     });
   }
   if (fidTransferCloseBtn) fidTransferCloseBtn.addEventListener('click', () => closeFidelizacionTransferModal(null));
