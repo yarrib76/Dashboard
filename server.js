@@ -6383,6 +6383,70 @@ app.get('/api/fidelizacion/reportes/admin/finalizados', async (req, res) => {
   }
 });
 
+app.get('/api/fidelizacion/reportes/admin/gestionados', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver este detalle' });
+    const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
+    let effectiveRunId = runId;
+    if (scope !== 'all' && !effectiveRunId) {
+      const latest = await getFidelizacionLatestRun(pool);
+      effectiveRunId = latest?.id || 0;
+    }
+    if (scope !== 'all' && !effectiveRunId) return res.json({ scope: 'run', run_id: null, data: [] });
+
+    const vendedoraRaw = String(req.query.vendedora_id ?? '').trim().toLowerCase();
+    const hasVendedoraFilter = vendedoraRaw !== '';
+    const where = [`(r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))`];
+    const params = [];
+    if (scope !== 'all') {
+      where.push('r.run_id = ?');
+      params.push(effectiveRunId);
+    }
+
+    if (hasVendedoraFilter) {
+      if (vendedoraRaw === 'null') {
+        where.push('r.vendedora_id IS NULL');
+      } else {
+        const vendedoraId = Number(vendedoraRaw);
+        if (!vendedoraId) return res.status(400).json({ message: 'vendedora_id invalido' });
+        where.push('r.vendedora_id = ?');
+        params.push(vendedoraId);
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         r.id,
+         r.cliente_id,
+         CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
+         r.vendedora_id,
+         COALESCE(v.Nombre, 'Sin asignar') AS vendedora,
+         r.estado,
+         r.resultado,
+         r.closed_reason,
+         r.closed_at,
+         r.pedido_id,
+         cp.nropedido AS nro_pedido,
+         r.converted_at,
+         COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0) AS conversion_amount
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY r.created_at DESC, r.id DESC
+       LIMIT 1000`,
+      params
+    );
+
+    res.json({ scope, run_id: scope === 'all' ? null : effectiveRunId, data: rows || [] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar detalle de gestionados', error: error.message });
+  }
+});
+
 app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
