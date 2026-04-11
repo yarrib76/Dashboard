@@ -355,6 +355,9 @@ let fidMisDataTable = null;
 let fidAdminQueueDataTable = null;
 let fidReportAdminDataTable = null;
 let fidFinalizadosDataTable = null;
+let fidAnalisisComprasData = [];
+let fidAnalisisCurrentId = 0;
+let fidAnalisisAiEnabled = false;
 let fidReportRunId = null;
 let fidReportScope = 'run';
 let fidelizacionRunsLoaded = false;
@@ -604,6 +607,31 @@ const fidFinalizadosCloseBtn = document.getElementById('fid-finalizados-close');
 const fidFinalizadosTitle = document.getElementById('fid-finalizados-title');
 const fidFinalizadosTableBody = document.querySelector('#fid-finalizados-table tbody');
 const fidFinalizadosStatus = document.getElementById('fid-finalizados-status');
+const fidAnalisisOverlay = document.getElementById('fid-analisis-overlay');
+const fidAnalisisTitle = document.getElementById('fid-analisis-title');
+const fidAnalisisCloseBtn = document.getElementById('fid-analisis-close');
+const fidAnalisisIaBtn = document.getElementById('fid-analisis-ia-btn');
+const fidAnalisisMeta = document.getElementById('fid-analisis-meta');
+const fidAnalisisOutcome = document.getElementById('fid-analisis-outcome');
+const fidAnalisisHeadline = document.getElementById('fid-analisis-headline');
+const fidAnalisisLectura = document.getElementById('fid-analisis-lectura');
+const fidAnalisisFavorables = document.getElementById('fid-analisis-favorables');
+const fidAnalisisRiesgos = document.getElementById('fid-analisis-riesgos');
+const fidAnalisisScore = document.getElementById('fid-analisis-score');
+const fidAnalisisContacto = document.getElementById('fid-analisis-contacto');
+const fidAnalisisNotas = document.getElementById('fid-analisis-notas');
+const fidAnalisisContactos = document.getElementById('fid-analisis-contactos');
+const fidAnalisisTransferencias = document.getElementById('fid-analisis-transferencias');
+const fidAnalisisMonto = document.getElementById('fid-analisis-monto');
+const fidAnalisisTimeline = document.getElementById('fid-analisis-timeline');
+const fidAnalisisRecency = document.getElementById('fid-analisis-recency');
+const fidAnalisisPrevCount = document.getElementById('fid-analisis-prev-count');
+const fidAnalisisPrevTotal = document.getElementById('fid-analisis-prev-total');
+const fidAnalisisTicket = document.getElementById('fid-analisis-ticket');
+const fidAnalisisStrip = document.getElementById('fid-analisis-strip');
+const fidAnalisisComprasTableBody = document.querySelector('#fid-analisis-compras-table tbody');
+const fidAnalisisIaOutput = document.getElementById('fid-analisis-ia-output');
+const fidAnalisisIaStatus = document.getElementById('fid-analisis-ia-status');
 const fidBeneficiosOverlay = document.getElementById('fid-beneficios-overlay');
 const fidBeneficiosTitle = document.getElementById('fid-beneficios-title');
 const fidBeneficiosCloseBtn = document.getElementById('fid-beneficios-close');
@@ -16416,6 +16444,206 @@ async function loadFidelizacionRuns({ silent = false } = {}) {
   }
 }
 
+function getFidAnalysisOutcomeMeta(outcome) {
+  const normalized = String(outcome || '').trim().toUpperCase();
+  if (normalized === 'CONVERTIDA_EN_VENTANA') return { className: 'badge green', label: 'Convirtio dentro de ventana' };
+  if (normalized === 'CONVERTIDA_FUERA_VENTANA') return { className: 'badge yellow', label: 'Convirtio fuera de ventana' };
+  if (normalized === 'NO_CONVERTIDA') return { className: 'badge red', label: 'No convirtio' };
+  return { className: 'badge gray', label: 'Sin clasificar' };
+}
+
+function renderFidAnalysisList(target, items = [], emptyLabel = 'Sin datos relevantes.') {
+  if (!target) return;
+  target.innerHTML = '';
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!safeItems.length) {
+    const li = document.createElement('li');
+    li.textContent = emptyLabel;
+    target.appendChild(li);
+    return;
+  }
+  safeItems.forEach((item) => {
+    const li = document.createElement('li');
+    li.textContent = String(item || '');
+    target.appendChild(li);
+  });
+}
+
+function renderFidAnalysisTimeline(events = []) {
+  if (!fidAnalisisTimeline) return;
+  fidAnalisisTimeline.innerHTML = '';
+  const safeEvents = Array.isArray(events) ? events : [];
+  if (!safeEvents.length) {
+    fidAnalisisTimeline.innerHTML = '<p class="status">Sin eventos para mostrar.</p>';
+    return;
+  }
+  safeEvents.forEach((event) => {
+    const item = document.createElement('article');
+    const tone = String(event?.tone || '').trim().toLowerCase();
+    item.className = `fid-analisis-timeline-item ${tone}`.trim();
+    item.innerHTML = `
+      <p class="fid-analisis-timeline-title">${escapeAttr(event?.label || 'Evento')}</p>
+      <p class="fid-analisis-timeline-meta">${escapeAttr(formatDateTime(event?.at || ''))}</p>
+      <p class="fid-analisis-timeline-detail">${escapeAttr(event?.detail || '')}</p>
+    `;
+    fidAnalisisTimeline.appendChild(item);
+  });
+}
+
+function renderFidAnalysisPurchases(summary = {}, rows = []) {
+  fidAnalisisComprasData = Array.isArray(rows) ? rows : [];
+  if (fidAnalisisPrevCount) fidAnalisisPrevCount.textContent = String(summary?.prev_count || 0);
+  if (fidAnalisisPrevTotal) fidAnalisisPrevTotal.textContent = formatMoney(Number(summary?.prev_total || 0));
+  if (fidAnalisisStrip) {
+    const cards = [
+      { label: 'Previas 6m', count: Number(summary?.prev_count || 0), total: Number(summary?.prev_total || 0) },
+      { label: 'En ventana', count: Number(summary?.window_count || 0), total: Number(summary?.window_total || 0) },
+      { label: 'Posteriores', count: Number(summary?.after_count || 0), total: Number(summary?.after_total || 0) },
+    ];
+    fidAnalisisStrip.innerHTML = cards
+      .map(
+        (card) => `
+        <article class="fid-analisis-purchase-box">
+          <p class="label">${escapeAttr(card.label)}</p>
+          <p class="value">${card.count}</p>
+          <p>${formatMoney(card.total)}</p>
+        </article>
+      `
+      )
+      .join('');
+  }
+  if (!fidAnalisisComprasTableBody) return;
+  fidAnalisisComprasTableBody.innerHTML = '';
+  fidAnalisisComprasData.forEach((row) => {
+    const tr = document.createElement('tr');
+    const phase = String(row?.phase || '').trim().toLowerCase();
+    const phaseLabel = String(row?.phase_label || row?.phase || '-').trim();
+    tr.innerHTML = `
+      <td>${escapeAttr(formatDateLong(row?.fecha || ''))}</td>
+      <td>${row?.nropedido ? Number(row.nropedido) : row?.pedido_id ? Number(row.pedido_id) : '-'}</td>
+      <td>${escapeAttr(row?.vendedora || '-')}</td>
+      <td><span class="fid-phase-badge ${escapeAttr(phase)}">${escapeAttr(phaseLabel)}</span></td>
+      <td>${formatMoney(Number(row?.total || 0))}</td>
+    `;
+    fidAnalisisComprasTableBody.appendChild(tr);
+  });
+}
+
+function renderFidelizacionAnalisis(data = {}) {
+  const recommendation = data?.recommendation || {};
+  const summary = data?.summary || {};
+  const metrics = data?.metrics || {};
+  const timeline = data?.timeline || {};
+  const purchases = data?.compras || {};
+  fidAnalisisCurrentId = Number(recommendation?.recomendacion_id || 0);
+  fidAnalisisAiEnabled = Boolean(data?.ai_enabled);
+  if (fidAnalisisTitle) {
+    fidAnalisisTitle.textContent = recommendation?.cliente
+      ? `Analisis - ${recommendation.cliente}`
+      : `Analisis fidelizacion #${fidAnalisisCurrentId || 0}`;
+  }
+  if (fidAnalisisMeta) {
+    const metaParts = [
+      recommendation?.vendedora ? `Vendedora: ${recommendation.vendedora}` : '',
+      recommendation?.run_id ? `Corrida #${recommendation.run_id}` : '',
+      recommendation?.encuesta ? `Encuesta: ${recommendation.encuesta}` : '',
+      recommendation?.oferta_detalle ? `Oferta: ${recommendation.oferta_detalle}` : '',
+    ].filter(Boolean);
+    fidAnalisisMeta.textContent = metaParts.join(' | ');
+  }
+  if (fidAnalisisOutcome) {
+    const outcomeMeta = getFidAnalysisOutcomeMeta(summary?.outcome);
+    fidAnalisisOutcome.className = outcomeMeta.className;
+    fidAnalisisOutcome.textContent = outcomeMeta.label;
+  }
+  if (fidAnalisisHeadline) fidAnalisisHeadline.textContent = String(summary?.headline || 'Sin datos.');
+  if (fidAnalisisLectura) fidAnalisisLectura.textContent = String(summary?.lectura_operativa || '');
+  renderFidAnalysisList(fidAnalisisFavorables, summary?.favorables || [], 'No se detectaron señales favorables fuertes.');
+  renderFidAnalysisList(fidAnalisisRiesgos, summary?.riesgos || [], 'No se detectaron riesgos relevantes.');
+  if (fidAnalisisScore) fidAnalisisScore.textContent = Number(recommendation?.score || 0).toFixed(2);
+  if (fidAnalisisContacto) {
+    fidAnalisisContacto.textContent =
+      metrics?.horas_a_contacto == null || Number.isNaN(Number(metrics.horas_a_contacto))
+        ? '-'
+        : Number(metrics.horas_a_contacto).toFixed(1);
+  }
+  if (fidAnalisisNotas) fidAnalisisNotas.textContent = String(Number(metrics?.notas_count || 0));
+  if (fidAnalisisContactos) fidAnalisisContactos.textContent = String(Number(metrics?.contactos_count || 0));
+  if (fidAnalisisTransferencias) fidAnalisisTransferencias.textContent = String(Number(metrics?.transferencias_count || 0));
+  if (fidAnalisisMonto) {
+    fidAnalisisMonto.textContent =
+      recommendation?.conversion_amount == null ? '-' : formatMoney(Number(recommendation.conversion_amount || 0));
+  }
+  if (fidAnalisisRecency) {
+    fidAnalisisRecency.textContent =
+      recommendation?.recency_days == null || Number(recommendation.recency_days) <= 0 ? '-' : String(Number(recommendation.recency_days));
+  }
+  if (fidAnalisisTicket) fidAnalisisTicket.textContent = formatMoney(Number(recommendation?.avg_ticket_12m || 0));
+  renderFidAnalysisTimeline(timeline?.events || []);
+  renderFidAnalysisPurchases(purchases?.summary || {}, purchases?.rows || []);
+  if (fidAnalisisIaBtn) {
+    fidAnalisisIaBtn.disabled = !fidAnalisisAiEnabled || !fidAnalisisCurrentId;
+    fidAnalisisIaBtn.title = fidAnalisisAiEnabled ? '' : 'OPENAI_API_KEY no configurada.';
+  }
+  if (fidAnalisisIaOutput) {
+    fidAnalisisIaOutput.textContent = data?.ai_analysis
+      ? String(data.ai_analysis)
+      : 'Todavia no se genero un analisis IA para este caso.';
+  }
+  if (fidAnalisisIaStatus) fidAnalisisIaStatus.textContent = '';
+}
+
+function closeFidelizacionAnalisisModal() {
+  fidAnalisisCurrentId = 0;
+  if (fidAnalisisIaStatus) fidAnalisisIaStatus.textContent = '';
+  if (fidAnalisisOverlay) fidAnalisisOverlay.classList.remove('open');
+}
+
+async function openFidelizacionAnalisisModal(recId) {
+  const id = Number(recId) || 0;
+  if (!id || !fidAnalisisOverlay) return;
+  fidAnalisisCurrentId = id;
+  if (fidAnalisisTitle) fidAnalisisTitle.textContent = `Analisis fidelizacion #${id}`;
+  if (fidAnalisisMeta) fidAnalisisMeta.textContent = 'Cargando...';
+  if (fidAnalisisHeadline) fidAnalisisHeadline.textContent = 'Cargando analisis...';
+  if (fidAnalisisLectura) fidAnalisisLectura.textContent = '';
+  renderFidAnalysisList(fidAnalisisFavorables, [], 'Cargando...');
+  renderFidAnalysisList(fidAnalisisRiesgos, [], 'Cargando...');
+  renderFidAnalysisTimeline([]);
+  renderFidAnalysisPurchases({}, []);
+  if (fidAnalisisIaOutput) fidAnalisisIaOutput.textContent = 'Todavia no se genero un analisis IA para este caso.';
+  if (fidAnalisisOverlay) fidAnalisisOverlay.classList.add('open');
+  try {
+    const data = await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(id)}/analisis`);
+    renderFidelizacionAnalisis(data || {});
+  } catch (error) {
+    if (fidAnalisisMeta) fidAnalisisMeta.textContent = error.message || 'Error al cargar analisis.';
+    if (fidAnalisisHeadline) fidAnalisisHeadline.textContent = 'No se pudo cargar el analisis.';
+  }
+}
+
+async function requestFidelizacionAnalisisIA() {
+  const id = Number(fidAnalisisCurrentId) || 0;
+  if (!id || !fidAnalisisAiEnabled) return;
+  try {
+    if (fidAnalisisIaBtn) fidAnalisisIaBtn.disabled = true;
+    if (fidAnalisisIaStatus) fidAnalisisIaStatus.textContent = 'Generando analisis IA...';
+    const res = await fetchJSON(`/api/fidelizacion/recomendaciones/${encodeURIComponent(id)}/analisis-ia`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (fidAnalisisIaOutput) {
+      fidAnalisisIaOutput.textContent = String(res?.reply || 'Sin respuesta.');
+    }
+    if (fidAnalisisIaStatus) fidAnalisisIaStatus.textContent = 'Analisis IA generado.';
+  } catch (error) {
+    if (fidAnalisisIaStatus) fidAnalisisIaStatus.textContent = error.message || 'Error al generar analisis IA.';
+  } finally {
+    if (fidAnalisisIaBtn) fidAnalisisIaBtn.disabled = !fidAnalisisAiEnabled || !fidAnalisisCurrentId;
+  }
+}
+
 function closeFidelizacionFinalizadosModal() {
   if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.remove('open');
   if (fidFinalizadosStatus) fidFinalizadosStatus.textContent = '';
@@ -16444,6 +16672,7 @@ async function loadFidelizacionFinalizadosDetalle(vendedoraId, vendedoraLabel) {
         <td>${escapeAttr(formatDateTime(row.closed_at || ''))}</td>
         <td>${row.nro_pedido ? Number(row.nro_pedido) : row.pedido_id ? Number(row.pedido_id) : '-'}</td>
         <td>${row.conversion_amount == null ? '-' : formatMoney(row.conversion_amount || 0)}</td>
+        <td><button type="button" data-action="analizar-fidelizacion" data-id="${Number(row.id) || 0}">Analizar</button></td>
       `;
       fidFinalizadosTableBody.appendChild(tr);
     });
@@ -16477,6 +16706,7 @@ async function loadFidelizacionGestionadosDetalle(vendedoraId, vendedoraLabel) {
         <td>${escapeAttr(formatDateTime(row.closed_at || ''))}</td>
         <td>${row.nro_pedido ? Number(row.nro_pedido) : row.pedido_id ? Number(row.pedido_id) : '-'}</td>
         <td>${row.conversion_amount == null ? '-' : formatMoney(row.conversion_amount || 0)}</td>
+        <td>-</td>
       `;
       fidFinalizadosTableBody.appendChild(tr);
     });
@@ -16991,6 +17221,20 @@ function initFidelizacion() {
   if (fidFinalizadosOverlay) {
     fidFinalizadosOverlay.addEventListener('click', (event) => {
       if (event.target === fidFinalizadosOverlay) closeFidelizacionFinalizadosModal();
+    });
+  }
+  if (fidFinalizadosTableBody) {
+    fidFinalizadosTableBody.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-action="analizar-fidelizacion"][data-id]');
+      if (!btn) return;
+      openFidelizacionAnalisisModal(Number(btn.dataset.id));
+    });
+  }
+  if (fidAnalisisCloseBtn) fidAnalisisCloseBtn.addEventListener('click', closeFidelizacionAnalisisModal);
+  if (fidAnalisisIaBtn) fidAnalisisIaBtn.addEventListener('click', requestFidelizacionAnalisisIA);
+  if (fidAnalisisOverlay) {
+    fidAnalisisOverlay.addEventListener('click', (event) => {
+      if (event.target === fidAnalisisOverlay) closeFidelizacionAnalisisModal();
     });
   }
   if (fidDashboardCloseBtn) fidDashboardCloseBtn.addEventListener('click', closeFidelizacionDashboardModal);

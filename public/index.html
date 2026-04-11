@@ -1064,12 +1064,124 @@
                 <th>Fecha cierre</th>
                 <th>NroPedido</th>
                 <th>$ conversion</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
         <p class="status" id="fid-finalizados-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-analisis-overlay">
+    <div class="modal fid-analisis-modal">
+      <div class="modal-header">
+        <h3 id="fid-analisis-title">Analisis fidelizacion</h3>
+        <div class="actions inline">
+          <button id="fid-analisis-ia-btn" type="button">Analisis IA</button>
+          <button id="fid-analisis-close" class="close-btn" type="button">×</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p class="status" id="fid-analisis-meta"></p>
+
+        <section class="fid-analisis-section">
+          <div class="fid-analisis-summary-head">
+            <span class="badge gray" id="fid-analisis-outcome">-</span>
+            <p class="fid-analisis-headline" id="fid-analisis-headline">Sin datos.</p>
+          </div>
+          <p class="fid-analisis-text" id="fid-analisis-lectura"></p>
+          <div class="fid-analisis-columns">
+            <div>
+              <h4>Senales favorables</h4>
+              <ul class="fid-analisis-list" id="fid-analisis-favorables"></ul>
+            </div>
+            <div>
+              <h4>Senales de riesgo</h4>
+              <ul class="fid-analisis-list" id="fid-analisis-riesgos"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="fid-analisis-section">
+          <h4>KPIs del caso</h4>
+          <div class="stat-grid fid-analisis-stats">
+            <div class="stat">
+              <p class="label">Score</p>
+              <p class="value" id="fid-analisis-score">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Hs. a contacto</p>
+              <p class="value" id="fid-analisis-contacto">-</p>
+            </div>
+            <div class="stat">
+              <p class="label">Notas</p>
+              <p class="value" id="fid-analisis-notas">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Contactos</p>
+              <p class="value" id="fid-analisis-contactos">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Transferencias</p>
+              <p class="value" id="fid-analisis-transferencias">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">$ conversion</p>
+              <p class="value" id="fid-analisis-monto">-</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="fid-analisis-section">
+          <h4>Timeline</h4>
+          <div class="fid-analisis-timeline" id="fid-analisis-timeline"></div>
+        </section>
+
+        <section class="fid-analisis-section">
+          <h4>Contexto de compra</h4>
+          <div class="fid-analisis-columns">
+            <div class="fid-analisis-kpi-box">
+              <p class="label">Dias desde ultima compra</p>
+              <p class="value" id="fid-analisis-recency">-</p>
+            </div>
+            <div class="fid-analisis-kpi-box">
+              <p class="label">Compras 6m previos</p>
+              <p class="value" id="fid-analisis-prev-count">0</p>
+            </div>
+            <div class="fid-analisis-kpi-box">
+              <p class="label">Gasto 6m previos</p>
+              <p class="value" id="fid-analisis-prev-total">-</p>
+            </div>
+            <div class="fid-analisis-kpi-box">
+              <p class="label">Ticket prom. historico</p>
+              <p class="value" id="fid-analisis-ticket">-</p>
+            </div>
+          </div>
+          <div class="fid-analisis-purchase-strip" id="fid-analisis-strip"></div>
+          <div class="table-wrap">
+            <table class="table" id="fid-analisis-compras-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Pedido</th>
+                  <th>Vendedora</th>
+                  <th>Fase</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="fid-analisis-section">
+          <h4>Asistencia IA</h4>
+          <p class="fid-analisis-text" id="fid-analisis-ia-output">Todavia no se genero un analisis IA para este caso.</p>
+          <p class="status" id="fid-analisis-ia-status"></p>
+        </section>
       </div>
     </div>
   </div>

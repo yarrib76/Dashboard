@@ -2738,6 +2738,14 @@ body.theme-light .fidelizacion-card-reason {
   max-width: 1100px;
 }
 
+.fid-analisis-modal {
+  max-width: 1240px;
+  width: min(1240px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .fid-dashboard-modal {
   max-width: 1200px;
   max-height: calc(100vh - 32px);
@@ -2758,6 +2766,212 @@ body.theme-light .fidelizacion-card-reason {
 
 body.theme-light #fid-mis-table tbody tr.fid-row-expired td {
   background: rgba(244, 63, 94, 0.18);
+}
+
+.fid-analisis-section {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+body.theme-light .fid-analisis-section {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.fid-analisis-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.fid-analisis-headline {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.fid-analisis-text {
+  margin: 0;
+  white-space: pre-line;
+  color: #cbd5f5;
+}
+
+body.theme-light .fid-analisis-text {
+  color: #334155;
+}
+
+.fid-analisis-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.fid-analisis-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.fid-analisis-list li {
+  color: #dbeafe;
+}
+
+body.theme-light .fid-analisis-list li {
+  color: #1e293b;
+}
+
+.fid-analisis-stats .value {
+  font-size: 1.35rem;
+}
+
+.fid-analisis-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.fid-analisis-timeline-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 4px solid #60a5fa;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.5);
+}
+
+body.theme-light .fid-analisis-timeline-item {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.fid-analisis-timeline-item.risk {
+  border-left-color: #f87171;
+}
+
+.fid-analisis-timeline-item.positive {
+  border-left-color: #34d399;
+}
+
+.fid-analisis-timeline-item.neutral {
+  border-left-color: #fbbf24;
+}
+
+.fid-analisis-timeline-title,
+.fid-analisis-timeline-detail,
+.fid-analisis-timeline-meta {
+  margin: 0;
+}
+
+.fid-analisis-timeline-title {
+  font-weight: 700;
+}
+
+.fid-analisis-timeline-meta {
+  font-size: 0.82rem;
+  color: #93c5fd;
+}
+
+body.theme-light .fid-analisis-timeline-meta {
+  color: #475569;
+}
+
+.fid-analisis-kpi-box {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.48);
+}
+
+body.theme-light .fid-analisis-kpi-box {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.fid-analisis-kpi-box .label,
+.fid-analisis-kpi-box .value {
+  margin: 0;
+}
+
+.fid-analisis-kpi-box .value {
+  margin-top: 4px;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.fid-analisis-purchase-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.fid-analisis-purchase-box {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.48);
+}
+
+body.theme-light .fid-analisis-purchase-box {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.fid-analisis-purchase-box p {
+  margin: 0;
+}
+
+.fid-analisis-purchase-box .label {
+  font-size: 0.82rem;
+}
+
+.fid-analisis-purchase-box .value {
+  margin-top: 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.fid-phase-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+}
+
+body.theme-light .fid-phase-badge {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+}
+
+.fid-phase-badge.before {
+  background: rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+
+.fid-phase-badge.window {
+  background: rgba(52, 211, 153, 0.18);
+  color: #bbf7d0;
+}
+
+.fid-phase-badge.after {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+body.theme-light .fid-phase-badge.before {
+  color: #475569;
+}
+
+body.theme-light .fid-phase-badge.window {
+  color: #047857;
+}
+
+body.theme-light .fid-phase-badge.after {
+  color: #b45309;
 }
 
 .fidelizacion-reportes #fid-runs-table th:nth-child(8),

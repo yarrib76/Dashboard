@@ -5638,6 +5638,504 @@ async function loadFidelizacionRunById(conn, runId) {
   };
 }
 
+function shiftMonths(dateValue, months) {
+  const base = dateValue instanceof Date ? new Date(dateValue) : new Date(dateValue);
+  const next = new Date(base);
+  next.setMonth(next.getMonth() + Number(months || 0));
+  return next;
+}
+
+function pushFidelizacionSignal(list, text) {
+  const value = String(text || '').trim();
+  if (!value) return;
+  if (!list.includes(value)) list.push(value);
+}
+
+function parseFidelizacionClosedReason(reasonRaw) {
+  const raw = String(reasonRaw || '').trim();
+  const code = raw.split('|')[0].trim().toUpperCase();
+  const map = {
+    AUTO_CONVERSION: 'Compra dentro de ventana',
+    AUTO_CONVERSION_OUT_OF_WINDOW: 'Compra fuera de ventana',
+    NO_RESPONDIO: 'No respondio',
+    SIN_STOCK: 'Sin stock',
+    PRECIO: 'Precio',
+    SIN_INTERES: 'Sin interes',
+    COMPRA_POSTERGADA: 'Compra postergada',
+    OTRO: 'Otro',
+  };
+  return {
+    raw,
+    code,
+    label: map[code] || raw || '-',
+  };
+}
+
+function buildFidelizacionOutcomeCode(resultado, resultadoCodes = {}) {
+  const normalized = String(resultado || '').trim().toUpperCase();
+  if (normalized === String(resultadoCodes.convertida || '').trim().toUpperCase()) return 'CONVERTIDA_EN_VENTANA';
+  if (normalized === String(resultadoCodes.convertidaFueraVentana || '').trim().toUpperCase()) {
+    return 'CONVERTIDA_FUERA_VENTANA';
+  }
+  return 'NO_CONVERTIDA';
+}
+
+function classifyFidelizacionPurchasePhase(fechaRaw, createdAtRaw, deadlineRaw) {
+  const fecha = fechaRaw ? new Date(fechaRaw) : null;
+  const createdAt = createdAtRaw ? new Date(createdAtRaw) : null;
+  const deadline = deadlineRaw ? new Date(deadlineRaw) : null;
+  if (!fecha || Number.isNaN(fecha.getTime()) || !createdAt || Number.isNaN(createdAt.getTime())) {
+    return { phase: 'before', phase_label: 'Previa' };
+  }
+  if (fecha.getTime() < createdAt.getTime()) return { phase: 'before', phase_label: 'Previa' };
+  if (deadline && !Number.isNaN(deadline.getTime()) && fecha.getTime() <= deadline.getTime()) {
+    return { phase: 'window', phase_label: 'En ventana' };
+  }
+  return { phase: 'after', phase_label: 'Posterior' };
+}
+
+function buildFidelizacionPurchasesSummary(rows = []) {
+  const summary = {
+    prev_count: 0,
+    prev_total: 0,
+    window_count: 0,
+    window_total: 0,
+    after_count: 0,
+    after_total: 0,
+  };
+  (rows || []).forEach((row) => {
+    const phase = String(row.phase || '').trim().toLowerCase();
+    if (phase === 'window') {
+      summary.window_count += 1;
+      summary.window_total += Number(row.total) || 0;
+      return;
+    }
+    if (phase === 'after') {
+      summary.after_count += 1;
+      summary.after_total += Number(row.total) || 0;
+      return;
+    }
+    summary.prev_count += 1;
+    summary.prev_total += Number(row.total) || 0;
+  });
+  summary.prev_total = round2(summary.prev_total);
+  summary.window_total = round2(summary.window_total);
+  summary.after_total = round2(summary.after_total);
+  return summary;
+}
+
+function buildFidelizacionAnalysisSummary(payload = {}) {
+  const recommendation = payload.recommendation || {};
+  const metrics = payload.metrics || {};
+  const purchasesSummary = payload.compras?.summary || {};
+  const outcome = String(payload.outcome || '').trim().toUpperCase();
+  const closedReason = parseFidelizacionClosedReason(recommendation.closed_reason);
+  const favorables = [];
+  const riesgos = [];
+
+  if (metrics.contactos_count > 0) {
+    pushFidelizacionSignal(favorables, `Se registraron ${metrics.contactos_count} contactos sobre la fidelizacion.`);
+  } else {
+    pushFidelizacionSignal(riesgos, 'No hay contactos registrados para esta fidelizacion.');
+  }
+
+  if (metrics.notas_count > 0) {
+    pushFidelizacionSignal(favorables, `Hubo seguimiento documentado con ${metrics.notas_count} nota(s).`);
+  } else {
+    pushFidelizacionSignal(riesgos, 'No hay notas de seguimiento registradas.');
+  }
+
+  if (metrics.horas_a_contacto != null) {
+    if (Number(metrics.horas_a_contacto) <= 24) {
+      pushFidelizacionSignal(favorables, `El primer contacto llego rapido (${round2(metrics.horas_a_contacto)} hs).`);
+    } else if (Number(metrics.horas_a_contacto) > 48) {
+      pushFidelizacionSignal(riesgos, `El primer contacto fue tardio (${round2(metrics.horas_a_contacto)} hs).`);
+    }
+  }
+
+  if (Number(recommendation.frequency_12m || 0) >= 3) {
+    pushFidelizacionSignal(
+      favorables,
+      `El cliente venia con recurrencia previa (${Number(recommendation.frequency_12m || 0)} compras en 12 meses).`
+    );
+  } else if (Number(recommendation.frequency_12m || 0) <= 1) {
+    pushFidelizacionSignal(riesgos, 'El cliente tenia baja recurrencia previa al contacto.');
+  }
+
+  if (Number(recommendation.recency_days || 0) > 0 && Number(recommendation.recency_days || 0) <= 15) {
+    pushFidelizacionSignal(riesgos, 'La fidelizacion se activo muy cerca de una compra previa; puede haber poco sentido de recompra.');
+  } else if (Number(recommendation.recency_days || 0) >= 30 && Number(recommendation.recency_days || 0) <= 90) {
+    pushFidelizacionSignal(favorables, 'La ultima compra estaba en una ventana razonable para intentar recompra.');
+  }
+
+  if (outcome === 'CONVERTIDA_EN_VENTANA') {
+    pushFidelizacionSignal(favorables, 'Hubo compra dentro de la ventana esperada de conversion.');
+  }
+  if (outcome === 'CONVERTIDA_FUERA_VENTANA') {
+    pushFidelizacionSignal(riesgos, 'El cliente compro, pero fuera de la ventana definida para atribucion.');
+    pushFidelizacionSignal(favorables, 'La gestion puede haber influido, aunque con timing tardio.');
+  }
+  if (outcome === 'NO_CONVERTIDA') {
+    pushFidelizacionSignal(riesgos, `La fidelizacion se cerro sin compra. Motivo declarado: ${closedReason.label}.`);
+  }
+
+  if (closedReason.code === 'PRECIO') {
+    pushFidelizacionSignal(riesgos, 'El cierre por precio sugiere friccion de propuesta o sensibilidad al valor ofrecido.');
+  }
+  if (closedReason.code === 'NO_RESPONDIO') {
+    pushFidelizacionSignal(riesgos, 'No hubo respuesta del cliente; revisar canal, mensaje y velocidad del contacto.');
+  }
+  if (closedReason.code === 'SIN_INTERES') {
+    pushFidelizacionSignal(riesgos, 'El cliente no mostro interes en la propuesta actual.');
+  }
+  if (closedReason.code === 'COMPRA_POSTERGADA') {
+    pushFidelizacionSignal(riesgos, 'La necesidad de compra parece diferida en el tiempo.');
+  }
+
+  if (Number(purchasesSummary.window_count || 0) > 0) {
+    pushFidelizacionSignal(favorables, `Se detectaron ${purchasesSummary.window_count} compra(s) dentro de la ventana de seguimiento.`);
+  } else if (outcome === 'NO_CONVERTIDA') {
+    pushFidelizacionSignal(riesgos, 'No hubo compras dentro de la ventana de conversion.');
+  }
+
+  if (Number(purchasesSummary.after_count || 0) > 0 && Number(purchasesSummary.window_count || 0) === 0) {
+    pushFidelizacionSignal(riesgos, 'El cliente volvio a comprar despues de la ventana; revisar timing y oportunidad de contacto.');
+  }
+
+  if (
+    recommendation.conversion_amount != null &&
+    Number(recommendation.avg_ticket_12m || 0) > 0 &&
+    Number(recommendation.conversion_amount || 0) >= Number(recommendation.avg_ticket_12m || 0)
+  ) {
+    pushFidelizacionSignal(favorables, 'La compra convertida quedo alineada o por encima del ticket promedio historico.');
+  }
+
+  const headlineMap = {
+    CONVERTIDA_EN_VENTANA: 'El cliente convirtio dentro de la ventana y la gestion llego a tiempo.',
+    CONVERTIDA_FUERA_VENTANA: 'La gestion termino en compra, pero la conversion llego tarde respecto de la ventana esperada.',
+    NO_CONVERTIDA: `La fidelizacion no convirtio y el cierre principal fue: ${closedReason.label}.`,
+  };
+
+  const lectura = [];
+  if (outcome === 'CONVERTIDA_EN_VENTANA') {
+    lectura.push('El caso muestra una respuesta comercial positiva dentro del plazo esperado.');
+  } else if (outcome === 'CONVERTIDA_FUERA_VENTANA') {
+    lectura.push('El cliente termino comprando, pero el momento de la recompra quedo fuera de la ventana atribuida.');
+  } else {
+    lectura.push('El seguimiento no logro cerrar una compra dentro de la ventana de conversion.');
+  }
+  if (metrics.horas_a_contacto != null) {
+    lectura.push(`Tiempo al primer contacto: ${round2(metrics.horas_a_contacto)} horas.`);
+  } else {
+    lectura.push('No hay registro de contacto formal en la recomendacion.');
+  }
+  lectura.push(
+    `Historial previo: ${Number(recommendation.frequency_12m || 0)} compra(s) en 12 meses, ticket promedio ${round2(
+      recommendation.avg_ticket_12m || 0
+    )}.`
+  );
+  if (closedReason.raw && outcome === 'NO_CONVERTIDA') {
+    lectura.push(`Motivo de cierre reportado: ${closedReason.label}.`);
+  } else if (recommendation.conversion_reason_label) {
+    lectura.push(`Motivo de conversion registrado: ${recommendation.conversion_reason_label}.`);
+  }
+
+  return {
+    outcome,
+    headline: headlineMap[outcome] || 'Analisis del caso disponible.',
+    lectura_operativa: lectura.join('\n'),
+    favorables,
+    riesgos,
+  };
+}
+
+async function loadFidelizacionRecommendationAnalysis(conn, recId) {
+  const recommendationId = Number(recId) || 0;
+  if (!recommendationId) return null;
+  const resultadoCodes = await getFidelizacionResultadoCodes(conn);
+  let conversionReasonMap = new Map();
+  try {
+    conversionReasonMap = new Map(
+      (await listFidelizacionConversionReasonsCatalogo(conn)).map((row) => [
+        String(row.codigo || '').trim().toUpperCase(),
+        String(row.nombre || '').trim(),
+      ])
+    );
+  } catch (_err) {}
+  const [[row]] = await conn.query(
+    `SELECT
+       r.id AS recomendacion_id,
+       r.run_id,
+       fr.run_date,
+       r.cliente_id,
+       CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente,
+       COALESCE(c.telefono, '') AS telefono,
+       COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Ninguna') AS encuesta,
+       r.vendedora_id,
+       COALESCE(v.Nombre, 'Sin asignar') AS vendedora,
+       r.score,
+       r.razones,
+       r.oferta_detalle,
+       r.tag_top_1,
+       r.tag_top_2,
+       r.tag_top_3,
+       r.attr_top_1,
+       r.attr_top_2,
+       r.attr_top_3,
+       r.last_purchase_date,
+       r.recency_days,
+       r.frequency_12m,
+       r.monetary_12m,
+       r.avg_ticket_12m,
+       r.created_at,
+       r.contactado_at,
+       r.closed_at,
+       r.conversion_deadline_at,
+       r.resultado,
+       r.closed_reason,
+       r.conversion_reason_code,
+       r.conversion_reason_note,
+       r.pedido_id,
+       cp.nropedido,
+       r.converted_at,
+       COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0) AS conversion_amount,
+       ROUND(TIMESTAMPDIFF(MINUTE, r.created_at, r.contactado_at) / 60, 1) AS horas_a_contacto
+     FROM fidelizacion_recomendacion r
+     LEFT JOIN fidelizacion_run fr ON fr.id = r.run_id
+     LEFT JOIN clientes c ON c.id_clientes = r.cliente_id
+     LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+     LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
+     WHERE r.id = ?
+     LIMIT 1`,
+    [recommendationId]
+  );
+  if (!row) return null;
+
+  const createdAt = row.created_at ? new Date(row.created_at) : new Date();
+  const windowStart = shiftMonths(createdAt, -6);
+  const windowEndCandidate = shiftMonths(createdAt, 3);
+  const now = new Date();
+  const windowEnd = windowEndCandidate.getTime() > now.getTime() ? now : windowEndCandidate;
+
+  const [noteRows] = await conn.query(
+    `SELECT
+       n.id,
+       n.nota,
+       n.created_at,
+       n.updated_at,
+       COALESCE(u.name, '') AS usuario
+     FROM fidelizacion_notas n
+     LEFT JOIN users u ON u.id = n.users_id
+     WHERE n.recomendacion_id = ?
+     ORDER BY COALESCE(n.updated_at, n.created_at) ASC, n.id ASC`,
+    [recommendationId]
+  );
+
+  const [contactRows] = await conn.query(
+    `SELECT
+       c.id,
+       c.canal,
+       c.oferta_enviada,
+       c.contacted_at,
+       c.notas,
+       COALESCE(v.Nombre, 'Sin asignar') AS vendedora
+     FROM fidelizacion_contacto c
+     LEFT JOIN vendedores v ON v.Id = c.vendedora_id
+     WHERE c.recomendacion_id = ?
+     ORDER BY c.contacted_at ASC, c.id ASC`,
+    [recommendationId]
+  );
+
+  const [transferRows] = await conn.query(
+    `SELECT
+       t.id,
+       t.action,
+       t.motivo,
+       t.actor_nombre,
+       t.created_at,
+       COALESCE(vf.Nombre, 'Sin asignar') AS from_vendedora,
+       COALESCE(vt.Nombre, 'Sin asignar') AS to_vendedora
+     FROM fidelizacion_transferencia t
+     LEFT JOIN vendedores vf ON vf.Id = t.from_vendedora_id
+     LEFT JOIN vendedores vt ON vt.Id = t.to_vendedora_id
+     WHERE t.recomendacion_id = ?
+     ORDER BY t.created_at ASC, t.id ASC`,
+    [recommendationId]
+  );
+
+  const [purchaseRows] = await conn.query(
+    `SELECT
+       cp.id AS pedido_id,
+       cp.nropedido,
+       cp.fecha,
+       COALESCE(cp.total, 0) AS total,
+       COALESCE(cp.vendedora, '') AS vendedora
+     FROM controlpedidos cp
+     WHERE cp.id_cliente = ?
+       AND cp.fecha >= ?
+       AND cp.fecha <= ?
+     ORDER BY cp.fecha ASC, cp.id ASC`,
+    [Number(row.cliente_id), formatDateTimeLocal(windowStart), formatDateTimeLocal(windowEnd)]
+  );
+
+  const outcome = buildFidelizacionOutcomeCode(row.resultado, resultadoCodes);
+  const comprasRows = (purchaseRows || []).map((purchase) => {
+    const phaseMeta = classifyFidelizacionPurchasePhase(purchase.fecha, row.created_at, row.conversion_deadline_at);
+    return {
+      pedido_id: Number(purchase.pedido_id) || 0,
+      nropedido: purchase.nropedido ? Number(purchase.nropedido) : null,
+      fecha: purchase.fecha,
+      total: Number(purchase.total) || 0,
+      vendedora: String(purchase.vendedora || '').trim() || 'Sin asignar',
+      phase: phaseMeta.phase,
+      phase_label: phaseMeta.phase_label,
+    };
+  });
+  const comprasSummary = buildFidelizacionPurchasesSummary(comprasRows);
+
+  const timelineEvents = [
+    {
+      at: row.created_at,
+      label: 'Fidelizacion creada',
+      detail: row.oferta_detalle ? `Oferta propuesta: ${row.oferta_detalle}` : 'Se genero la recomendacion.',
+      tone: 'neutral',
+    },
+  ];
+  (transferRows || []).forEach((transfer) => {
+    const action = String(transfer.action || '').trim().toUpperCase();
+    const transferLabel = action === 'TOMAR' ? 'Fidelizacion tomada' : 'Fidelizacion transferida';
+    const transferDetail =
+      action === 'TOMAR'
+        ? `${transfer.actor_nombre || transfer.to_vendedora || 'Usuario'} tomo el caso. Motivo: ${transfer.motivo || '-'}`
+        : `De ${transfer.from_vendedora || 'Sin asignar'} a ${transfer.to_vendedora || 'Sin asignar'}. Motivo: ${
+            transfer.motivo || '-'
+          }`;
+    timelineEvents.push({
+      at: transfer.created_at,
+      label: transferLabel,
+      detail: transferDetail,
+      tone: action === 'TOMAR' ? 'positive' : 'neutral',
+    });
+  });
+  (contactRows || []).forEach((contact) => {
+    timelineEvents.push({
+      at: contact.contacted_at,
+      label: `Contacto por ${String(contact.canal || '').trim() || 'canal sin dato'}`,
+      detail: `${contact.vendedora || 'Sin asignar'} envio: ${contact.oferta_enviada || '-'}${
+        contact.notas ? ` | Notas: ${contact.notas}` : ''
+      }`,
+      tone: 'positive',
+    });
+  });
+  (noteRows || []).forEach((note) => {
+    timelineEvents.push({
+      at: note.updated_at || note.created_at,
+      label: 'Nota de seguimiento',
+      detail: `${note.usuario || 'Usuario'}: ${note.nota || ''}`,
+      tone: 'neutral',
+    });
+  });
+  if (row.closed_at) {
+    timelineEvents.push({
+      at: row.closed_at,
+      label: 'Fidelizacion cerrada',
+      detail: `Resultado: ${row.resultado || '-'} | Motivo: ${parseFidelizacionClosedReason(row.closed_reason).label}`,
+      tone: outcome === 'NO_CONVERTIDA' ? 'risk' : 'positive',
+    });
+  }
+  timelineEvents.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  const recommendation = {
+    recomendacion_id: Number(row.recomendacion_id) || 0,
+    run_id: row.run_id ? Number(row.run_id) : null,
+    run_date: row.run_date,
+    cliente_id: row.cliente_id ? Number(row.cliente_id) : null,
+    cliente: String(row.cliente || '').trim(),
+    telefono: String(row.telefono || '').trim(),
+    encuesta: String(row.encuesta || '').trim() || 'Ninguna',
+    vendedora_id: row.vendedora_id ? Number(row.vendedora_id) : null,
+    vendedora: String(row.vendedora || '').trim() || 'Sin asignar',
+    score: Number(row.score) || 0,
+    razones: String(row.razones || '').trim(),
+    oferta_detalle: String(row.oferta_detalle || '').trim(),
+    tags: [row.tag_top_1, row.tag_top_2, row.tag_top_3].filter(Boolean),
+    attrs: [row.attr_top_1, row.attr_top_2, row.attr_top_3].filter(Boolean),
+    last_purchase_date: row.last_purchase_date,
+    recency_days: row.recency_days == null ? null : Number(row.recency_days),
+    frequency_12m: Number(row.frequency_12m) || 0,
+    monetary_12m: Number(row.monetary_12m) || 0,
+    avg_ticket_12m: Number(row.avg_ticket_12m) || 0,
+    created_at: row.created_at,
+    contactado_at: row.contactado_at,
+    closed_at: row.closed_at,
+    conversion_deadline_at: row.conversion_deadline_at,
+    resultado: row.resultado || '',
+    closed_reason: row.closed_reason || '',
+    closed_reason_label: parseFidelizacionClosedReason(row.closed_reason).label,
+    conversion_reason_code: row.conversion_reason_code || '',
+    conversion_reason_note: row.conversion_reason_note || '',
+    conversion_reason_label:
+      conversionReasonMap.get(String(row.conversion_reason_code || '').trim().toUpperCase()) || '',
+    pedido_id: row.pedido_id ? Number(row.pedido_id) : null,
+    nropedido: row.nropedido ? Number(row.nropedido) : null,
+    converted_at: row.converted_at,
+    conversion_amount: row.conversion_amount == null ? null : Number(row.conversion_amount),
+  };
+
+  const payload = {
+    ai_enabled: Boolean(openai),
+    recommendation,
+    metrics: {
+      horas_a_contacto: row.horas_a_contacto == null ? null : Number(row.horas_a_contacto),
+      notas_count: (noteRows || []).length,
+      contactos_count: (contactRows || []).length,
+      transferencias_count: (transferRows || []).length,
+    },
+    timeline: {
+      events: timelineEvents,
+    },
+    compras: {
+      window: {
+        from: formatDateTimeLocal(windowStart),
+        to: formatDateTimeLocal(windowEnd),
+      },
+      summary: comprasSummary,
+      rows: comprasRows,
+    },
+    notes: (noteRows || []).map((note) => ({
+      id: Number(note.id) || 0,
+      usuario: String(note.usuario || '').trim(),
+      nota: String(note.nota || '').trim(),
+      created_at: note.created_at,
+      updated_at: note.updated_at,
+    })),
+    contacts: (contactRows || []).map((contact) => ({
+      id: Number(contact.id) || 0,
+      canal: String(contact.canal || '').trim(),
+      oferta_enviada: String(contact.oferta_enviada || '').trim(),
+      contacted_at: contact.contacted_at,
+      notas: String(contact.notas || '').trim(),
+      vendedora: String(contact.vendedora || '').trim(),
+    })),
+    transfers: (transferRows || []).map((transfer) => ({
+      id: Number(transfer.id) || 0,
+      action: String(transfer.action || '').trim(),
+      motivo: String(transfer.motivo || '').trim(),
+      actor_nombre: String(transfer.actor_nombre || '').trim(),
+      created_at: transfer.created_at,
+      from_vendedora: String(transfer.from_vendedora || '').trim(),
+      to_vendedora: String(transfer.to_vendedora || '').trim(),
+    })),
+  };
+  payload.summary = buildFidelizacionAnalysisSummary({
+    recommendation,
+    metrics: payload.metrics,
+    compras: payload.compras,
+    outcome,
+  });
+  return payload;
+}
+
 app.get(['/api/fidelizacion/runs', '/fidelizacion/runs'], async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
@@ -6380,6 +6878,82 @@ app.get('/api/fidelizacion/reportes/admin/finalizados', async (req, res) => {
     res.json({ scope, run_id: scope === 'all' ? null : effectiveRunId, data: rows || [] });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar detalle de finalizados', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/recomendaciones/:id/analisis', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver este analisis' });
+    const recId = Number(req.params.id) || 0;
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    const data = await loadFidelizacionRecommendationAnalysis(pool, recId);
+    if (!data) return res.status(404).json({ message: 'Recomendacion no encontrada' });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar analisis de fidelizacion', error: error.message });
+  }
+});
+
+app.post('/api/fidelizacion/recomendaciones/:id/analisis-ia', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede usar este analisis' });
+    if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+    const recId = Number(req.params.id) || 0;
+    if (!recId) return res.status(400).json({ message: 'Recomendacion invalida' });
+    const analysis = await loadFidelizacionRecommendationAnalysis(pool, recId);
+    if (!analysis) return res.status(404).json({ message: 'Recomendacion no encontrada' });
+
+    const aiPayload = {
+      recommendation: {
+        cliente: analysis.recommendation?.cliente,
+        encuesta: analysis.recommendation?.encuesta,
+        vendedora: analysis.recommendation?.vendedora,
+        score: analysis.recommendation?.score,
+        oferta_detalle: analysis.recommendation?.oferta_detalle,
+        razones: analysis.recommendation?.razones,
+        resultado: analysis.recommendation?.resultado,
+        closed_reason_label: analysis.recommendation?.closed_reason_label,
+        conversion_reason_label: analysis.recommendation?.conversion_reason_label,
+        recency_days: analysis.recommendation?.recency_days,
+        frequency_12m: analysis.recommendation?.frequency_12m,
+        avg_ticket_12m: analysis.recommendation?.avg_ticket_12m,
+        conversion_amount: analysis.recommendation?.conversion_amount,
+      },
+      metrics: analysis.metrics,
+      summary: analysis.summary,
+      compras_summary: analysis.compras?.summary || {},
+      timeline_top: (analysis.timeline?.events || []).slice(0, 12),
+    };
+
+    const completion = await withRetry(() =>
+      openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0.2,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Eres un analista comercial interno. Resume por que una fidelizacion convirtio o no convirtio. ' +
+              'Responde en espanol, claro y breve, en 4 a 6 lineas. ' +
+              'Incluye: lectura del caso, principal friccion u oportunidad y una sugerencia accionable. ' +
+              'No inventes datos que no esten presentes.',
+          },
+          {
+            role: 'user',
+            content: `Analiza este caso de fidelizacion:\n${JSON.stringify(aiPayload)}`,
+          },
+        ],
+      })
+    );
+
+    const reply = String(completion.choices?.[0]?.message?.content || '').trim() || 'Sin respuesta.';
+    res.json({ reply });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al generar analisis IA', error: error.message });
   }
 });
 
