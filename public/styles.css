@@ -944,6 +944,12 @@ input[type='month'] {
   color: inherit;
   font: inherit;
   cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.fid-chart-launch:hover {
+  transform: translateY(-1px);
+  border-color: rgba(123, 215, 255, 0.5);
 }
 
 .tile-grid {
