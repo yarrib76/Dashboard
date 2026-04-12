@@ -16301,7 +16301,7 @@ function renderFidFunnelChart(rows = []) {
       labels: safeRows.map((row) => row.label),
       datasets: [
         {
-          label: 'Casos',
+          label: 'Casos en proceso',
           data: safeRows.map((row) => Number(row.value || 0)),
           backgroundColor: safeRows.map((_, idx) => colorByIndex(idx, 0.72)),
           borderColor: safeRows.map((_, idx) => colorByIndex(idx, 0.98)),

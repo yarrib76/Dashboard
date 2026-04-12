@@ -6784,14 +6784,12 @@ app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
     const [funnelRows] = await pool.query(
       `SELECT
          SUM(r.estado='PENDIENTE') AS pendientes,
-         SUM(r.estado='EN_GESTION') AS en_gestion,
          SUM(r.estado='CONTACTADA') AS contactadas,
-         SUM(r.estado='CERRADA') AS finalizadas,
-         SUM(r.resultado IN (?,?)) AS convertidas
+         SUM(r.estado='CERRADA') AS finalizadas
        FROM fidelizacion_recomendacion r
        LEFT JOIN vendedores v ON v.Id = r.vendedora_id
        ${whereSql}`,
-      [resultadoCodes.convertida, resultadoCodes.convertidaFueraVentana, ...params]
+      params
     );
     const funnelBase = funnelRows?.[0] || {};
 
@@ -6922,10 +6920,8 @@ app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
       },
       funnel: [
         { label: 'Pendientes', value: Number(funnelBase.pendientes) || 0 },
-        { label: 'En gestion', value: Number(funnelBase.en_gestion) || 0 },
         { label: 'Contactadas', value: Number(funnelBase.contactadas) || 0 },
         { label: 'Finalizadas', value: Number(funnelBase.finalizadas) || 0 },
-        { label: 'Convertidas', value: Number(funnelBase.convertidas) || 0 },
       ],
       resultados: [
         { label: 'Convertida', value: Number(resultadosBase.convertida) || 0 },
