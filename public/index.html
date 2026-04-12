@@ -872,6 +872,10 @@
           <p class="label">No convertidas</p>
           <p class="value" id="fid-card-no-convertidas">0</p>
         </div>
+        <button class="stat stat-click fid-chart-launch" id="fid-open-graficas-btn" type="button" title="Ver graficas generales">
+          <p class="label">Graficas</p>
+          <p class="value" aria-hidden="true">📊</p>
+        </button>
       </div>
       <div class="table-wrap">
         <table class="table" id="fid-admin-table">
@@ -893,6 +897,100 @@
       </div>
       <div class="fidelizacion-cards" id="fid-admin-cards"></div>
       <p class="status" id="fid-reportes-status"></p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-graficas-overlay">
+    <div class="modal fid-dashboard-modal fid-graficas-modal">
+      <div class="actions between">
+        <h3 id="fid-graficas-title">Graficas generales</h3>
+        <div class="actions inline">
+          <button id="fid-graficas-refresh" type="button">Actualizar</button>
+          <button id="fid-graficas-close" type="button">Cerrar</button>
+        </div>
+      </div>
+      <p class="status" id="fid-graficas-meta"></p>
+
+      <div class="stat-grid" id="fid-graficas-kpis">
+        <div class="stat">
+          <p class="label">Tasa contacto</p>
+          <p class="value" id="fid-kpi-contacto">0%</p>
+        </div>
+        <div class="stat">
+          <p class="label">Tasa finalizacion</p>
+          <p class="value" id="fid-kpi-finalizacion">0%</p>
+        </div>
+        <div class="stat">
+          <p class="label">Tasa conversion</p>
+          <p class="value" id="fid-kpi-conversion">0%</p>
+        </div>
+        <div class="stat">
+          <p class="label">% precio</p>
+          <p class="value" id="fid-kpi-precio">0%</p>
+        </div>
+        <div class="stat">
+          <p class="label">% no respondio</p>
+          <p class="value" id="fid-kpi-no-respondio">0%</p>
+        </div>
+        <div class="stat">
+          <p class="label">% fuera de ventana</p>
+          <p class="value" id="fid-kpi-fuera-ventana">0%</p>
+        </div>
+      </div>
+
+      <div class="fid-graficas-grid">
+        <article class="card">
+          <div class="actions between">
+            <h4>Embudo de gestion</h4>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="fid-chart-funnel"></canvas>
+          </div>
+          <p class="status" id="fid-chart-funnel-status"></p>
+        </article>
+
+        <article class="card">
+          <div class="actions between">
+            <h4>Resultados finales</h4>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="fid-chart-resultados"></canvas>
+          </div>
+          <p class="status" id="fid-chart-resultados-status"></p>
+        </article>
+
+        <article class="card">
+          <div class="actions between">
+            <h4>Razones de cierre</h4>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="fid-chart-razones"></canvas>
+          </div>
+          <p class="status" id="fid-chart-razones-status"></p>
+        </article>
+
+        <article class="card">
+          <div class="actions between">
+            <h4>Tiempo al primer contacto</h4>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="fid-chart-tiempo"></canvas>
+          </div>
+          <p class="status" id="fid-chart-tiempo-status"></p>
+        </article>
+
+        <article class="card fid-graficas-wide">
+          <div class="actions between">
+            <h4>Comparativo por vendedora</h4>
+          </div>
+          <div class="chart-wrap tall">
+            <canvas id="fid-chart-vendedoras"></canvas>
+          </div>
+          <p class="status" id="fid-chart-vendedoras-status"></p>
+        </article>
+      </div>
+
+      <p class="status" id="fid-graficas-status"></p>
     </div>
   </div>
 

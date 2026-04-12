@@ -6,6 +6,11 @@ const chartState = {
   mensual: null,
   ventas: null,
   dashboardComparativo: null,
+  fidFunnel: null,
+  fidResultados: null,
+  fidRazones: null,
+  fidTiempo: null,
+  fidVendedoras: null,
 };
 const dashboardComparativoInflationState = {
   payload: null,
@@ -358,6 +363,7 @@ let fidFinalizadosDataTable = null;
 let fidAnalisisComprasData = [];
 let fidAnalisisCurrentId = 0;
 let fidAnalisisAiEnabled = false;
+let fidGraficasPayload = null;
 let fidReportRunId = null;
 let fidReportScope = 'run';
 let fidelizacionRunsLoaded = false;
@@ -566,6 +572,7 @@ const fidCardFinalizadas = document.getElementById('fid-card-finalizadas');
 const fidCardConvertidas = document.getElementById('fid-card-convertidas');
 const fidCardConvertidasFv = document.getElementById('fid-card-convertidas-fv');
 const fidCardNoConvertidas = document.getElementById('fid-card-no-convertidas');
+const fidOpenGraficasBtn = document.getElementById('fid-open-graficas-btn');
 const fidAdminTableBody = document.querySelector('#fid-admin-table tbody');
 const fidAdminCards = document.getElementById('fid-admin-cards');
 const fidReportesStatus = document.getElementById('fid-reportes-status');
@@ -632,6 +639,28 @@ const fidAnalisisStrip = document.getElementById('fid-analisis-strip');
 const fidAnalisisComprasTableBody = document.querySelector('#fid-analisis-compras-table tbody');
 const fidAnalisisIaOutput = document.getElementById('fid-analisis-ia-output');
 const fidAnalisisIaStatus = document.getElementById('fid-analisis-ia-status');
+const fidGraficasOverlay = document.getElementById('fid-graficas-overlay');
+const fidGraficasTitle = document.getElementById('fid-graficas-title');
+const fidGraficasCloseBtn = document.getElementById('fid-graficas-close');
+const fidGraficasRefreshBtn = document.getElementById('fid-graficas-refresh');
+const fidGraficasMeta = document.getElementById('fid-graficas-meta');
+const fidGraficasStatus = document.getElementById('fid-graficas-status');
+const fidKpiContacto = document.getElementById('fid-kpi-contacto');
+const fidKpiFinalizacion = document.getElementById('fid-kpi-finalizacion');
+const fidKpiConversion = document.getElementById('fid-kpi-conversion');
+const fidKpiPrecio = document.getElementById('fid-kpi-precio');
+const fidKpiNoRespondio = document.getElementById('fid-kpi-no-respondio');
+const fidKpiFueraVentana = document.getElementById('fid-kpi-fuera-ventana');
+const fidChartFunnelEl = document.getElementById('fid-chart-funnel');
+const fidChartResultadosEl = document.getElementById('fid-chart-resultados');
+const fidChartRazonesEl = document.getElementById('fid-chart-razones');
+const fidChartTiempoEl = document.getElementById('fid-chart-tiempo');
+const fidChartVendedorasEl = document.getElementById('fid-chart-vendedoras');
+const fidChartFunnelStatus = document.getElementById('fid-chart-funnel-status');
+const fidChartResultadosStatus = document.getElementById('fid-chart-resultados-status');
+const fidChartRazonesStatus = document.getElementById('fid-chart-razones-status');
+const fidChartTiempoStatus = document.getElementById('fid-chart-tiempo-status');
+const fidChartVendedorasStatus = document.getElementById('fid-chart-vendedoras-status');
 const fidBeneficiosOverlay = document.getElementById('fid-beneficios-overlay');
 const fidBeneficiosTitle = document.getElementById('fid-beneficios-title');
 const fidBeneficiosCloseBtn = document.getElementById('fid-beneficios-close');
@@ -16225,6 +16254,193 @@ function renderFidelizacionDashboardCards(cards = {}) {
   if (fidCardNoConvertidas) fidCardNoConvertidas.textContent = String(cards.no_convertidas || 0);
 }
 
+function destroyFidelizacionCharts() {
+  ['fidFunnel', 'fidResultados', 'fidRazones', 'fidTiempo', 'fidVendedoras'].forEach((key) => {
+    if (chartState[key]) {
+      chartState[key].destroy();
+      chartState[key] = null;
+    }
+  });
+}
+
+function setFidChartStatus(target, message = '') {
+  if (target) target.textContent = message;
+}
+
+function createFidChart(canvas, key, config) {
+  if (!canvas || !window.Chart) return null;
+  if (chartState[key]) chartState[key].destroy();
+  const ctx = canvas.getContext('2d');
+  chartState[key] = new Chart(ctx, config);
+  return chartState[key];
+}
+
+function renderFidGraficasKpis(kpis = {}) {
+  if (fidKpiContacto) fidKpiContacto.textContent = formatPct(Number(kpis.tasa_contacto || 0));
+  if (fidKpiFinalizacion) fidKpiFinalizacion.textContent = formatPct(Number(kpis.tasa_finalizacion || 0));
+  if (fidKpiConversion) fidKpiConversion.textContent = formatPct(Number(kpis.tasa_conversion || 0));
+  if (fidKpiPrecio) fidKpiPrecio.textContent = formatPct(Number(kpis.pct_precio || 0));
+  if (fidKpiNoRespondio) fidKpiNoRespondio.textContent = formatPct(Number(kpis.pct_no_respondio || 0));
+  if (fidKpiFueraVentana) fidKpiFueraVentana.textContent = formatPct(Number(kpis.pct_fuera_ventana || 0));
+}
+
+function renderFidFunnelChart(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length || !safeRows.some((row) => Number(row?.value || 0) > 0)) {
+    if (chartState.fidFunnel) {
+      chartState.fidFunnel.destroy();
+      chartState.fidFunnel = null;
+    }
+    setFidChartStatus(fidChartFunnelStatus, 'Sin datos para este alcance.');
+    return;
+  }
+  setFidChartStatus(fidChartFunnelStatus, '');
+  createFidChart(fidChartFunnelEl, 'fidFunnel', {
+    type: 'bar',
+    data: {
+      labels: safeRows.map((row) => row.label),
+      datasets: [
+        {
+          label: 'Casos',
+          data: safeRows.map((row) => Number(row.value || 0)),
+          backgroundColor: safeRows.map((_, idx) => colorByIndex(idx, 0.72)),
+          borderColor: safeRows.map((_, idx) => colorByIndex(idx, 0.98)),
+          borderWidth: 1,
+          borderRadius: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderFidResultadosChart(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length || !safeRows.some((row) => Number(row?.value || 0) > 0)) {
+    if (chartState.fidResultados) {
+      chartState.fidResultados.destroy();
+      chartState.fidResultados = null;
+    }
+    setFidChartStatus(fidChartResultadosStatus, 'Sin resultados para mostrar.');
+    return;
+  }
+  setFidChartStatus(fidChartResultadosStatus, '');
+  createFidChart(fidChartResultadosEl, 'fidResultados', {
+    type: 'doughnut',
+    data: {
+      labels: safeRows.map((row) => row.label),
+      datasets: [
+        {
+          data: safeRows.map((row) => Number(row.value || 0)),
+          backgroundColor: ['rgba(52, 211, 153, 0.8)', 'rgba(251, 191, 36, 0.8)', 'rgba(248, 113, 113, 0.8)'],
+          borderColor: ['#22c55e', '#f59e0b', '#ef4444'],
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom' } },
+    },
+  });
+}
+
+function renderFidHorizontalBarChart(canvas, key, rows, statusEl, label) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length || !safeRows.some((row) => Number(row?.value || 0) > 0)) {
+    if (chartState[key]) {
+      chartState[key].destroy();
+      chartState[key] = null;
+    }
+    setFidChartStatus(statusEl, 'Sin datos para este alcance.');
+    return;
+  }
+  setFidChartStatus(statusEl, '');
+  createFidChart(canvas, key, {
+    type: 'bar',
+    data: {
+      labels: safeRows.map((row) => row.label),
+      datasets: [
+        {
+          label,
+          data: safeRows.map((row) => Number(row.value || 0)),
+          backgroundColor: safeRows.map((_, idx) => colorByIndex(idx, 0.72)),
+          borderColor: safeRows.map((_, idx) => colorByIndex(idx, 0.98)),
+          borderWidth: 1,
+          borderRadius: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderFidVendedorasChart(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length || !safeRows.some((row) => Number(row?.gestionados || 0) > 0)) {
+    if (chartState.fidVendedoras) {
+      chartState.fidVendedoras.destroy();
+      chartState.fidVendedoras = null;
+    }
+    setFidChartStatus(fidChartVendedorasStatus, 'Sin comparativo disponible.');
+    return;
+  }
+  setFidChartStatus(fidChartVendedorasStatus, '');
+  createFidChart(fidChartVendedorasEl, 'fidVendedoras', {
+    type: 'bar',
+    data: {
+      labels: safeRows.map((row) => row.label),
+      datasets: [
+        {
+          label: 'Gestionados',
+          data: safeRows.map((row) => Number(row.gestionados || 0)),
+          backgroundColor: 'rgba(96, 165, 250, 0.75)',
+        },
+        {
+          label: 'Finalizados',
+          data: safeRows.map((row) => Number(row.finalizados || 0)),
+          backgroundColor: 'rgba(251, 191, 36, 0.75)',
+        },
+        {
+          label: 'Convertidas',
+          data: safeRows.map((row) => Number(row.convertidas || 0)),
+          backgroundColor: 'rgba(52, 211, 153, 0.75)',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderFidelizacionGraficas(data = {}) {
+  fidGraficasPayload = data || {};
+  renderFidGraficasKpis(data?.kpis || {});
+  renderFidFunnelChart(data?.funnel || []);
+  renderFidResultadosChart(data?.resultados || []);
+  renderFidHorizontalBarChart(fidChartRazonesEl, 'fidRazones', data?.razones_cierre || [], fidChartRazonesStatus, 'Cierres');
+  renderFidHorizontalBarChart(
+    fidChartTiempoEl,
+    'fidTiempo',
+    data?.tiempo_contacto || [],
+    fidChartTiempoStatus,
+    'Casos'
+  );
+  renderFidVendedorasChart(data?.vendedoras || []);
+}
+
 function renderFidelizacionDashboardScopeSelect(rows = []) {
   if (!fidDashboardScopeSelect) return;
   const current = String(fidDashboardScopeSelect.value || 'latest');
@@ -16767,9 +16983,52 @@ async function loadFidelizacionReportes() {
       renderFidelizacionReportesAdmin([]);
     }
     setStatusMessage(fidReportesStatus, '');
+    if (fidGraficasOverlay?.classList.contains('open')) {
+      await loadFidelizacionGraficas();
+    }
   } catch (error) {
     setStatusMessage(fidReportesStatus, error.message || 'Error al cargar reportes.', 'error');
   }
+}
+
+async function loadFidelizacionGraficas() {
+  await ensureFidelizacionContext();
+  if (!fidGraficasStatus) return;
+  setStatusMessage(fidGraficasStatus, 'Cargando graficas...');
+  try {
+    const query = new URLSearchParams();
+    query.set('scope', fidReportScope === 'all' ? 'all' : 'run');
+    if (fidReportScope !== 'all' && fidReportRunId) query.set('run_id', String(fidReportRunId));
+    const res = await fetchJSON(`/api/fidelizacion/dashboard/graficas?${query.toString()}`);
+    renderFidelizacionGraficas(res || {});
+    if (fidGraficasMeta) {
+      if (res?.scope === 'all') {
+        fidGraficasMeta.textContent = 'Mostrando historico de todas las corridas.';
+      } else {
+        const run = res?.run;
+        const runLabel = run?.id ? `Corrida #${run.id}` : 'Corrida';
+        const runDate = run?.run_date ? formatDateLong(run.run_date) : '-';
+        fidGraficasMeta.textContent = `${runLabel} - ${runDate}`;
+      }
+    }
+    setStatusMessage(fidGraficasStatus, '');
+  } catch (error) {
+    destroyFidelizacionCharts();
+    setStatusMessage(fidGraficasStatus, error.message || 'Error al cargar graficas.', 'error');
+  }
+}
+
+function closeFidelizacionGraficasModal() {
+  destroyFidelizacionCharts();
+  if (fidGraficasStatus) fidGraficasStatus.textContent = '';
+  if (fidGraficasOverlay) fidGraficasOverlay.classList.remove('open');
+}
+
+async function openFidelizacionGraficasModal() {
+  if (fidGraficasOverlay) fidGraficasOverlay.classList.add('open');
+  if (fidGraficasTitle) fidGraficasTitle.textContent = 'Graficas generales';
+  if (fidGraficasMeta) fidGraficasMeta.textContent = 'Cargando...';
+  await loadFidelizacionGraficas();
 }
 
 function closeFidelizacionDashboardModal() {
@@ -16944,6 +17203,7 @@ function initFidelizacion() {
   renderFidelizacionMisRows([]);
   renderFidelizacionReportesAdmin([]);
   renderFidelizacionDashboardCards({});
+  destroyFidelizacionCharts();
   renderFidelizacionRuns([]);
   if (fidelizacionRefreshBtn) fidelizacionRefreshBtn.addEventListener('click', () => loadFidelizacionPanel());
   if (fidelizacionRunBtn) fidelizacionRunBtn.addEventListener('click', runFidelizacionManual);
@@ -16959,6 +17219,14 @@ function initFidelizacion() {
     });
   }
   if (fidReportesRefreshBtn) fidReportesRefreshBtn.addEventListener('click', loadFidelizacionReportes);
+  if (fidOpenGraficasBtn) fidOpenGraficasBtn.addEventListener('click', openFidelizacionGraficasModal);
+  if (fidGraficasRefreshBtn) fidGraficasRefreshBtn.addEventListener('click', loadFidelizacionGraficas);
+  if (fidGraficasCloseBtn) fidGraficasCloseBtn.addEventListener('click', closeFidelizacionGraficasModal);
+  if (fidGraficasOverlay) {
+    fidGraficasOverlay.addEventListener('click', (event) => {
+      if (event.target === fidGraficasOverlay) closeFidelizacionGraficasModal();
+    });
+  }
   if (fidDashboardScopeSelect) {
     fidDashboardScopeSelect.addEventListener('change', () => {
       loadFidelizacionReportes();

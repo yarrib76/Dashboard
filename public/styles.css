@@ -939,6 +939,13 @@ input[type='month'] {
   border-color: rgba(123, 215, 255, 0.5);
 }
 
+.fid-chart-launch {
+  appearance: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .tile-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -2752,6 +2759,21 @@ body.theme-light .fidelizacion-card-reason {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 14px 16px 18px;
+}
+
+.fid-graficas-modal {
+  max-width: 1280px;
+}
+
+.fid-graficas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.fid-graficas-wide {
+  grid-column: 1 / -1;
 }
 
 .fid-report-click {
@@ -4650,6 +4672,10 @@ body.theme-light select:focus {
   .table-wrap {
     margin: 0 -8px;
     padding: 0 8px;
+  }
+
+  .fid-graficas-grid {
+    grid-template-columns: 1fr;
   }
 }
 

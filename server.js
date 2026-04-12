@@ -6746,6 +6746,218 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
   }
 });
 
+app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver estas graficas' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
+
+    const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
+    let effectiveRunId = runId;
+    if (scope !== 'all' && !effectiveRunId) {
+      const latest = await getFidelizacionLatestRun(pool);
+      effectiveRunId = latest?.id || 0;
+    }
+    if (scope !== 'all' && !effectiveRunId) {
+      return res.json({
+        scope: 'run',
+        run_id: null,
+        run: null,
+        kpis: {},
+        funnel: [],
+        resultados: [],
+        razones_cierre: [],
+        tiempo_contacto: [],
+        vendedoras: [],
+      });
+    }
+
+    const where = [`(r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))`];
+    const params = [];
+    if (scope !== 'all') {
+      where.push('r.run_id = ?');
+      params.push(effectiveRunId);
+    }
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+
+    const [funnelRows] = await pool.query(
+      `SELECT
+         SUM(r.estado='PENDIENTE') AS pendientes,
+         SUM(r.estado='EN_GESTION') AS en_gestion,
+         SUM(r.estado='CONTACTADA') AS contactadas,
+         SUM(r.estado='CERRADA') AS finalizadas,
+         SUM(r.resultado IN (?,?)) AS convertidas
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}`,
+      [resultadoCodes.convertida, resultadoCodes.convertidaFueraVentana, ...params]
+    );
+    const funnelBase = funnelRows?.[0] || {};
+
+    const [resultadosRows] = await pool.query(
+      `SELECT
+         SUM(r.resultado=?) AS convertida,
+         SUM(r.resultado=?) AS convertida_fuera_ventana,
+         SUM(r.resultado=?) AS no_convertida
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}`,
+      [resultadoCodes.convertida, resultadoCodes.convertidaFueraVentana, resultadoCodes.noConvertida, ...params]
+    );
+    const resultadosBase = resultadosRows?.[0] || {};
+
+    const [kpiRows] = await pool.query(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(r.contactado_at IS NOT NULL) AS contactadas_total,
+         SUM(r.estado='CERRADA') AS finalizadas,
+         SUM(r.resultado=?) AS convertida,
+         SUM(r.resultado=?) AS convertida_fuera_ventana,
+         SUM(r.resultado=?) AS no_convertida,
+         SUM(
+           CASE WHEN r.resultado = ? AND UPPER(TRIM(SUBSTRING_INDEX(COALESCE(r.closed_reason,''), '|', 1))) = 'PRECIO'
+             THEN 1 ELSE 0 END
+         ) AS no_convertida_precio,
+         SUM(
+           CASE WHEN r.resultado = ? AND UPPER(TRIM(SUBSTRING_INDEX(COALESCE(r.closed_reason,''), '|', 1))) = 'NO_RESPONDIO'
+             THEN 1 ELSE 0 END
+         ) AS no_convertida_no_respondio
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}`,
+      [
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.noConvertida,
+        resultadoCodes.noConvertida,
+        resultadoCodes.noConvertida,
+        ...params,
+      ]
+    );
+    const kpiBase = kpiRows?.[0] || {};
+    const total = Number(kpiBase.total) || 0;
+    const totalFinalizadas = Number(kpiBase.finalizadas) || 0;
+    const totalNoConvertida = Number(kpiBase.no_convertida) || 0;
+
+    const [reasonRows] = await pool.query(
+      `SELECT
+         UPPER(TRIM(SUBSTRING_INDEX(COALESCE(r.closed_reason, ''), '|', 1))) AS motivo_codigo,
+         COUNT(*) AS total
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}
+         AND r.resultado = ?
+         AND COALESCE(TRIM(r.closed_reason), '') <> ''
+       GROUP BY motivo_codigo
+       ORDER BY total DESC, motivo_codigo ASC
+       LIMIT 10`,
+      [...params, resultadoCodes.noConvertida]
+    );
+
+    const [timeRows] = await pool.query(
+      `SELECT
+         SUM(CASE WHEN r.contactado_at IS NULL THEN 1 ELSE 0 END) AS sin_contacto,
+         SUM(CASE WHEN r.contactado_at IS NOT NULL AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) < 1 THEN 1 ELSE 0 END) AS lt_1h,
+         SUM(CASE WHEN r.contactado_at IS NOT NULL AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) >= 1 AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) < 6 THEN 1 ELSE 0 END) AS h_1_6,
+         SUM(CASE WHEN r.contactado_at IS NOT NULL AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) >= 6 AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) < 24 THEN 1 ELSE 0 END) AS h_6_24,
+         SUM(CASE WHEN r.contactado_at IS NOT NULL AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) >= 24 AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) < 48 THEN 1 ELSE 0 END) AS h_24_48,
+         SUM(CASE WHEN r.contactado_at IS NOT NULL AND TIMESTAMPDIFF(HOUR, r.created_at, r.contactado_at) >= 48 THEN 1 ELSE 0 END) AS gt_48h
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}`,
+      params
+    );
+    const timeBase = timeRows?.[0] || {};
+
+    const [sellerRows] = await pool.query(
+      `SELECT
+         r.vendedora_id,
+         COALESCE(CONCAT(v.Nombre, ' ', COALESCE(v.Apellido, '')), 'Sin asignar') AS vendedora,
+         COUNT(*) AS gestionados,
+         SUM(r.estado='CERRADA') AS finalizados,
+         SUM(r.resultado IN (?,?)) AS convertidas,
+         ROUND(100 * SUM(r.resultado IN (?,?)) / NULLIF(SUM(r.estado='CERRADA'), 0), 1) AS tasa_conversion
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       ${whereSql}
+       GROUP BY r.vendedora_id, v.Nombre, v.Apellido
+       ORDER BY convertidas DESC, gestionados DESC, vendedora ASC
+       LIMIT 12`,
+      [
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        ...params,
+      ]
+    );
+
+    const runMeta = scope === 'all' ? null : await loadFidelizacionRunById(pool, effectiveRunId);
+
+    res.json({
+      scope,
+      run_id: scope === 'all' ? null : effectiveRunId,
+      run: runMeta,
+      kpis: {
+        tasa_contacto: total ? round2((Number(kpiBase.contactadas_total || 0) / total) * 100) : 0,
+        tasa_finalizacion: total ? round2((totalFinalizadas / total) * 100) : 0,
+        tasa_conversion: totalFinalizadas
+          ? round2(
+              ((Number(kpiBase.convertida || 0) + Number(kpiBase.convertida_fuera_ventana || 0)) / totalFinalizadas) * 100
+            )
+          : 0,
+        pct_precio: totalNoConvertida ? round2((Number(kpiBase.no_convertida_precio || 0) / totalNoConvertida) * 100) : 0,
+        pct_no_respondio: totalNoConvertida
+          ? round2((Number(kpiBase.no_convertida_no_respondio || 0) / totalNoConvertida) * 100)
+          : 0,
+        pct_fuera_ventana:
+          Number(kpiBase.convertida || 0) + Number(kpiBase.convertida_fuera_ventana || 0) > 0
+            ? round2(
+                (Number(kpiBase.convertida_fuera_ventana || 0) /
+                  (Number(kpiBase.convertida || 0) + Number(kpiBase.convertida_fuera_ventana || 0))) *
+                  100
+              )
+            : 0,
+      },
+      funnel: [
+        { label: 'Pendientes', value: Number(funnelBase.pendientes) || 0 },
+        { label: 'En gestion', value: Number(funnelBase.en_gestion) || 0 },
+        { label: 'Contactadas', value: Number(funnelBase.contactadas) || 0 },
+        { label: 'Finalizadas', value: Number(funnelBase.finalizadas) || 0 },
+        { label: 'Convertidas', value: Number(funnelBase.convertidas) || 0 },
+      ],
+      resultados: [
+        { label: 'Convertida', value: Number(resultadosBase.convertida) || 0 },
+        { label: 'Convertida fuera ventana', value: Number(resultadosBase.convertida_fuera_ventana) || 0 },
+        { label: 'No convertida', value: Number(resultadosBase.no_convertida) || 0 },
+      ],
+      razones_cierre: (reasonRows || []).map((row) => ({
+        label: String(row.motivo_codigo || '').trim() || 'SIN_DATO',
+        value: Number(row.total) || 0,
+      })),
+      tiempo_contacto: [
+        { label: '< 1h', value: Number(timeBase.lt_1h) || 0 },
+        { label: '1-6h', value: Number(timeBase.h_1_6) || 0 },
+        { label: '6-24h', value: Number(timeBase.h_6_24) || 0 },
+        { label: '24-48h', value: Number(timeBase.h_24_48) || 0 },
+        { label: '> 48h', value: Number(timeBase.gt_48h) || 0 },
+        { label: 'Sin contacto', value: Number(timeBase.sin_contacto) || 0 },
+      ],
+      vendedoras: (sellerRows || []).map((row) => ({
+        vendedora_id: row.vendedora_id == null ? null : Number(row.vendedora_id),
+        label: String(row.vendedora || '').trim() || 'Sin asignar',
+        gestionados: Number(row.gestionados) || 0,
+        finalizados: Number(row.finalizados) || 0,
+        convertidas: Number(row.convertidas) || 0,
+        tasa_conversion: Number(row.tasa_conversion) || 0,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar graficas de fidelizacion', error: error.message });
+  }
+});
+
 app.get('/api/fidelizacion/reportes/admin', async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
