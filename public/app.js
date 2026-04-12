@@ -661,6 +661,8 @@ const fidChartResultadosStatus = document.getElementById('fid-chart-resultados-s
 const fidChartRazonesStatus = document.getElementById('fid-chart-razones-status');
 const fidChartTiempoStatus = document.getElementById('fid-chart-tiempo-status');
 const fidChartVendedorasStatus = document.getElementById('fid-chart-vendedoras-status');
+const fidRazonesCross = document.getElementById('fid-razones-cross');
+const fidRazonesLectura = document.getElementById('fid-razones-lectura');
 const fidBeneficiosOverlay = document.getElementById('fid-beneficios-overlay');
 const fidBeneficiosTitle = document.getElementById('fid-beneficios-title');
 const fidBeneficiosCloseBtn = document.getElementById('fid-beneficios-close');
@@ -16349,6 +16351,76 @@ function renderFidResultadosChart(rows = []) {
   });
 }
 
+function renderFidRazonesInsight(reading = {}, rows = []) {
+  if (fidRazonesCross) {
+    fidRazonesCross.textContent =
+      String(reading?.cross_default || '').trim() || 'Pasa el mouse por una barra para ver la orientacion por motivo.';
+  }
+  if (fidRazonesLectura) {
+    fidRazonesLectura.textContent =
+      String(reading?.practical || '').trim() || 'Sin lectura practica disponible para este alcance.';
+  }
+  if ((!rows || !rows.length) && fidRazonesCross) {
+    fidRazonesCross.textContent = 'No hay motivos con datos suficientes en este alcance.';
+  }
+}
+
+function renderFidRazonesChart(rows = [], reading = {}) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+  renderFidRazonesInsight(reading, safeRows);
+  if (!safeRows.length || !safeRows.some((row) => Number(row?.value || 0) > 0)) {
+    if (chartState.fidRazones) {
+      chartState.fidRazones.destroy();
+      chartState.fidRazones = null;
+    }
+    setFidChartStatus(fidChartRazonesStatus, 'Sin datos para este alcance.');
+    return;
+  }
+  setFidChartStatus(fidChartRazonesStatus, '');
+  createFidChart(fidChartRazonesEl, 'fidRazones', {
+    type: 'bar',
+    data: {
+      labels: safeRows.map((row) => row.label),
+      datasets: [
+        {
+          label: 'No convertidas',
+          data: safeRows.map((row) => Number(row.value || 0)),
+          backgroundColor: safeRows.map((_, idx) => colorByIndex(idx, 0.72)),
+          borderColor: safeRows.map((_, idx) => colorByIndex(idx, 0.98)),
+          borderWidth: 1,
+          borderRadius: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      indexAxis: 'y',
+      onHover(_event, elements) {
+        if (!fidRazonesCross) return;
+        if (!elements?.length) {
+          fidRazonesCross.textContent =
+            String(reading?.cross_default || '').trim() || 'Pasa el mouse por una barra para ver la orientacion por motivo.';
+          return;
+        }
+        const row = safeRows?.[Number(elements[0].index) || 0];
+        fidRazonesCross.textContent = String(row?.cross_analysis || '').trim() || String(reading?.cross_default || '').trim();
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterLabel(context) {
+              const row = safeRows?.[Number(context.dataIndex) || 0];
+              return row?.tooltip ? `Guia: ${row.tooltip}` : '';
+            },
+          },
+        },
+      },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
 function renderFidHorizontalBarChart(canvas, key, rows, statusEl, label) {
   const safeRows = Array.isArray(rows) ? rows : [];
   if (!safeRows.length || !safeRows.some((row) => Number(row?.value || 0) > 0)) {
@@ -16430,7 +16502,7 @@ function renderFidelizacionGraficas(data = {}) {
   renderFidGraficasKpis(data?.kpis || {});
   renderFidFunnelChart(data?.funnel || []);
   renderFidResultadosChart(data?.resultados || []);
-  renderFidHorizontalBarChart(fidChartRazonesEl, 'fidRazones', data?.razones_cierre || [], fidChartRazonesStatus, 'Cierres');
+  renderFidRazonesChart(data?.razones_cierre || [], data?.razones_cierre_lectura || {});
   renderFidHorizontalBarChart(
     fidChartTiempoEl,
     'fidTiempo',

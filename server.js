@@ -5651,6 +5651,97 @@ function pushFidelizacionSignal(list, text) {
   if (!list.includes(value)) list.push(value);
 }
 
+function getFidelizacionNoConversionReasonGuidance(reasonCodeRaw) {
+  const code = String(reasonCodeRaw || '').trim().toUpperCase();
+  const map = {
+    PRECIO: {
+      tooltip:
+        'Si domina este motivo, revisar propuesta comercial, beneficio ofrecido y sensibilidad del cliente al ticket.',
+      cross_analysis: 'Cruzar con ticket promedio, monto objetivo, score y vendedora.',
+      practical:
+        'El foco principal parece comercial: revisar propuesta, rango de beneficio y posicionamiento de valor antes de exigir mas gestion.',
+    },
+    NO_RESPONDIO: {
+      tooltip:
+        'Si domina este motivo, revisar velocidad, canal, horario y cantidad de intentos de seguimiento.',
+      cross_analysis: 'Cruzar con tiempo al primer contacto, canal usado y performance por vendedora.',
+      practical:
+        'El principal ajuste parece operativo: mejorar velocidad y disciplina de contacto antes de cambiar la oferta.',
+    },
+    SIN_INTERES: {
+      tooltip:
+        'Si domina este motivo, revisar segmentacion y encaje real entre oferta, momento y perfil del cliente.',
+      cross_analysis: 'Cruzar con score, frecuencia previa y origen/encuesta del cliente.',
+      practical:
+        'La oportunidad parece estar en segmentacion: conviene revisar a que clientes se contacta y con que propuesta.',
+    },
+    COMPRA_POSTERGADA: {
+      tooltip:
+        'Si domina este motivo, hay intencion pero el momento de compra no coincide con el de la accion comercial.',
+      cross_analysis: 'Cruzar con recency, mes de ultima compra y conversiones posteriores.',
+      practical:
+        'La mejora probable esta en timing y recontacto: no necesariamente en precio, sino en volver a contactar en otra ventana.',
+    },
+    SIN_STOCK: {
+      tooltip:
+        'Si domina este motivo, la limitacion principal parece operativa y de disponibilidad, no de interes del cliente.',
+      cross_analysis: 'Cruzar con oferta enviada, categoria de producto y fecha de contacto.',
+      practical:
+        'El cuello de botella parece operativo: revisar stock, sustitutos y coordinacion entre venta y disponibilidad.',
+    },
+    OTRO: {
+      tooltip:
+        'Si domina este motivo, la calidad de cierre no esta estandarizada y se pierde capacidad analitica.',
+      cross_analysis: 'Cruzar con detalle textual del cierre y vendedora para depurar motivos.',
+      practical:
+        'Hace falta ordenar mejor la carga de motivos para no perder lectura accionable del proceso.',
+    },
+    SIN_DATO: {
+      tooltip: 'Hay cierres sin motivo claro registrado, lo que reduce la capacidad de analisis.',
+      cross_analysis: 'Cruzar con usuario/vendedora y fecha de cierre para detectar problemas de carga.',
+      practical: 'Primero conviene mejorar la calidad del dato antes de sacar conclusiones comerciales fuertes.',
+    },
+  };
+  return (
+    map[code] || {
+      tooltip:
+        'Motivo nuevo o no clasificado automaticamente. Conviene revisar su significado y decidir si merece una categoria propia.',
+      cross_analysis: 'Cruzar con vendedora, tiempo de contacto, score y detalle textual del cierre.',
+      practical:
+        'Hay motivos no estandarizados; conviene validar si corresponden a una nueva categoria analitica o a un problema de carga.',
+      needs_ai: true,
+    }
+  );
+}
+
+function buildFidelizacionNoConversionReading(reasonRows = []) {
+  const safeRows = Array.isArray(reasonRows) ? reasonRows.filter((row) => Number(row?.value || 0) > 0) : [];
+  if (!safeRows.length) {
+    return {
+      cross_default: 'Pasa el mouse por una barra para ver la orientacion por motivo.',
+      practical:
+        'Todavia no hay suficientes no convertidas con motivo cargado para construir una lectura accionable.',
+      needs_ai: false,
+    };
+  }
+  const ordered = safeRows.slice().sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+  const top = ordered[0];
+  const topGuide = getFidelizacionNoConversionReasonGuidance(top?.label || '');
+  const total = ordered.reduce((acc, row) => acc + (Number(row.value) || 0), 0);
+  const topPct = total ? round2(((Number(top?.value || 0) || 0) / total) * 100) : 0;
+  const second = ordered[1] || null;
+  const secondCode = String(second?.label || '').trim();
+  const practical =
+    second && Number(second.value || 0) > 0
+      ? `${topGuide.practical} Hoy domina ${String(top?.label || '')} (${topPct}%). El segundo motivo es ${secondCode}, por lo que conviene priorizar primero esa friccion dominante y despues validar el patron secundario.`
+      : `${topGuide.practical} Hoy domina ${String(top?.label || '')} (${topPct}%), por lo que ese parece ser el principal foco de mejora de la corrida.`;
+  return {
+    cross_default: topGuide.cross_analysis,
+    practical,
+    needs_ai: Boolean(topGuide.needs_ai || ordered.some((row) => getFidelizacionNoConversionReasonGuidance(row.label).needs_ai)),
+  };
+}
+
 function parseFidelizacionClosedReason(reasonRaw) {
   const raw = String(reasonRaw || '').trim();
   const code = raw.split('|')[0].trim().toUpperCase();
@@ -6852,6 +6943,74 @@ app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
        LIMIT 10`,
       [...params, resultadoCodes.noConvertida]
     );
+    let razonesCierre = (reasonRows || []).map((row) => {
+      const code = String(row.motivo_codigo || '').trim() || 'SIN_DATO';
+      const guide = getFidelizacionNoConversionReasonGuidance(code);
+      return {
+        label: code,
+        value: Number(row.total) || 0,
+        tooltip: guide.tooltip,
+        cross_analysis: guide.cross_analysis,
+        practical_hint: guide.practical,
+        needs_ai: Boolean(guide.needs_ai),
+      };
+    });
+    const razonesReadingBase = buildFidelizacionNoConversionReading(razonesCierre);
+
+    if (openai && razonesCierre.some((row) => row.needs_ai)) {
+      try {
+        const unknownReasons = razonesCierre.filter((row) => row.needs_ai).map((row) => ({
+          motivo: row.label,
+          cantidad: row.value,
+        }));
+        const completion = await withRetry(() =>
+          openai.chat.completions.create({
+            model: OPENAI_MODEL || 'gpt-4o-mini',
+            temperature: 0.2,
+            response_format: { type: 'json_object' },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Eres un analista comercial interno. Devuelve solo JSON valido con esta forma: ' +
+                  '{"motivos":[{"motivo":"...","tooltip":"...","cross_analysis":"...","practical_hint":"..."}],"lectura_practica":"..."} ' +
+                  'Responde en espanol breve y no inventes categorias fuera de las recibidas.',
+              },
+              {
+                role: 'user',
+                content: `Analiza estos motivos de no conversion no estandarizados:\n${JSON.stringify(unknownReasons)}`,
+              },
+            ],
+          })
+        );
+        const payload = extractJsonObjectFromText(String(completion?.choices?.[0]?.message?.content || '').trim());
+        const byReason = new Map(
+          (Array.isArray(payload?.motivos) ? payload.motivos : [])
+            .map((row) => ({
+              motivo: String(row?.motivo || '').trim().toUpperCase(),
+              tooltip: String(row?.tooltip || '').trim(),
+              cross_analysis: String(row?.cross_analysis || '').trim(),
+              practical_hint: String(row?.practical_hint || '').trim(),
+            }))
+            .filter((row) => row.motivo)
+            .map((row) => [row.motivo, row])
+        );
+        razonesCierre = razonesCierre.map((row) => {
+          const ai = byReason.get(String(row.label || '').trim().toUpperCase());
+          if (!ai) return row;
+          return {
+            ...row,
+            tooltip: ai.tooltip || row.tooltip,
+            cross_analysis: ai.cross_analysis || row.cross_analysis,
+            practical_hint: ai.practical_hint || row.practical_hint,
+            needs_ai: false,
+          };
+        });
+        if (payload?.lectura_practica) {
+          razonesReadingBase.practical = String(payload.lectura_practica || '').trim() || razonesReadingBase.practical;
+        }
+      } catch (_err) {}
+    }
 
     const [timeRows] = await pool.query(
       `SELECT
@@ -6928,10 +7087,17 @@ app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
         { label: 'Convertida fuera ventana', value: Number(resultadosBase.convertida_fuera_ventana) || 0 },
         { label: 'No convertida', value: Number(resultadosBase.no_convertida) || 0 },
       ],
-      razones_cierre: (reasonRows || []).map((row) => ({
-        label: String(row.motivo_codigo || '').trim() || 'SIN_DATO',
-        value: Number(row.total) || 0,
+      razones_cierre: razonesCierre.map((row) => ({
+        label: row.label,
+        value: row.value,
+        tooltip: row.tooltip,
+        cross_analysis: row.cross_analysis,
+        practical_hint: row.practical_hint,
       })),
+      razones_cierre_lectura: {
+        cross_default: razonesReadingBase.cross_default,
+        practical: razonesReadingBase.practical,
+      },
       tiempo_contacto: [
         { label: '< 1h', value: Number(timeBase.lt_1h) || 0 },
         { label: '1-6h', value: Number(timeBase.h_1_6) || 0 },

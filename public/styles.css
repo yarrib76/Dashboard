@@ -2782,6 +2782,14 @@ body.theme-light .fidelizacion-card-reason {
   grid-column: 1 / -1;
 }
 
+.fid-graficas-insight {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
 .fid-report-click {
   cursor: pointer;
   font-weight: 700;
