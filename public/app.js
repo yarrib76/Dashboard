@@ -9230,6 +9230,11 @@ function renderPedidosClientes(rows) {
       <td>${row.mail || row.email || ''}</td>
       <td>${row.totalPedidos ?? 0}</td>
       <td>${row.tipo || ''}</td>
+      <td>${
+        Number(row.fidelizacionActiva || 0) === 1
+          ? '<span class="badge yellow">ACTIVA</span>'
+          : '<span class="badge gray">-</span>'
+      }</td>
     `;
     tablaPedidosClientesBody.appendChild(tr);
 

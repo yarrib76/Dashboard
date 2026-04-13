@@ -9234,6 +9234,7 @@ app.get('/api/pedidos/clientes', async (req, res) => {
       apellido: 'c.apellido',
       totalPedidos: 'tot.totalPedidos',
       tipo: 'tipo',
+      fidelizacionActiva: 'fidelizacionActiva',
     };
     const orderBy = sortKey && sortMap[sortKey] ? `${sortMap[sortKey]} ${sortDir}` : 'c.nombre, c.apellido';
 
@@ -9296,7 +9297,16 @@ app.get('/api/pedidos/clientes', async (req, res) => {
                AND f.fecha < cp.fecha
            ) THEN 'Recurrente'
            ELSE 'Nuevo'
-         END AS tipo
+         END AS tipo,
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM fidelizacion_recomendacion fr
+             WHERE fr.cliente_id = cp.id_cliente
+               AND fr.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+           ) THEN 1
+           ELSE 0
+         END AS fidelizacionActiva
       FROM controlpedidos cp
       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
       LEFT JOIN (
