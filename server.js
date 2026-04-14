@@ -5573,7 +5573,17 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
         return res.status(404).json({ message: 'No se encontro un pedido con ese numero.' });
       }
       const manualPedidoDate = manualPedido.fecha ? new Date(manualPedido.fecha) : null;
-      if (!manualPedidoDate || manualPedidoDate.getTime() < new Date(current.created_at).getTime()) {
+      const createdAtDate = current.created_at ? new Date(current.created_at) : null;
+      const createdAtDateOnly = createdAtDate ? new Date(createdAtDate.getFullYear(), createdAtDate.getMonth(), createdAtDate.getDate()) : null;
+      const manualPedidoDateOnly = manualPedidoDate
+        ? new Date(manualPedidoDate.getFullYear(), manualPedidoDate.getMonth(), manualPedidoDate.getDate())
+        : null;
+      if (
+        !manualPedidoDate ||
+        !manualPedidoDateOnly ||
+        !createdAtDateOnly ||
+        manualPedidoDateOnly.getTime() < createdAtDateOnly.getTime()
+      ) {
         await conn.rollback();
         return res.status(400).json({ message: 'El pedido manual debe ser posterior a la creacion de la fidelizacion.' });
       }
