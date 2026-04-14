@@ -17325,7 +17325,10 @@ async function doFidelizacionAction(action, id) {
                 } else if (closeRes?.mode === 'MANUAL_CONVERSION_OUT_OF_WINDOW') {
                   alert(`Pedido relacionado manualmente fuera de ventana.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
                 }
-              } else {
+                } else {
+                if (manualErr?.message) {
+                  alert(manualErr.message);
+                }
                 throw manualErr;
               }
             }
