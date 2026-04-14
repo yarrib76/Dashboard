@@ -5425,10 +5425,27 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
     const conversionReasonCode = String(req.body?.conversion_reason_code || '').trim();
     const conversionReasonNoteRaw = String(req.body?.conversion_reason_note || '').trim();
     const conversionReasonNote = conversionReasonNoteRaw ? conversionReasonNoteRaw.slice(0, 255) : null;
+    const manualOrderNumber = String(req.body?.manual_order_number || req.body?.nropedido || '').trim();
+    const manualMatchNoteRaw = String(req.body?.conversion_match_note || '').trim();
+    const manualMatchNote = manualMatchNoteRaw ? manualMatchNoteRaw.slice(0, 255) : null;
     const conversionReasonCatalog = pedido ? await listFidelizacionConversionReasonsCatalogo(conn) : [];
     const conversionReasonCodeSet = new Set(
       conversionReasonCatalog.map((row) => String(row.codigo || '').trim().toUpperCase()).filter(Boolean)
     );
+
+    const validatePedidoAvailability = async (pedidoId) => {
+      const [[existing]] = await conn.query(
+        `SELECT id
+         FROM fidelizacion_recomendacion
+         WHERE pedido_id = ?
+           AND id <> ?
+           AND estado = 'CERRADA'
+           AND resultado IN (?, ?)
+         LIMIT 1`,
+        [Number(pedidoId), recId, resultadoCodes.convertida, resultadoCodes.convertidaFueraVentana]
+      );
+      return !existing;
+    };
 
     if (pedido && withinWindow) {
       if (!conversionReasonCode) {
@@ -5450,6 +5467,10 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
              resultado = ?,
              conversion_reason_code = ?,
              conversion_reason_note = ?,
+             conversion_match_type = 'DIRECT',
+             conversion_match_note = NULL,
+             conversion_match_by = NULL,
+             conversion_match_at = NOW(),
              pedido_id = ?,
              converted_at = ?,
              conversion_amount = ?,
@@ -5498,6 +5519,10 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
              resultado = ?,
              conversion_reason_code = ?,
              conversion_reason_note = ?,
+             conversion_match_type = 'DIRECT',
+             conversion_match_note = NULL,
+             conversion_match_by = NULL,
+             conversion_match_at = NOW(),
              pedido_id = ?,
              converted_at = ?,
              conversion_amount = ?,
@@ -5526,6 +5551,109 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
       });
     }
 
+    if (manualOrderNumber) {
+      const [manualCatalogRows] = conversionReasonCatalog.length
+        ? [conversionReasonCatalog]
+        : [await listFidelizacionConversionReasonsCatalogo(conn)];
+      const manualReasonCodeSet = new Set(
+        manualCatalogRows.map((row) => String(row.codigo || '').trim().toUpperCase()).filter(Boolean)
+      );
+      const [[manualPedido]] = await conn.query(
+        `SELECT cp.id, cp.nropedido, cp.id_cliente, cp.fecha, cp.total, cp.vendedora,
+                CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, '')) AS cliente
+         FROM controlpedidos cp
+         LEFT JOIN clientes c ON c.id_clientes = cp.id_cliente
+         WHERE TRIM(COALESCE(cp.nropedido, '')) = ?
+         ORDER BY cp.fecha DESC, cp.id DESC
+         LIMIT 1`,
+        [manualOrderNumber]
+      );
+      if (!manualPedido) {
+        await conn.rollback();
+        return res.status(404).json({ message: 'No se encontro un pedido con ese numero.' });
+      }
+      const manualPedidoDate = manualPedido.fecha ? new Date(manualPedido.fecha) : null;
+      if (!manualPedidoDate || manualPedidoDate.getTime() < new Date(current.created_at).getTime()) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'El pedido manual debe ser posterior a la creacion de la fidelizacion.' });
+      }
+      const isAvailable = await validatePedidoAvailability(manualPedido.id);
+      if (!isAvailable) {
+        await conn.rollback();
+        return res.status(409).json({ message: 'Ese pedido ya esta vinculado a otra fidelizacion convertida.' });
+      }
+      const manualWithinWindow =
+        Boolean(conversionDeadline) && manualPedidoDate.getTime() <= conversionDeadline.getTime();
+      if (!conversionReasonCode) {
+        await conn.rollback();
+        return res.status(409).json({
+          requires_conversion_reason: true,
+          mode: manualWithinWindow ? 'MANUAL_CONVERSION' : 'MANUAL_CONVERSION_OUT_OF_WINDOW',
+          message: 'Debe indicar motivo de conversion para guardar el pedido manual.',
+          pedido: {
+            id: Number(manualPedido.id),
+            numero: String(manualPedido.nropedido || '').trim(),
+            cliente: String(manualPedido.cliente || '').trim(),
+            fecha: manualPedido.fecha,
+            total: manualPedido.total == null ? null : Number(manualPedido.total),
+            vendedora: String(manualPedido.vendedora || '').trim(),
+          },
+        });
+      }
+      if (!manualReasonCodeSet.has(conversionReasonCode.toUpperCase())) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'Motivo de conversion invalido' });
+      }
+      await conn.query(
+        `UPDATE fidelizacion_recomendacion
+         SET estado = 'CERRADA',
+             resultado = ?,
+             conversion_reason_code = ?,
+             conversion_reason_note = ?,
+             conversion_match_type = 'MANUAL_PEDIDO',
+             conversion_match_note = ?,
+             conversion_match_by = ?,
+             conversion_match_at = NOW(),
+             pedido_id = ?,
+             converted_at = ?,
+             conversion_amount = ?,
+             closed_reason = ?,
+             closed_at = NOW(),
+             estado_updated_at = NOW(),
+             estado_updated_by = ?
+         WHERE id = ?`,
+        [
+          manualWithinWindow ? resultadoCodes.convertida : resultadoCodes.convertidaFueraVentana,
+          conversionReasonCode,
+          conversionReasonNote,
+          manualMatchNote,
+          actorName,
+          Number(manualPedido.id),
+          manualPedido.fecha,
+          manualPedido.total == null ? null : Number(manualPedido.total),
+          manualWithinWindow ? 'MANUAL_PEDIDO' : 'MANUAL_PEDIDO_OUT_OF_WINDOW',
+          actorName,
+          recId,
+        ]
+      );
+      await conn.commit();
+      return res.json({
+        ok: true,
+        mode: manualWithinWindow ? 'MANUAL_CONVERSION' : 'MANUAL_CONVERSION_OUT_OF_WINDOW',
+        message: manualWithinWindow
+          ? 'Se vinculo manualmente un pedido como conversion.'
+          : 'Se vinculo manualmente un pedido como conversion fuera de ventana.',
+        pedido: {
+          id: Number(manualPedido.id),
+          numero: String(manualPedido.nropedido || '').trim(),
+          cliente: String(manualPedido.cliente || '').trim(),
+          fecha: manualPedido.fecha,
+          total: manualPedido.total == null ? null : Number(manualPedido.total),
+          vendedora: String(manualPedido.vendedora || '').trim(),
+        },
+      });
+    }
+
     const motivo = String(req.body?.closed_reason || req.body?.motivo || '').trim();
     if (!motivo) {
       await conn.rollback();
@@ -5545,6 +5673,10 @@ app.post('/api/fidelizacion/recomendaciones/:id/cerrar', async (req, res) => {
            resultado = ?,
            conversion_reason_code = NULL,
            conversion_reason_note = NULL,
+           conversion_match_type = NULL,
+           conversion_match_note = NULL,
+           conversion_match_by = NULL,
+           conversion_match_at = NULL,
            pedido_id = NULL,
            converted_at = NULL,
            conversion_amount = NULL,
@@ -5613,6 +5745,10 @@ app.post('/api/fidelizacion/recomendaciones/:id/reabrir', async (req, res) => {
            resultado = NULL,
            conversion_reason_code = NULL,
            conversion_reason_note = NULL,
+           conversion_match_type = NULL,
+           conversion_match_note = NULL,
+           conversion_match_by = NULL,
+           conversion_match_at = NULL,
            pedido_id = NULL,
            converted_at = NULL,
            conversion_amount = NULL,

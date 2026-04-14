@@ -16199,6 +16199,16 @@ async function postFidelizacionCerrar(id, payload = {}) {
   return data || {};
 }
 
+function buildFidelizacionPedidoSummary(pedido = null) {
+  if (!pedido) return '';
+  const numero = String(pedido.numero || '').trim() || '-';
+  const cliente = String(pedido.cliente || '').trim() || '-';
+  const fecha = pedido.fecha ? formatDateLong(pedido.fecha) : '-';
+  const total = pedido.total == null ? '-' : formatMoney(Number(pedido.total) || 0);
+  const vendedora = String(pedido.vendedora || '').trim() || '-';
+  return `Pedido ${numero}\nCliente: ${cliente}\nFecha: ${fecha}\nTotal: ${total}\nVendedora: ${vendedora}`;
+}
+
 async function ensureFidelizacionContext() {
   if (fidelizacionContext) return;
   await loadFidelizacionContext();
@@ -17247,27 +17257,86 @@ async function doFidelizacionAction(action, id) {
           alert('Felicitaciones por su venta!!!');
         } else if (closeRes?.mode === 'AUTO_CONVERSION_OUT_OF_WINDOW') {
           alert('Hubo venta, pero fuera de la ventana de conversion.');
+        } else if (closeRes?.mode === 'MANUAL_CONVERSION') {
+          alert(`Pedido relacionado manualmente.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
+        } else if (closeRes?.mode === 'MANUAL_CONVERSION_OUT_OF_WINDOW') {
+          alert(`Pedido relacionado manualmente fuera de ventana.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
         }
       } catch (closeErr) {
         if (closeErr?.status === 409 && closeErr?.payload?.requires_conversion_reason) {
+          if (closeErr?.payload?.pedido && String(closeErr?.payload?.mode || '').startsWith('MANUAL_')) {
+            alert(`Pedido encontrado.\n\n${buildFidelizacionPedidoSummary(closeErr?.payload?.pedido)}`);
+          }
           const conversionPayload = await openFidelizacionConversionModal(closeErr?.payload?.mode || '');
           if (!conversionPayload) {
             setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
             return;
           }
-          const closeRes = await postFidelizacionCerrar(id, conversionPayload);
+          const closeRes = await postFidelizacionCerrar(id, {
+            ...conversionPayload,
+            manual_order_number: closeErr?.payload?.pedido?.numero || '',
+            conversion_match_note: closeErr?.payload?.conversion_match_note || '',
+          });
           if (closeRes?.mode === 'AUTO_CONVERSION') {
             alert('Felicitaciones por su venta!!!');
           } else if (closeRes?.mode === 'AUTO_CONVERSION_OUT_OF_WINDOW') {
             alert('Hubo venta, pero fuera de la ventana de conversion.');
+          } else if (closeRes?.mode === 'MANUAL_CONVERSION') {
+            alert(`Pedido relacionado manualmente.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
+          } else if (closeRes?.mode === 'MANUAL_CONVERSION_OUT_OF_WINDOW') {
+            alert(`Pedido relacionado manualmente fuera de ventana.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
           }
         } else if (closeErr?.status === 409 && closeErr?.payload?.requires_manual_close) {
-          const manual = await openFidelizacionCloseModal();
-          if (!manual) {
-            setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
-            return;
+          const useManualPedido = confirm(
+            'No se encontro un pedido asociado automaticamente.\n\n¿El cliente realizo la compra a nombre de otra persona?'
+          );
+          if (useManualPedido) {
+            const manualOrderNumber = String(prompt('Ingresa el numero de pedido a relacionar:', '') || '').trim();
+            if (!manualOrderNumber) {
+              setStatusMessage(fidMisStatus, 'Carga manual cancelada.', 'error');
+              return;
+            }
+            const conversionMatchNote = String(
+              prompt('Aclaracion de la relacion manual (opcional):', 'Compra a nombre de otra persona') || ''
+            ).trim();
+            try {
+              await postFidelizacionCerrar(id, {
+                manual_order_number: manualOrderNumber,
+                conversion_match_note: conversionMatchNote,
+              });
+            } catch (manualErr) {
+              if (manualErr?.status === 409 && manualErr?.payload?.requires_conversion_reason) {
+                if (manualErr?.payload?.pedido) {
+                  alert(`Pedido encontrado.\n\n${buildFidelizacionPedidoSummary(manualErr?.payload?.pedido)}`);
+                }
+                manualErr.payload.conversion_match_note = conversionMatchNote;
+                const conversionPayload = await openFidelizacionConversionModal(manualErr?.payload?.mode || '');
+                if (!conversionPayload) {
+                  setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
+                  return;
+                }
+                const closeRes = await postFidelizacionCerrar(id, {
+                  ...conversionPayload,
+                  manual_order_number: manualOrderNumber,
+                  conversion_match_note: conversionMatchNote,
+                });
+                if (closeRes?.mode === 'MANUAL_CONVERSION') {
+                  alert(`Pedido relacionado manualmente.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
+                } else if (closeRes?.mode === 'MANUAL_CONVERSION_OUT_OF_WINDOW') {
+                  alert(`Pedido relacionado manualmente fuera de ventana.\n\n${buildFidelizacionPedidoSummary(closeRes?.pedido)}`);
+                }
+              } else {
+                throw manualErr;
+              }
+            }
+          } else {
+            const manual = await openFidelizacionCloseModal();
+            if (!manual) {
+              setStatusMessage(fidMisStatus, 'Cierre cancelado.', 'error');
+              return;
+            }
+            await postFidelizacionCerrar(id, manual);
           }
-          await postFidelizacionCerrar(id, manual);
         } else {
           throw closeErr;
         }
