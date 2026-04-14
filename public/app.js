@@ -17348,8 +17348,13 @@ async function doFidelizacionAction(action, id) {
         body: JSON.stringify(payload),
       });
     }
-    await loadFidelizacionMis();
-    if (fidelizacionAdminLoaded) await loadFidelizacionAdminQueue();
+    const canReloadMis = Boolean(fidelizacionContext?.vendedoraId) || !Boolean(fidelizacionContext?.isAdmin);
+    if (canReloadMis && (fidelizacionMisLoaded || currentView === 'fidelizacion-mis')) {
+      await loadFidelizacionMis();
+    }
+    if (fidelizacionAdminLoaded || currentView === 'fidelizacion-admin') {
+      await loadFidelizacionAdminQueue();
+    }
     await loadFidelizacionReportes();
     setStatusMessage(fidMisStatus, 'Accion registrada.', 'ok');
   } catch (error) {
