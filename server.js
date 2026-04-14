@@ -4273,6 +4273,36 @@ async function listFidelizacionConversionReasonsCatalogo(conn) {
   }));
 }
 
+async function listFidelizacionClosedReasonsCatalogo(conn) {
+  const [cols] = await conn.query(
+    `SELECT LOWER(COLUMN_NAME) AS col
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'fidelizacion_closed_reason_catalogo'`
+  );
+  const colSet = new Set((cols || []).map((row) => String(row.col || '').toLowerCase()));
+  const pick = (candidates = []) => candidates.find((c) => colSet.has(c)) || '';
+  const codigoCol = pick(['codigo', 'code', 'id', 'motivo_code']);
+  const nombreCol = pick(['nombre', 'descripcion', 'detalle', 'label', 'motivo', 'codigo']);
+  const activoCol = pick(['activo', 'is_active', 'habilitado']);
+  const ordenCol = pick(['orden', 'sort_order', 'id', 'codigo']);
+  if (!codigoCol || !nombreCol) {
+    throw new Error('Catalogo de motivos de cierre sin columnas compatibles');
+  }
+  const whereSql = activoCol ? `WHERE ${activoCol} = 1` : '';
+  const orderSql = ordenCol ? `ORDER BY ${ordenCol} ASC, ${nombreCol} ASC` : `ORDER BY ${nombreCol} ASC`;
+  const [rows] = await conn.query(
+    `SELECT ${codigoCol} AS codigo, ${nombreCol} AS nombre
+     FROM fidelizacion_closed_reason_catalogo
+     ${whereSql}
+     ${orderSql}`
+  );
+  return (rows || []).map((row) => ({
+    codigo: String(row.codigo || '').trim(),
+    nombre: String(row.nombre || '').trim(),
+  }));
+}
+
 app.get('/api/fidelizacion/resultados/catalogo', async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);
@@ -4292,6 +4322,17 @@ app.get('/api/fidelizacion/conversion-reasons/catalogo', async (req, res) => {
     res.json({ data });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar catalogo de motivos de conversion', error: error.message });
+  }
+});
+
+app.get('/api/fidelizacion/closed-reasons/catalogo', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    const data = await listFidelizacionClosedReasonsCatalogo(pool);
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogo de motivos de cierre', error: error.message });
   }
 });
 

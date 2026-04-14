@@ -16016,14 +16016,34 @@ async function loadFidelizacionConversionReasonCatalog({ force = false } = {}) {
     .filter((row) => row.codigo && row.nombre);
   return fidConversionReasonOptions;
 }
-const FID_CLOSE_REASON_OPTIONS = [
-  { code: 'NO_RESPONDIO', label: 'No respondio' },
-  { code: 'SIN_STOCK', label: 'Sin stock' },
-  { code: 'PRECIO', label: 'Precio' },
-  { code: 'SIN_INTERES', label: 'Sin interes' },
-  { code: 'COMPRA_POSTERGADA', label: 'Compra postergada' },
-  { code: 'OTRO', label: 'Otro' },
+const FID_CLOSE_REASON_FALLBACK_OPTIONS = [
+  { codigo: 'NO_RESPONDIO', nombre: 'No respondio' },
+  { codigo: 'SIN_STOCK', nombre: 'Sin stock' },
+  { codigo: 'PRECIO', nombre: 'Precio' },
+  { codigo: 'SIN_INTERES', nombre: 'Sin interes' },
+  { codigo: 'COMPRA_POSTERGADA', nombre: 'Compra postergada' },
+  { codigo: 'OTRO', nombre: 'Otro' },
 ];
+let fidCloseReasonOptions = [];
+
+async function loadFidelizacionCloseReasonCatalog({ force = false } = {}) {
+  if (!force && fidCloseReasonOptions.length) return fidCloseReasonOptions;
+  try {
+    const res = await fetchJSON('/api/fidelizacion/closed-reasons/catalogo');
+    fidCloseReasonOptions = (res?.data || [])
+      .map((row) => ({
+        codigo: String(row.codigo || '').trim(),
+        nombre: String(row.nombre || '').trim(),
+      }))
+      .filter((row) => row.codigo && row.nombre);
+  } catch (_error) {
+    fidCloseReasonOptions = [];
+  }
+  if (!fidCloseReasonOptions.length) {
+    fidCloseReasonOptions = FID_CLOSE_REASON_FALLBACK_OPTIONS.slice();
+  }
+  return fidCloseReasonOptions;
+}
 
 function closeFidelizacionTransferModal(result = null) {
   if (fidTransferOverlay) fidTransferOverlay.classList.remove('open');
@@ -16133,15 +16153,20 @@ async function openFidelizacionConversionModal(mode = 'AUTO_CONVERSION') {
 async function openFidelizacionCloseModal() {
   if (fidCloseResolver) closeFidelizacionCloseModal(null);
   if (!fidCloseOverlay || !fidCloseResultadoSelect || !fidCloseMotivoInput) return null;
+  const reasons = await loadFidelizacionCloseReasonCatalog();
+  if (!reasons.length) {
+    setStatusMessage(fidMisStatus, 'No hay motivos de cierre disponibles.', 'error');
+    return null;
+  }
   fidCloseResultadoSelect.innerHTML = '';
   const empty = document.createElement('option');
   empty.value = '';
   empty.textContent = 'Seleccionar motivo';
   fidCloseResultadoSelect.appendChild(empty);
-  FID_CLOSE_REASON_OPTIONS.forEach((row) => {
+  reasons.forEach((row) => {
     const opt = document.createElement('option');
-    opt.value = row.code;
-    opt.textContent = row.label;
+    opt.value = row.codigo;
+    opt.textContent = row.nombre;
     fidCloseResultadoSelect.appendChild(opt);
   });
   fidCloseResultadoSelect.value = '';
