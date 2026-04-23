@@ -443,6 +443,24 @@ input[type='month'] {
   justify-content: space-between;
 }
 
+.inline-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.inline-filter select {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
+  min-width: 180px;
+  outline: none;
+}
+
 .dashboard-comparativo-header {
   flex-direction: column;
   align-items: stretch;

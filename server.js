@@ -4832,6 +4832,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
     const latestRun = await getFidelizacionLatestRun(pool);
     const estado = String(req.query.estado || '').trim().toUpperCase();
     const scope = String(req.query.scope || 'MIAS').trim().toUpperCase();
+    const runId = Number(req.query.run_id) || null;
     const commonFilters = [];
     const commonParams = [];
     commonFilters.push(
@@ -4855,6 +4856,10 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
     }
     if (scope === 'TODOS') {
       dataFilters.push(`r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')`);
+    }
+    if (runId) {
+      dataFilters.push('r.run_id = ?');
+      dataParams.push(runId);
     }
     const filters = [...dataFilters];
     const params = [...dataParams];
@@ -4945,6 +4950,10 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       miasFilters.push('r.vendedora_id = ?');
       miasParams.push(Number(req.query.vendedora_id));
     }
+    if (runId) {
+      miasFilters.push('r.run_id = ?');
+      miasParams.push(runId);
+    }
     const [countRowsMias] = await pool.query(
       `SELECT r.estado, COUNT(*) AS total
        FROM fidelizacion_recomendacion r
@@ -4955,6 +4964,10 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
 
     const todosFilters = [...commonFilters, `r.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')`];
     const todosParams = [...commonParams];
+    if (runId) {
+      todosFilters.push('r.run_id = ?');
+      todosParams.push(runId);
+    }
     const [countRowsTodos] = await pool.query(
       `SELECT r.estado, COUNT(*) AS total
        FROM fidelizacion_recomendacion r
@@ -4963,11 +4976,31 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       todosParams
     );
 
+    const adminFilters = [...commonFilters];
+    const adminParams = [...commonParams];
+    if (runId) {
+      adminFilters.push('r.run_id = ?');
+      adminParams.push(runId);
+    }
     const [countRowsAdmin] = await pool.query(
       `SELECT r.estado, COUNT(*) AS total
        FROM fidelizacion_recomendacion r
-       ${commonFilters.length ? `WHERE ${commonFilters.join(' AND ')}` : ''}
+       ${adminFilters.length ? `WHERE ${adminFilters.join(' AND ')}` : ''}
        GROUP BY r.estado`,
+      adminParams
+    );
+
+    const [runRows] = await pool.query(
+      `SELECT
+         fr.id,
+         fr.run_date,
+         fr.created_at,
+         COUNT(r.id) AS total
+       FROM fidelizacion_run fr
+       INNER JOIN fidelizacion_recomendacion r ON r.run_id = fr.id
+       ${commonFilters.length ? `WHERE ${commonFilters.join(' AND ')}` : ''}
+       GROUP BY fr.id, fr.run_date, fr.created_at
+       ORDER BY fr.run_date DESC, fr.id DESC`,
       commonParams
     );
 
@@ -4990,6 +5023,7 @@ app.get('/api/fidelizacion/mis', async (req, res) => {
       counts_mias: countsMias,
       counts_todos: countsTodos,
       counts_admin: countsAdmin,
+      runs: runRows || [],
       data: rows || [],
     });
   } catch (error) {

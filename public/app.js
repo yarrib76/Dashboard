@@ -344,6 +344,7 @@ let fidelizacionAdminLoaded = false;
 let fidelizacionContext = null;
 let fidelizacionMisRows = [];
 let fidelizacionMisEstado = 'PENDIENTE';
+let fidelizacionMisRunId = '';
 let fidMisCardFilterTerm = '';
 let fidMisCardSearchTimer = null;
 let fidelizacionAdminRows = [];
@@ -549,6 +550,7 @@ const fidResultadosRecalcularBtn = document.getElementById('fid-resultados-recal
 const fidTabs = document.getElementById('fid-tabs');
 const fidMisTableBody = document.querySelector('#fid-mis-table tbody');
 const fidMisCards = document.getElementById('fid-mis-cards');
+const fidMisRunSelect = document.getElementById('fid-mis-run-select');
 const fidMisMobileSearchInput = document.getElementById('fid-mis-mobile-search-input');
 const fidMisStatus = document.getElementById('fid-mis-status');
 const fidAdminMobileSearchInput = document.getElementById('fid-admin-mobile-search-input');
@@ -6980,6 +6982,12 @@ function initAbm() {
         fidMisCardFilterTerm = fidMisMobileSearchInput.value || '';
         renderFidelizacionMisRows(fidelizacionMisRows);
       }, 200);
+    });
+  }
+  if (fidMisRunSelect) {
+    fidMisRunSelect.addEventListener('change', () => {
+      fidelizacionMisRunId = fidMisRunSelect.value || '';
+      loadFidelizacionMis();
     });
   }
   if (fidAdminMobileSearchInput) {
@@ -15962,6 +15970,24 @@ function renderFidelizacionMisRows(rows = []) {
   });
 }
 
+function renderFidelizacionMisRunSelect(runs = []) {
+  if (!fidMisRunSelect) return;
+  const currentValue = String(fidelizacionMisRunId || '');
+  const safeRuns = Array.isArray(runs) ? runs : [];
+  fidMisRunSelect.innerHTML = '<option value="">Todas</option>';
+  safeRuns.forEach((run) => {
+    const id = Number(run.id) || 0;
+    if (!id) return;
+    const option = document.createElement('option');
+    option.value = String(id);
+    option.textContent = `#${id} - ${formatDateLong(run.run_date || run.created_at || '')}`;
+    fidMisRunSelect.appendChild(option);
+  });
+  const hasCurrent = !currentValue || safeRuns.some((run) => Number(run.id) === Number(currentValue));
+  if (!hasCurrent) fidelizacionMisRunId = '';
+  fidMisRunSelect.value = hasCurrent ? currentValue : '';
+}
+
 function renderFidelizacionAdminRows(rows = []) {
   fidelizacionAdminRows = Array.isArray(rows) ? rows : [];
   const visibleRows = document.body.classList.contains('is-mobile')
@@ -16220,9 +16246,15 @@ async function loadFidelizacionMis() {
   setStatusMessage(fidMisStatus, 'Cargando...');
   try {
     const scope = fidelizacionMisEstado === 'TODOS' ? 'TODOS' : 'MIAS';
+    const query = new URLSearchParams({
+      estado: fidelizacionMisEstado,
+      scope,
+    });
+    if (fidelizacionMisRunId) query.set('run_id', fidelizacionMisRunId);
     const res = await fetchJSON(
-      `/api/fidelizacion/mis?estado=${encodeURIComponent(fidelizacionMisEstado)}&scope=${encodeURIComponent(scope)}`
+      `/api/fidelizacion/mis?${query.toString()}`
     );
+    renderFidelizacionMisRunSelect(res?.runs || []);
     renderFidelizacionMisTabs(res?.counts_mias || res?.counts || {}, res?.counts_todos || {});
     renderFidelizacionMisRows(res?.data || []);
     setStatusMessage(fidMisStatus, '');
