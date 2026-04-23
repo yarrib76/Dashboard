@@ -15937,6 +15937,7 @@ function renderFidelizacionQueueRows(rows = [], { tableBody, cards, adminMode = 
         </div>
         <p class="fidelizacion-card-meta">${estadoHtml} · ${escapeAttr(row.telefono || '-')}</p>
         <p class="fidelizacion-card-meta">Corrida: ${escapeAttr(formatDateLong(row.run_date || ''))}</p>
+        ${tableType === 'mis' || tableType === 'admin' ? `<p class="fidelizacion-card-meta">Vendedora: ${escapeAttr(row.vendedora_nombre || '-')}</p>` : ''}
         ${tableType === 'mis' || tableType === 'admin' ? `<p class="fidelizacion-card-meta">Ticket prom.: ${formatMoney(Number(row.avg_ticket_12m || 0))}</p>` : ''}
         <p class="fidelizacion-card-offer">${escapeAttr(row.oferta_detalle || '')}</p>
         <div class="actions">${actions}</div>
