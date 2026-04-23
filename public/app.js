@@ -349,6 +349,7 @@ let fidMisCardFilterTerm = '';
 let fidMisCardSearchTimer = null;
 let fidelizacionAdminRows = [];
 let fidelizacionAdminEstado = 'TODOS';
+let fidelizacionAdminRunId = '';
 let fidAdminCardFilterTerm = '';
 let fidAdminCardSearchTimer = null;
 let fidelizacionVendedoras = [];
@@ -588,6 +589,7 @@ const fidRunsStatus = document.getElementById('fid-runs-status');
 const fidAdminTabs = document.getElementById('fid-admin-tabs');
 const fidAdminQueueTableBody = document.querySelector('#fid-admin-queue-table tbody');
 const fidAdminQueueCards = document.getElementById('fid-admin-queue-cards');
+const fidAdminRunSelect = document.getElementById('fid-admin-run-select');
 const fidAdminQueueStatus = document.getElementById('fid-admin-queue-status');
 const fidTransferOverlay = document.getElementById('fid-transfer-overlay');
 const fidTransferCloseBtn = document.getElementById('fid-transfer-close');
@@ -6997,6 +6999,12 @@ function initAbm() {
         fidAdminCardFilterTerm = fidAdminMobileSearchInput.value || '';
         renderFidelizacionAdminRows(fidelizacionAdminRows);
       }, 200);
+    });
+  }
+  if (fidAdminRunSelect) {
+    fidAdminRunSelect.addEventListener('change', () => {
+      fidelizacionAdminRunId = fidAdminRunSelect.value || '';
+      loadFidelizacionAdminQueue();
     });
   }
   if (abmCardsEl) {
@@ -15988,6 +15996,24 @@ function renderFidelizacionMisRunSelect(runs = []) {
   fidMisRunSelect.value = hasCurrent ? currentValue : '';
 }
 
+function renderFidelizacionAdminRunSelect(runs = []) {
+  if (!fidAdminRunSelect) return;
+  const currentValue = String(fidelizacionAdminRunId || '');
+  const safeRuns = Array.isArray(runs) ? runs : [];
+  fidAdminRunSelect.innerHTML = '<option value="">Todas</option>';
+  safeRuns.forEach((run) => {
+    const id = Number(run.id) || 0;
+    if (!id) return;
+    const option = document.createElement('option');
+    option.value = String(id);
+    option.textContent = `#${id} - ${formatDateLong(run.run_date || run.created_at || '')}`;
+    fidAdminRunSelect.appendChild(option);
+  });
+  const hasCurrent = !currentValue || safeRuns.some((run) => Number(run.id) === Number(currentValue));
+  if (!hasCurrent) fidelizacionAdminRunId = '';
+  fidAdminRunSelect.value = hasCurrent ? currentValue : '';
+}
+
 function renderFidelizacionAdminRows(rows = []) {
   fidelizacionAdminRows = Array.isArray(rows) ? rows : [];
   const visibleRows = document.body.classList.contains('is-mobile')
@@ -16267,10 +16293,16 @@ async function loadFidelizacionAdminQueue() {
   await ensureFidelizacionContext();
   setStatusMessage(fidAdminQueueStatus, 'Cargando...');
   try {
+    const query = new URLSearchParams({
+      estado: fidelizacionAdminEstado,
+      scope: 'ADMIN',
+    });
+    if (fidelizacionAdminRunId) query.set('run_id', fidelizacionAdminRunId);
     const res = await fetchJSON(
-      `/api/fidelizacion/mis?estado=${encodeURIComponent(fidelizacionAdminEstado)}&scope=${encodeURIComponent('ADMIN')}`
+      `/api/fidelizacion/mis?${query.toString()}`
     );
     const countsAll = res?.counts_admin || res?.counts_mias || res?.counts || {};
+    renderFidelizacionAdminRunSelect(res?.runs || []);
     renderFidelizacionAdminTabs(countsAll, countsAll);
     renderFidelizacionAdminRows(res?.data || []);
     setStatusMessage(fidAdminQueueStatus, '');
