@@ -15748,7 +15748,7 @@ function buildFidActions(row, { adminMode = false } = {}) {
   if (estado === 'PENDIENTE' && (adminMode || !isMine)) {
     buttons.push(`<button type="button" data-action="tomar" data-id="${row.id}">Tomar</button>`);
   }
-  if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="transferir" data-id="${row.id}">Transferir</button>`);
+  if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="transferir" data-id="${row.id}">Transferir</button>`);
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION') buttons.push(`<button type="button" data-action="contactar" data-id="${row.id}">Contactar</button>`);
   if (estado === 'PENDIENTE' || estado === 'EN_GESTION' || estado === 'CONTACTADA') buttons.push(`<button type="button" data-action="cerrar" data-id="${row.id}">Cerrar</button>`);
   if (estado === 'CERRADA') buttons.push(`<button type="button" data-action="reabrir" data-id="${row.id}">Reabrir</button>`);

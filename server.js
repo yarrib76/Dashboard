@@ -5285,9 +5285,10 @@ app.post('/api/fidelizacion/recomendaciones/:id/transferir', async (req, res) =>
       await conn.rollback();
       return res.status(404).json({ message: 'Recomendacion no encontrada' });
     }
-    if (!['PENDIENTE', 'EN_GESTION'].includes(String(current.estado || '').toUpperCase())) {
+    const currentEstado = String(current.estado || '').toUpperCase();
+    if (!['PENDIENTE', 'EN_GESTION', 'CONTACTADA'].includes(currentEstado)) {
       await conn.rollback();
-      return res.status(400).json({ message: 'Solo se puede transferir desde PENDIENTE o EN_GESTION' });
+      return res.status(400).json({ message: 'Solo se puede transferir desde PENDIENTE, EN_GESTION o CONTACTADA' });
     }
     if (!context.isAdmin && Number(current.vendedora_id) !== Number(context.vendedoraId)) {
       await conn.rollback();
@@ -5300,11 +5301,11 @@ app.post('/api/fidelizacion/recomendaciones/:id/transferir', async (req, res) =>
     await conn.query(
       `UPDATE fidelizacion_recomendacion
        SET vendedora_id = ?,
-           estado = 'PENDIENTE',
+           estado = ?,
            estado_updated_at = NOW(),
            estado_updated_by = ?
        WHERE id = ?`,
-      [destinoId, context.userName || req.user?.name || '', recId]
+      [destinoId, currentEstado === 'CONTACTADA' ? 'CONTACTADA' : 'PENDIENTE', context.userName || req.user?.name || '', recId]
     );
     await insertFidelizacionTransferLog(conn, {
       recomendacion_id: current.id,
