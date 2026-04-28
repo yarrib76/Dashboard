@@ -9526,9 +9526,46 @@ app.get('/api/pedidos/clientes', async (req, res) => {
              FROM fidelizacion_recomendacion fr
              WHERE fr.cliente_id = cp.id_cliente
                AND fr.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+           ) OR EXISTS (
+             SELECT 1
+             FROM fidelizacion_recomendacion fr
+             WHERE fr.cliente_id = cp.id_cliente
+               AND fr.estado = 'CERRADA'
+               AND fr.closed_at IS NOT NULL
+               AND cp.fecha >= fr.closed_at
+               AND cp.fecha < DATE_ADD(fr.closed_at, INTERVAL 11 DAY)
            ) THEN 1
            ELSE 0
-         END AS fidelizacionActiva
+         END AS fidelizacionActiva,
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM fidelizacion_recomendacion fr
+             WHERE fr.cliente_id = cp.id_cliente
+               AND fr.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+           ) THEN 'ABIERTA'
+           WHEN EXISTS (
+             SELECT 1
+             FROM fidelizacion_recomendacion fr
+             WHERE fr.cliente_id = cp.id_cliente
+               AND fr.estado = 'CERRADA'
+               AND fr.closed_at IS NOT NULL
+               AND cp.fecha >= fr.closed_at
+               AND cp.fecha < DATE_ADD(fr.closed_at, INTERVAL 11 DAY)
+           ) THEN 'CERRADA_RECIENTE'
+           ELSE ''
+         END AS fidelizacionEstadoRef,
+         (
+           SELECT DATEDIFF(DATE(cp.fecha), DATE(fr.closed_at))
+           FROM fidelizacion_recomendacion fr
+           WHERE fr.cliente_id = cp.id_cliente
+             AND fr.estado = 'CERRADA'
+             AND fr.closed_at IS NOT NULL
+             AND cp.fecha >= fr.closed_at
+             AND cp.fecha < DATE_ADD(fr.closed_at, INTERVAL 11 DAY)
+           ORDER BY fr.closed_at DESC
+           LIMIT 1
+         ) AS fidelizacionCerradaHaceDias
       FROM controlpedidos cp
       INNER JOIN clientes c ON c.id_clientes = cp.id_cliente
       LEFT JOIN (

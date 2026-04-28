@@ -9239,6 +9239,14 @@ function renderPedidosClientes(rows) {
   const uniqueRecurrentes = new Set();
 
   rows.forEach((row) => {
+    const fidelizacionEstadoRef = String(row.fidelizacionEstadoRef || '').toUpperCase();
+    const cerradaHaceDias = Number(row.fidelizacionCerradaHaceDias);
+    const fidelizacionBadge =
+      Number(row.fidelizacionActiva || 0) === 1
+        ? fidelizacionEstadoRef === 'CERRADA_RECIENTE'
+          ? `<span class="badge yellow">ACTIVA (cerrada hace ${Number.isFinite(cerradaHaceDias) ? cerradaHaceDias : 0} ${cerradaHaceDias === 1 ? 'día' : 'días'})</span>`
+          : '<span class="badge yellow">ACTIVA</span>'
+        : '<span class="badge gray">-</span>';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${row.nombre || ''}</td>
@@ -9246,11 +9254,7 @@ function renderPedidosClientes(rows) {
       <td>${row.mail || row.email || ''}</td>
       <td>${row.totalPedidos ?? 0}</td>
       <td>${row.tipo || ''}</td>
-      <td>${
-        Number(row.fidelizacionActiva || 0) === 1
-          ? '<span class="badge yellow">ACTIVA</span>'
-          : '<span class="badge gray">-</span>'
-      }</td>
+      <td>${fidelizacionBadge}</td>
     `;
     tablaPedidosClientesBody.appendChild(tr);
 
