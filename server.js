@@ -7076,6 +7076,7 @@ app.get('/api/fidelizacion/dashboard/conversiones-mensuales', async (req, res) =
       return res.json({ scope: 'run', run_id: null, run: null, data: [] });
     }
 
+    const vendedoraRaw = String(req.query.vendedora_id ?? '').trim().toLowerCase();
     const conversionDateExpr = 'COALESCE(r.converted_at, r.closed_at, fr.run_date, r.created_at)';
     const where = [
       'r.resultado IN (?,?)',
@@ -7088,6 +7089,16 @@ app.get('/api/fidelizacion/dashboard/conversiones-mensuales', async (req, res) =
     if (scope !== 'all') {
       where.push('r.run_id = ?');
       params.push(effectiveRunId);
+    }
+    if (vendedoraRaw) {
+      if (vendedoraRaw === 'null') {
+        where.push('r.vendedora_id IS NULL');
+      } else {
+        const vendedoraId = Number(vendedoraRaw);
+        if (!vendedoraId) return res.status(400).json({ message: 'vendedora_id invalido' });
+        where.push('r.vendedora_id = ?');
+        params.push(vendedoraId);
+      }
     }
 
     const [rows] = await pool.query(

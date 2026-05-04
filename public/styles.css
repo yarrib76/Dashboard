@@ -970,18 +970,6 @@ input[type='month'] {
   border-color: rgba(123, 215, 255, 0.5);
 }
 
-.fid-conversion-total-btn {
-  appearance: none;
-  color: inherit;
-  font: inherit;
-}
-
-.fid-conversion-total-btn .value {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.fid-conversion-total-btn:focus-visible,
 .fid-chart-launch:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

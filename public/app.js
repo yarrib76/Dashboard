@@ -576,7 +576,6 @@ const fidCardFinalizadas = document.getElementById('fid-card-finalizadas');
 const fidCardConvertidas = document.getElementById('fid-card-convertidas');
 const fidCardConvertidasFv = document.getElementById('fid-card-convertidas-fv');
 const fidCardNoConvertidas = document.getElementById('fid-card-no-convertidas');
-const fidOpenConversionesMensualesBtn = document.getElementById('fid-open-conversiones-mensuales');
 const fidOpenGraficasBtn = document.getElementById('fid-open-graficas-btn');
 const fidAdminTableBody = document.querySelector('#fid-admin-table tbody');
 const fidAdminCards = document.getElementById('fid-admin-cards');
@@ -16337,7 +16336,7 @@ function renderFidelizacionReportesAdmin(rows = []) {
         <td><button type="button" class="fid-report-click" data-action="ver-gestionados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.total_gestionados || 0}</button></td>
         <td><button type="button" class="fid-report-click" data-action="ver-finalizados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.finalizados || 0}</button></td>
         <td>${Number(row.tasa_finalizacion || 0).toFixed(1)}%</td>
-        <td>${row.convertidas || 0}</td>
+        <td><button type="button" class="fid-report-click" data-action="ver-conversiones-mensuales" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.convertidas || 0}</button></td>
         <td>${Number(row.tasa_conversion || 0).toFixed(1)}%</td>
         <td>${formatMoney(row.monto_conversion || 0)}</td>
         <td>${Number(row.score_prom || 0).toFixed(2)}</td>
@@ -16355,7 +16354,7 @@ function renderFidelizacionReportesAdmin(rows = []) {
         </div>
         <p class="fidelizacion-card-meta">Total gestionados: <button type="button" class="link-btn" data-action="ver-gestionados" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.total_gestionados || 0}</button></p>
         <p class="fidelizacion-card-meta">Finalizados: ${row.finalizados || 0} (${Number(row.tasa_finalizacion || 0).toFixed(1)}%)</p>
-        <p class="fidelizacion-card-meta">Convertidas: ${row.convertidas || 0} (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
+        <p class="fidelizacion-card-meta">Convertidas: <button type="button" class="link-btn" data-action="ver-conversiones-mensuales" data-vendedora-id="${escapeAttr(vendedoraIdAttr)}" data-vendedora="${escapeAttr(row.vendedora || '')}">${row.convertidas || 0}</button> (${Number(row.tasa_conversion || 0).toFixed(1)}%)</p>
         <p class="fidelizacion-card-offer">${formatMoney(row.monto_conversion || 0)}</p>
       `;
       fidAdminCards.appendChild(card);
@@ -17111,14 +17110,19 @@ function renderFidelizacionConversionesMensuales(rows = []) {
   fidConversionesMensualesDataTable = initFidelizacionDataTable('#fid-conversiones-mensuales-table');
 }
 
-async function openFidelizacionConversionesMensualesModal() {
+async function openFidelizacionConversionesMensualesModal({ vendedoraId = '', vendedoraLabel = '' } = {}) {
   await ensureFidelizacionContext();
   if (!fidelizacionContext?.isAdmin) {
     setStatusMessage(fidReportesStatus, 'Solo Admin puede ver este detalle.', 'error');
     return;
   }
   if (fidConversionesMensualesOverlay) fidConversionesMensualesOverlay.classList.add('open');
-  if (fidConversionesMensualesTitle) fidConversionesMensualesTitle.textContent = 'Conversiones por mes';
+  const sellerLabel = String(vendedoraLabel || '').trim();
+  if (fidConversionesMensualesTitle) {
+    fidConversionesMensualesTitle.textContent = sellerLabel
+      ? `Conversiones por mes - ${sellerLabel}`
+      : 'Conversiones por mes';
+  }
   if (fidConversionesMensualesMeta) {
     fidConversionesMensualesMeta.textContent =
       fidReportScope === 'all' ? 'Mostrando historico de todas las corridas.' : 'Mostrando la corrida seleccionada.';
@@ -17128,6 +17132,7 @@ async function openFidelizacionConversionesMensualesModal() {
     const query = new URLSearchParams();
     query.set('scope', fidReportScope === 'all' ? 'all' : 'run');
     if (fidReportScope !== 'all' && fidReportRunId) query.set('run_id', String(fidReportRunId));
+    if (String(vendedoraId || '').trim()) query.set('vendedora_id', String(vendedoraId));
     const res = await fetchJSON(`/api/fidelizacion/dashboard/conversiones-mensuales?${query.toString()}`);
     const rows = Array.isArray(res?.data) ? res.data : [];
     renderFidelizacionConversionesMensuales(rows);
@@ -17577,9 +17582,6 @@ function initFidelizacion() {
     });
   }
   if (fidReportesRefreshBtn) fidReportesRefreshBtn.addEventListener('click', loadFidelizacionReportes);
-  if (fidOpenConversionesMensualesBtn) {
-    fidOpenConversionesMensualesBtn.addEventListener('click', openFidelizacionConversionesMensualesModal);
-  }
   if (fidOpenGraficasBtn) fidOpenGraficasBtn.addEventListener('click', openFidelizacionGraficasModal);
   if (fidGraficasRefreshBtn) fidGraficasRefreshBtn.addEventListener('click', loadFidelizacionGraficas);
   if (fidGraficasCloseBtn) fidGraficasCloseBtn.addEventListener('click', closeFidelizacionGraficasModal);
@@ -17774,6 +17776,13 @@ function initFidelizacion() {
       }
       if (action === 'ver-finalizados') {
         loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+        return;
+      }
+      if (action === 'ver-conversiones-mensuales') {
+        openFidelizacionConversionesMensualesModal({
+          vendedoraId: vendedoraIdRaw || 'null',
+          vendedoraLabel,
+        });
       }
     });
   }
@@ -17791,6 +17800,13 @@ function initFidelizacion() {
       }
       if (action === 'ver-finalizados') {
         loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
+        return;
+      }
+      if (action === 'ver-conversiones-mensuales') {
+        openFidelizacionConversionesMensualesModal({
+          vendedoraId: vendedoraIdRaw || 'null',
+          vendedoraLabel,
+        });
       }
     });
   }
