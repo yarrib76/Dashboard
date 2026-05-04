@@ -17769,12 +17769,13 @@ function initFidelizacion() {
       const action = String(btn.dataset.action || '').trim();
       const vendedoraIdRaw = String(btn.dataset.vendedoraId || 'null').trim();
       const vendedoraLabel = String(btn.dataset.vendedora || 'Sin asignar').trim() || 'Sin asignar';
-      if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
       if (action === 'ver-gestionados') {
+        if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
         loadFidelizacionGestionadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
         return;
       }
       if (action === 'ver-finalizados') {
+        if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
         loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
         return;
       }
@@ -17793,12 +17794,13 @@ function initFidelizacion() {
       const action = String(btn.dataset.action || '').trim();
       const vendedoraIdRaw = String(btn.dataset.vendedoraId || 'null').trim();
       const vendedoraLabel = String(btn.dataset.vendedora || 'Sin asignar').trim() || 'Sin asignar';
-      if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
       if (action === 'ver-gestionados') {
+        if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
         loadFidelizacionGestionadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
         return;
       }
       if (action === 'ver-finalizados') {
+        if (fidFinalizadosOverlay) fidFinalizadosOverlay.classList.add('open');
         loadFidelizacionFinalizadosDetalle(vendedoraIdRaw || 'null', vendedoraLabel);
         return;
       }
