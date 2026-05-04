@@ -868,10 +868,10 @@
           <p class="label">Finalizadas</p>
           <p class="value" id="fid-card-finalizadas">0</p>
         </div>
-        <div class="stat">
+        <button class="stat stat-click fid-conversion-total-btn" id="fid-open-conversiones-mensuales" type="button" title="Ver conversiones por mes y vendedora">
           <p class="label">Convertidas</p>
           <p class="value" id="fid-card-convertidas">0</p>
-        </div>
+        </button>
         <div class="stat">
           <p class="label">Conv. fuera ventana</p>
           <p class="value" id="fid-card-convertidas-fv">0</p>
@@ -905,6 +905,35 @@
       </div>
       <div class="fidelizacion-cards" id="fid-admin-cards"></div>
       <p class="status" id="fid-reportes-status"></p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="fid-conversiones-mensuales-overlay">
+    <div class="modal fid-finalizados-modal">
+      <div class="modal-header">
+        <h3 id="fid-conversiones-mensuales-title">Conversiones por mes</h3>
+        <button id="fid-conversiones-mensuales-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <p class="status" id="fid-conversiones-mensuales-meta"></p>
+        <div class="table-wrap">
+          <table class="table" id="fid-conversiones-mensuales-table">
+            <thead>
+              <tr>
+                <th>Mes</th>
+                <th>Vendedora</th>
+                <th>Convertidas</th>
+                <th>Dentro ventana</th>
+                <th>Fuera ventana</th>
+                <th>$ conversion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="fidelizacion-cards" id="fid-conversiones-mensuales-cards"></div>
+        <p class="status" id="fid-conversiones-mensuales-status"></p>
+      </div>
     </div>
   </div>
 

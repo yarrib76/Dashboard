@@ -7059,6 +7059,91 @@ app.get(['/api/fidelizacion/dashboard', '/fidelizacion/dashboard'], async (req, 
   }
 });
 
+app.get('/api/fidelizacion/dashboard/conversiones-mensuales', async (req, res) => {
+  try {
+    const context = await getFidelizacionUserContext(pool, req.user?.id);
+    if (!context) return res.status(401).json({ message: 'Usuario invalido' });
+    if (!context.isAdmin) return res.status(403).json({ message: 'Solo Admin puede ver dashboard global' });
+    const resultadoCodes = await getFidelizacionResultadoCodes(pool);
+
+    const { scope, runId } = resolveFidelizacionDashboardScope(req.query.scope, req.query.run_id);
+    let effectiveRunId = runId;
+    if (scope !== 'all' && !effectiveRunId) {
+      const latest = await getFidelizacionLatestRun(pool);
+      effectiveRunId = latest?.id || 0;
+    }
+    if (scope !== 'all' && !effectiveRunId) {
+      return res.json({ scope: 'run', run_id: null, run: null, data: [] });
+    }
+
+    const conversionDateExpr = 'COALESCE(r.converted_at, r.closed_at, fr.run_date, r.created_at)';
+    const where = [
+      'r.resultado IN (?,?)',
+      `(r.vendedora_id IS NULL OR LOWER(TRIM(COALESCE(v.Nombre, ''))) NOT IN ('pagina', 'pagina web'))`,
+    ];
+    const params = [
+      resultadoCodes.convertida,
+      resultadoCodes.convertidaFueraVentana,
+    ];
+    if (scope !== 'all') {
+      where.push('r.run_id = ?');
+      params.push(effectiveRunId);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         DATE_FORMAT(${conversionDateExpr}, '%Y-%m') AS mes,
+         r.vendedora_id,
+         CONCAT(COALESCE(v.Nombre, ''), ' ', COALESCE(v.Apellido, '')) AS vendedora,
+         COUNT(*) AS convertidas,
+         SUM(r.resultado = ?) AS convertidas_en_ventana,
+         SUM(r.resultado = ?) AS convertidas_fuera_ventana,
+         ROUND(
+           SUM(
+             CASE
+               WHEN r.resultado IN (?,?)
+               THEN COALESCE(NULLIF(cp.total, 0), r.conversion_amount, 0)
+               ELSE 0
+             END
+           ),
+           2
+         ) AS monto_conversion
+       FROM fidelizacion_recomendacion r
+       LEFT JOIN fidelizacion_run fr ON fr.id = r.run_id
+       LEFT JOIN controlpedidos cp ON cp.id = r.pedido_id
+       LEFT JOIN vendedores v ON v.Id = r.vendedora_id
+       WHERE ${where.join(' AND ')}
+       GROUP BY DATE_FORMAT(${conversionDateExpr}, '%Y-%m'), r.vendedora_id, v.Nombre, v.Apellido
+       ORDER BY mes DESC, convertidas DESC, vendedora ASC`,
+      [
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        resultadoCodes.convertida,
+        resultadoCodes.convertidaFueraVentana,
+        ...params,
+      ]
+    );
+
+    const runMeta = scope === 'all' ? null : await loadFidelizacionRunById(pool, effectiveRunId);
+    res.json({
+      scope,
+      run_id: scope === 'all' ? null : effectiveRunId,
+      run: runMeta,
+      data: (rows || []).map((row) => ({
+        mes: String(row.mes || '').trim(),
+        vendedora_id: row.vendedora_id == null ? null : Number(row.vendedora_id),
+        vendedora: String(row.vendedora || '').trim() || 'Sin asignar',
+        convertidas: Number(row.convertidas) || 0,
+        convertidas_en_ventana: Number(row.convertidas_en_ventana) || 0,
+        convertidas_fuera_ventana: Number(row.convertidas_fuera_ventana) || 0,
+        monto_conversion: Number(row.monto_conversion) || 0,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar conversiones mensuales de fidelizacion', error: error.message });
+  }
+});
+
 app.get('/api/fidelizacion/dashboard/graficas', async (req, res) => {
   try {
     const context = await getFidelizacionUserContext(pool, req.user?.id);

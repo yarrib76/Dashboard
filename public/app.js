@@ -362,6 +362,7 @@ let fidMisDataTable = null;
 let fidAdminQueueDataTable = null;
 let fidReportAdminDataTable = null;
 let fidFinalizadosDataTable = null;
+let fidConversionesMensualesDataTable = null;
 let fidAnalisisComprasData = [];
 let fidAnalisisCurrentId = 0;
 let fidAnalisisAiEnabled = false;
@@ -575,6 +576,7 @@ const fidCardFinalizadas = document.getElementById('fid-card-finalizadas');
 const fidCardConvertidas = document.getElementById('fid-card-convertidas');
 const fidCardConvertidasFv = document.getElementById('fid-card-convertidas-fv');
 const fidCardNoConvertidas = document.getElementById('fid-card-no-convertidas');
+const fidOpenConversionesMensualesBtn = document.getElementById('fid-open-conversiones-mensuales');
 const fidOpenGraficasBtn = document.getElementById('fid-open-graficas-btn');
 const fidAdminTableBody = document.querySelector('#fid-admin-table tbody');
 const fidAdminCards = document.getElementById('fid-admin-cards');
@@ -618,6 +620,13 @@ const fidFinalizadosCloseBtn = document.getElementById('fid-finalizados-close');
 const fidFinalizadosTitle = document.getElementById('fid-finalizados-title');
 const fidFinalizadosTableBody = document.querySelector('#fid-finalizados-table tbody');
 const fidFinalizadosStatus = document.getElementById('fid-finalizados-status');
+const fidConversionesMensualesOverlay = document.getElementById('fid-conversiones-mensuales-overlay');
+const fidConversionesMensualesCloseBtn = document.getElementById('fid-conversiones-mensuales-close');
+const fidConversionesMensualesTitle = document.getElementById('fid-conversiones-mensuales-title');
+const fidConversionesMensualesMeta = document.getElementById('fid-conversiones-mensuales-meta');
+const fidConversionesMensualesTableBody = document.querySelector('#fid-conversiones-mensuales-table tbody');
+const fidConversionesMensualesCards = document.getElementById('fid-conversiones-mensuales-cards');
+const fidConversionesMensualesStatus = document.getElementById('fid-conversiones-mensuales-status');
 const fidAnalisisOverlay = document.getElementById('fid-analisis-overlay');
 const fidAnalisisTitle = document.getElementById('fid-analisis-title');
 const fidAnalisisCloseBtn = document.getElementById('fid-analisis-close');
@@ -17046,6 +17055,103 @@ function closeFidelizacionFinalizadosModal() {
   if (fidFinalizadosStatus) fidFinalizadosStatus.textContent = '';
 }
 
+function closeFidelizacionConversionesMensualesModal() {
+  if (fidConversionesMensualesOverlay) fidConversionesMensualesOverlay.classList.remove('open');
+  if (fidConversionesMensualesStatus) fidConversionesMensualesStatus.textContent = '';
+}
+
+function formatFidelizacionMonthLabel(monthKey) {
+  const value = String(monthKey || '').trim();
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return value || '-';
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const date = new Date(year, month, 1);
+  try {
+    return new Intl.DateTimeFormat('es-AR', { month: 'long', year: 'numeric' }).format(date);
+  } catch (error) {
+    return value;
+  }
+}
+
+function renderFidelizacionConversionesMensuales(rows = []) {
+  fidConversionesMensualesDataTable = destroyFidelizacionDataTable(fidConversionesMensualesDataTable);
+  if (fidConversionesMensualesTableBody) fidConversionesMensualesTableBody.innerHTML = '';
+  if (fidConversionesMensualesCards) fidConversionesMensualesCards.innerHTML = '';
+  (rows || []).forEach((row) => {
+    const monthLabel = formatFidelizacionMonthLabel(row.mes);
+    if (fidConversionesMensualesTableBody) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td data-order="${escapeAttr(row.mes || '')}">${escapeAttr(monthLabel)}</td>
+        <td>${escapeAttr(row.vendedora || 'Sin asignar')}</td>
+        <td>${Number(row.convertidas) || 0}</td>
+        <td>${Number(row.convertidas_en_ventana) || 0}</td>
+        <td>${Number(row.convertidas_fuera_ventana) || 0}</td>
+        <td>${formatMoney(row.monto_conversion || 0)}</td>
+      `;
+      fidConversionesMensualesTableBody.appendChild(tr);
+    }
+    if (fidConversionesMensualesCards) {
+      const card = document.createElement('article');
+      card.className = 'fidelizacion-card';
+      card.innerHTML = `
+        <div class="fidelizacion-card-header">
+          <p class="fidelizacion-card-title">${escapeAttr(row.vendedora || 'Sin asignar')}</p>
+          <span class="fidelizacion-card-score">${Number(row.convertidas) || 0}</span>
+        </div>
+        <p class="fidelizacion-card-meta">Mes: ${escapeAttr(monthLabel)}</p>
+        <p class="fidelizacion-card-meta">Dentro ventana: ${Number(row.convertidas_en_ventana) || 0}</p>
+        <p class="fidelizacion-card-meta">Fuera ventana: ${Number(row.convertidas_fuera_ventana) || 0}</p>
+        <p class="fidelizacion-card-offer">${formatMoney(row.monto_conversion || 0)}</p>
+      `;
+      fidConversionesMensualesCards.appendChild(card);
+    }
+  });
+  fidConversionesMensualesDataTable = initFidelizacionDataTable('#fid-conversiones-mensuales-table');
+}
+
+async function openFidelizacionConversionesMensualesModal() {
+  await ensureFidelizacionContext();
+  if (!fidelizacionContext?.isAdmin) {
+    setStatusMessage(fidReportesStatus, 'Solo Admin puede ver este detalle.', 'error');
+    return;
+  }
+  if (fidConversionesMensualesOverlay) fidConversionesMensualesOverlay.classList.add('open');
+  if (fidConversionesMensualesTitle) fidConversionesMensualesTitle.textContent = 'Conversiones por mes';
+  if (fidConversionesMensualesMeta) {
+    fidConversionesMensualesMeta.textContent =
+      fidReportScope === 'all' ? 'Mostrando historico de todas las corridas.' : 'Mostrando la corrida seleccionada.';
+  }
+  setStatusMessage(fidConversionesMensualesStatus, 'Cargando...');
+  try {
+    const query = new URLSearchParams();
+    query.set('scope', fidReportScope === 'all' ? 'all' : 'run');
+    if (fidReportScope !== 'all' && fidReportRunId) query.set('run_id', String(fidReportRunId));
+    const res = await fetchJSON(`/api/fidelizacion/dashboard/conversiones-mensuales?${query.toString()}`);
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    renderFidelizacionConversionesMensuales(rows);
+    if (fidConversionesMensualesMeta) {
+      if (res?.scope === 'all') {
+        fidConversionesMensualesMeta.textContent = 'Mostrando historico de todas las corridas.';
+      } else {
+        const run = res?.run;
+        const runLabel = run?.id ? `Corrida #${run.id}` : 'Corrida';
+        const runDate = run?.run_date ? formatDateLong(run.run_date) : '-';
+        fidConversionesMensualesMeta.textContent = `${runLabel} - ${runDate}`;
+      }
+    }
+    setStatusMessage(fidConversionesMensualesStatus, rows.length ? '' : 'Sin conversiones para este alcance.');
+  } catch (error) {
+    renderFidelizacionConversionesMensuales([]);
+    setStatusMessage(
+      fidConversionesMensualesStatus,
+      error.message || 'Error al cargar conversiones por mes.',
+      'error'
+    );
+  }
+}
+
 async function loadFidelizacionFinalizadosDetalle(vendedoraId, vendedoraLabel) {
   fidFinalizadosDataTable = destroyFidelizacionDataTable(fidFinalizadosDataTable);
   if (fidFinalizadosTableBody) fidFinalizadosTableBody.innerHTML = '';
@@ -17166,6 +17272,9 @@ async function loadFidelizacionReportes() {
     setStatusMessage(fidReportesStatus, '');
     if (fidGraficasOverlay?.classList.contains('open')) {
       await loadFidelizacionGraficas();
+    }
+    if (fidConversionesMensualesOverlay?.classList.contains('open')) {
+      await openFidelizacionConversionesMensualesModal();
     }
   } catch (error) {
     setStatusMessage(fidReportesStatus, error.message || 'Error al cargar reportes.', 'error');
@@ -17451,6 +17560,7 @@ function initFidelizacion() {
   renderFidelizacionMisRows([]);
   renderFidelizacionReportesAdmin([]);
   renderFidelizacionDashboardCards({});
+  renderFidelizacionConversionesMensuales([]);
   destroyFidelizacionCharts();
   renderFidelizacionRuns([]);
   if (fidelizacionRefreshBtn) fidelizacionRefreshBtn.addEventListener('click', () => loadFidelizacionPanel());
@@ -17467,6 +17577,9 @@ function initFidelizacion() {
     });
   }
   if (fidReportesRefreshBtn) fidReportesRefreshBtn.addEventListener('click', loadFidelizacionReportes);
+  if (fidOpenConversionesMensualesBtn) {
+    fidOpenConversionesMensualesBtn.addEventListener('click', openFidelizacionConversionesMensualesModal);
+  }
   if (fidOpenGraficasBtn) fidOpenGraficasBtn.addEventListener('click', openFidelizacionGraficasModal);
   if (fidGraficasRefreshBtn) fidGraficasRefreshBtn.addEventListener('click', loadFidelizacionGraficas);
   if (fidGraficasCloseBtn) fidGraficasCloseBtn.addEventListener('click', closeFidelizacionGraficasModal);
@@ -17737,6 +17850,14 @@ function initFidelizacion() {
   if (fidFinalizadosOverlay) {
     fidFinalizadosOverlay.addEventListener('click', (event) => {
       if (event.target === fidFinalizadosOverlay) closeFidelizacionFinalizadosModal();
+    });
+  }
+  if (fidConversionesMensualesCloseBtn) {
+    fidConversionesMensualesCloseBtn.addEventListener('click', closeFidelizacionConversionesMensualesModal);
+  }
+  if (fidConversionesMensualesOverlay) {
+    fidConversionesMensualesOverlay.addEventListener('click', (event) => {
+      if (event.target === fidConversionesMensualesOverlay) closeFidelizacionConversionesMensualesModal();
     });
   }
   if (fidFinalizadosTableBody) {
