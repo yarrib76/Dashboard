@@ -3621,6 +3621,7 @@ app.use('/api', (req, res, next) => {
     req.path === '/login' ||
     req.path === '/health' ||
     req.path === '/artisinc' ||
+    req.path === '/inArtisinc' ||
     req.path.startsWith('/public/') ||
     req.path.startsWith('/fichaje')
   ) {
@@ -4134,6 +4135,91 @@ app.get('/api/artisinc', async (req, res) => {
     res.json(rows || []);
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar articulos', error: error.message });
+  }
+});
+
+app.get('/api/inArtisinc', async (req, res) => {
+  let conn;
+  try {
+    const articulo = String(req.query.Articulo || '').trim();
+    if (!articulo) {
+      return res.status(400).json({ message: 'Articulo requerido' });
+    }
+
+    const detalle = String(req.query.Detalle || '').trim();
+    const proveedor = String(req.query.Proveedor || '').trim();
+    const precioOrigen = Number(req.query.PrecioOrigen) || 0;
+    const precioConvertido = Number(req.query.PrecioConvertido) || 0;
+    const proveedorSku = String(req.query.ProveedorSKU || '').trim();
+    const moneda = String(req.query.Moneda || '').trim();
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [[existing]] = await conn.query(
+      `SELECT Articulo
+       FROM ${DB_NAME}.articulos
+       WHERE Articulo = ?
+       LIMIT 1`,
+      [articulo]
+    );
+    if (existing) {
+      await conn.rollback();
+      return res.json('El articulo ya existe');
+    }
+
+    const columns = [
+      'Articulo',
+      'Detalle',
+      'ProveedorSKU',
+      'Cantidad',
+      'PrecioOrigen',
+      'PrecioConvertido',
+      'Moneda',
+      'PrecioManual',
+      'Gastos',
+      'Ganancia',
+      'Proveedor',
+    ];
+    const values = [
+      articulo,
+      detalle,
+      proveedorSku,
+      0,
+      precioOrigen,
+      precioConvertido,
+      moneda,
+      0,
+      0,
+      0,
+      proveedor,
+    ];
+    const placeholders = columns.map(() => '?').join(',');
+
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.articulos (${columns.join(',')})
+       VALUES (${placeholders})`,
+      values
+    );
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.deposito (${columns.join(',')})
+       VALUES (${placeholders})`,
+      values
+    );
+
+    await conn.commit();
+    res.json('Finalizado');
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al crear articulo sincronizado', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
