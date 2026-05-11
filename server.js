@@ -3620,6 +3620,7 @@ app.use('/api', (req, res, next) => {
   if (
     req.path === '/login' ||
     req.path === '/health' ||
+    req.path === '/artisinc' ||
     req.path.startsWith('/public/') ||
     req.path.startsWith('/fichaje')
   ) {
