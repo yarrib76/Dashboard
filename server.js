@@ -4119,6 +4119,23 @@ app.patch('/api/apis/endpoints/:id/activo', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/artisinc', async (req, res) => {
+  try {
+    const autCode = String(req.query.Codigo || '').trim();
+    if (autCode !== '3869') {
+      return res.json('AutErro');
+    }
+
+    const [rows] = await pool.query(
+      `SELECT Articulo, Detalle, Proveedor
+       FROM ${DB_NAME}.articulos`
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos', error: error.message });
+  }
+});
+
 app.get('/api/public/*', async (req, res) => {
   try {
     const requestedEndpoint = normalizeApiEndpointPath(req.path);
