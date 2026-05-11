@@ -7763,6 +7763,7 @@ function getLogoPathByLocal(local) {
   const value = String(local || '').trim().toLowerCase();
   if (value === 'viamore') return '/logoviamore.png';
   if (value === 'samira') return '/logosamira.png';
+  if (value === 'depo') return '/logodepo.png';
   return '/logo.png';
 }
 
