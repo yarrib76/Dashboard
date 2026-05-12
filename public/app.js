@@ -3688,21 +3688,28 @@ function updateMercArtProvTable(rows) {
   }
 }
 
+function applyMercArtProvResponse(res = {}) {
+  const rows = Array.isArray(res.data) ? res.data : [];
+  mercArtProvRows = rows;
+  if (mercArtProvTitle) {
+    const generatedAt = res.generatedAt || '';
+    mercArtProvTitle.textContent = generatedAt
+      ? `Lista de Articulos Fecha Del Reporte: ${generatedAt}`
+      : 'Lista de Articulos';
+  }
+  updateMercArtProvTable(rows);
+  return rows;
+}
+
 async function loadMercaderiaArticulosProveedor(force = false) {
   if (!mercArtProvTableEl) return;
   if (mercArtProvLoaded && !force) return;
   try {
     if (mercArtProvStatus) mercArtProvStatus.textContent = 'Cargando...';
     const res = await fetchJSON('/api/mercaderia/articulos-proveedor');
-    const rows = Array.isArray(res.data) ? res.data : [];
-    mercArtProvRows = rows;
-    if (mercArtProvTitle) {
-      mercArtProvTitle.textContent = `Lista de Articulos Fecha Del Reporte: ${res.generatedAt || ''}`.trim();
-    }
+    const rows = applyMercArtProvResponse(res);
 
-    if (mercArtProvDataTable) {
-      updateMercArtProvTable(rows);
-    } else {
+    if (!mercArtProvDataTable) {
       const dtAvailable = window.DataTable || (await ensureDataTable());
       if (dtAvailable) {
         mercArtProvDataTable = new DataTable('#merc-art-prov-table', {
@@ -3748,6 +3755,32 @@ async function loadMercaderiaArticulosProveedor(force = false) {
   }
 }
 
+async function refreshMercaderiaArticulosProveedor() {
+  if (!mercArtProvTableEl) return;
+  try {
+    if (mercArtProvRefreshBtn) mercArtProvRefreshBtn.disabled = true;
+    if (mercArtProvStatus) mercArtProvStatus.textContent = 'Actualizando reporte...';
+    const res = await fetch('/api/mercaderia/articulos-proveedor/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || 'No se pudo actualizar el reporte.');
+    const rows = applyMercArtProvResponse(data);
+    mercArtProvLoaded = true;
+    if (mercArtProvStatus) {
+      const count = Number(data.rowCount) || rows.length;
+      mercArtProvStatus.textContent = `Reporte actualizado. Artículos: ${count}`;
+    }
+  } catch (error) {
+    if (mercArtProvStatus) {
+      mercArtProvStatus.textContent = error.message || 'Error al actualizar reporte.';
+    }
+  } finally {
+    if (mercArtProvRefreshBtn) mercArtProvRefreshBtn.disabled = false;
+  }
+}
+
 async function exportMercaderiaArticulosProveedor() {
   try {
     if (!window.XLSX) await loadXlsxLibrary();
@@ -3772,8 +3805,7 @@ function initMercaderiaArticulosProveedor() {
   if (!viewMercaderiaArticulosProveedor) return;
   if (mercArtProvRefreshBtn) {
     mercArtProvRefreshBtn.addEventListener('click', () => {
-      mercArtProvLoaded = false;
-      loadMercaderiaArticulosProveedor(true);
+      refreshMercaderiaArticulosProveedor();
     });
   }
   if (mercArtProvExportBtn) {

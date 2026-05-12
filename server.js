@@ -8313,31 +8313,145 @@ app.get('/api/mercaderia/abm', async (req, res) => {
   }
 });
 
+async function getReporteArticuloFecha(conn) {
+  const [[row]] = await conn.query(
+    `SELECT DATE_FORMAT(Fecha, '%Y-%m-%d %H:%i:%s') AS Fecha
+     FROM ${DB_NAME}.statusreportes
+     WHERE Reporte = 'ArticuloProveedor'
+     ORDER BY Fecha DESC
+     LIMIT 1`
+  );
+  return row?.Fecha || '';
+}
+
+async function fetchReporteArticuloRows(conn) {
+  const [rows] = await conn.query(
+    `SELECT
+       Proveedor,
+       Pais,
+       Articulo,
+       Detalle,
+       Costo,
+       Ganancia,
+       Cantidad,
+       PrecioOrigen,
+       Moneda,
+       PrecioConvertido,
+       PrecioManual,
+       PrecioArgDolar,
+       PrecioArgenPesos,
+       PrecioVenta,
+       CotizacionDolar
+     FROM ${DB_NAME}.reportearticulo
+     ORDER BY Proveedor, Articulo`
+  );
+  return rows || [];
+}
+
+function buildReporteArticuloPrecioVentaSql(expr) {
+  return `FLOOR((ROUND((${expr}), 2) * 20) + 0.000001) / 20`;
+}
+
+async function refreshReporteArticulo(conn) {
+  const fecha = formatDateTimeLocal(new Date());
+  const precioDolarExpr = 'COALESCE(dol.PrecioDolar, 0)';
+  const costoExpr =
+    'CASE WHEN COALESCE(art.PrecioManual, 0) <> 0 THEN COALESCE(art.Gastos, 0) ELSE COALESCE(prov.Gastos, 0) END';
+  const gananciaExpr =
+    'CASE WHEN COALESCE(art.PrecioManual, 0) <> 0 THEN COALESCE(art.Ganancia, 0) ELSE COALESCE(prov.Ganancia, 0) END';
+  const precioBaseExpr = `
+    CASE
+      WHEN COALESCE(art.PrecioManual, 0) <> 0 THEN COALESCE(art.PrecioManual, 0) * ${costoExpr} * ${gananciaExpr}
+      WHEN COALESCE(art.PrecioConvertido, 0) = 0 THEN 0
+      WHEN UPPER(COALESCE(art.Moneda, '')) = 'ARG' THEN COALESCE(art.PrecioConvertido, 0) * ${costoExpr} * ${gananciaExpr}
+      ELSE COALESCE(art.PrecioConvertido, 0) * ${precioDolarExpr} * ${costoExpr} * ${gananciaExpr}
+    END`;
+  const precioVentaExpr = buildReporteArticuloPrecioVentaSql(precioBaseExpr);
+
+  await conn.query(`DELETE FROM ${DB_NAME}.reportearticulo`);
+  const [insertResult] = await conn.query(
+    `INSERT INTO ${DB_NAME}.reportearticulo
+       (Proveedor, Pais, Articulo, Detalle, Costo, Ganancia, Cantidad, PrecioOrigen, Moneda,
+        PrecioConvertido, PrecioManual, PrecioArgDolar, PrecioArgenPesos, PrecioVenta, CotizacionDolar)
+     SELECT
+       prov.Nombre AS Proveedor,
+       prov.Pais AS Pais,
+       art.Articulo,
+       art.Detalle,
+       ${costoExpr} AS Costo,
+       ${gananciaExpr} AS Ganancia,
+       COALESCE(art.Cantidad, 0) AS Cantidad,
+       COALESCE(art.PrecioOrigen, 0) AS PrecioOrigen,
+       art.Moneda,
+       COALESCE(art.PrecioConvertido, 0) AS PrecioConvertido,
+       COALESCE(art.PrecioManual, 0) AS PrecioManual,
+       COALESCE(art.PrecioConvertido, 0) * ${costoExpr} AS PrecioArgDolar,
+       COALESCE(art.PrecioManual, 0) * ${costoExpr} AS PrecioArgenPesos,
+       ${precioVentaExpr} AS PrecioVenta,
+       ${precioDolarExpr} AS CotizacionDolar
+     FROM ${DB_NAME}.articulos AS art
+     INNER JOIN ${DB_NAME}.proveedores AS prov ON prov.Nombre = art.Proveedor
+     LEFT JOIN (
+       SELECT PrecioDolar
+       FROM ${DB_NAME}.preciodolar
+       LIMIT 1
+     ) AS dol ON TRUE
+     WHERE art.Proveedor IS NOT NULL
+       AND TRIM(art.Proveedor) <> ''
+     ORDER BY prov.Nombre, art.Articulo`
+  );
+
+  const [statusResult] = await conn.query(
+    `UPDATE ${DB_NAME}.statusreportes
+     SET Fecha = ?
+     WHERE Reporte = 'ArticuloProveedor'`,
+    [fecha]
+  );
+  if (!statusResult.affectedRows) {
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.statusreportes (Reporte, Fecha)
+       VALUES ('ArticuloProveedor', ?)`,
+      [fecha]
+    );
+  }
+
+  return { fecha, rowCount: Number(insertResult.affectedRows) || 0 };
+}
+
 app.get('/api/mercaderia/articulos-proveedor', requireAuth, async (_req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT
-         Proveedor,
-         Pais,
-         Articulo,
-         Detalle,
-         Costo,
-         Ganancia,
-         Cantidad,
-         PrecioOrigen,
-         Moneda,
-         PrecioConvertido,
-         PrecioManual,
-         PrecioArgDolar,
-         PrecioArgenPesos,
-         PrecioVenta,
-         CotizacionDolar
-       FROM ${DB_NAME}.reportearticulo
-       ORDER BY Proveedor, Articulo`
-    );
-    res.json({ data: rows || [], generatedAt: formatDateTimeLocal(new Date()) });
+    const [rows, generatedAt] = await Promise.all([
+      fetchReporteArticuloRows(pool),
+      getReporteArticuloFecha(pool),
+    ]);
+    res.json({ data: rows, generatedAt });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar articulos por proveedor', error: error.message });
+  }
+});
+
+app.post('/api/mercaderia/articulos-proveedor/refresh', requireAuth, async (_req, res) => {
+  let conn;
+  let committed = false;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const refreshResult = await refreshReporteArticulo(conn);
+    await conn.commit();
+    committed = true;
+    const rows = await fetchReporteArticuloRows(pool);
+    res.json({ ok: true, data: rows, generatedAt: refreshResult.fecha, rowCount: refreshResult.rowCount });
+  } catch (error) {
+    if (conn && !committed) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al refrescar articulos por proveedor', error: error.message });
+  } finally {
+    if (conn) conn.release();
   }
 });
 
