@@ -400,6 +400,7 @@ const viewPedidos = document.getElementById('view-pedidos');
 const viewPedidosTodos = document.getElementById('view-pedidos-todos');
 const viewPedidosNuevo = document.getElementById('view-pedidos-nuevo');
 const viewMercaderia = document.getElementById('view-mercaderia');
+const viewMercaderiaArticulosProveedor = document.getElementById('view-mercaderia-articulos-proveedor');
 const viewMercaderiaFotos = document.getElementById('view-mercaderia-fotos');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
@@ -440,6 +441,11 @@ const mercFotosLimitInput = document.getElementById('merc-fotos-limit');
 const mercFotosRefreshBtn = document.getElementById('merc-fotos-refresh');
 const mercFotosStatus = document.getElementById('merc-fotos-status');
 const mercFotosTableEl = document.getElementById('mercaderia-fotos-table');
+const mercArtProvTitle = document.getElementById('merc-art-prov-title');
+const mercArtProvRefreshBtn = document.getElementById('merc-art-prov-refresh');
+const mercArtProvExportBtn = document.getElementById('merc-art-prov-export');
+const mercArtProvStatus = document.getElementById('merc-art-prov-status');
+const mercArtProvTableEl = document.getElementById('merc-art-prov-table');
 const mercTableBody = document.querySelector('#merc-table tbody');
 const mercStatus = document.getElementById('merc-status');
 const statPendientesControl = document.getElementById('stat-pendientes-control');
@@ -1187,6 +1193,9 @@ let mercImgZoom = 1;
 let mercChart = null;
 let mercFotosDataTable = null;
 let mercFotosLoaded = false;
+let mercArtProvDataTable = null;
+let mercArtProvLoaded = false;
+let mercArtProvRows = [];
 let abmDataTable = null;
 let abmLoaded = false;
 let abmRowsCache = [];
@@ -3645,6 +3654,131 @@ function initMercaderia() {
   }
   // primera carga
   loadMercaderia();
+}
+
+const mercArtProvColumns = [
+  { key: 'Proveedor', label: 'Proveedor' },
+  { key: 'Pais', label: 'Pais' },
+  { key: 'Articulo', label: 'Articulo' },
+  { key: 'Detalle', label: 'Detalle' },
+  { key: 'Costo', label: 'Costo' },
+  { key: 'Ganancia', label: 'Ganancia' },
+  { key: 'Cantidad', label: 'Cantidad' },
+  { key: 'PrecioOrigen', label: 'PrecioOrigen' },
+  { key: 'Moneda', label: 'Moneda' },
+  { key: 'PrecioConvertido', label: 'PrecioConvertido' },
+  { key: 'PrecioManual', label: 'PrecioManual' },
+  { key: 'PrecioArgDolar', label: 'PrecioArgDolar' },
+  { key: 'PrecioArgenPesos', label: 'PrecioArgenPesos' },
+  { key: 'PrecioVenta', label: 'PrecioVenta' },
+  { key: 'CotizacionDolar', label: 'CotizacionDolar' },
+];
+
+function renderMercArtProvCell(data, type) {
+  if (type !== 'display') return data ?? '';
+  return escapeAttr(data ?? '');
+}
+
+function updateMercArtProvTable(rows) {
+  if (mercArtProvDataTable) {
+    mercArtProvDataTable.clear();
+    mercArtProvDataTable.rows.add(rows);
+    mercArtProvDataTable.draw();
+    mercArtProvDataTable.columns.adjust();
+  }
+}
+
+async function loadMercaderiaArticulosProveedor(force = false) {
+  if (!mercArtProvTableEl) return;
+  if (mercArtProvLoaded && !force) return;
+  try {
+    if (mercArtProvStatus) mercArtProvStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/mercaderia/articulos-proveedor');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    mercArtProvRows = rows;
+    if (mercArtProvTitle) {
+      mercArtProvTitle.textContent = `Lista de Articulos Fecha Del Reporte: ${res.generatedAt || ''}`.trim();
+    }
+
+    if (mercArtProvDataTable) {
+      updateMercArtProvTable(rows);
+    } else {
+      const dtAvailable = window.DataTable || (await ensureDataTable());
+      if (dtAvailable) {
+        mercArtProvDataTable = new DataTable('#merc-art-prov-table', {
+          data: rows,
+          pageLength: 10,
+          lengthMenu: [10, 25, 50, 100],
+          deferRender: true,
+          scrollX: true,
+          autoWidth: false,
+          order: [[0, 'asc'], [2, 'asc']],
+          columns: mercArtProvColumns.map((col) => ({
+            data: col.key,
+            defaultContent: '',
+            render: renderMercArtProvCell,
+          })),
+          language: {
+            search: 'Buscar:',
+            lengthMenu: 'Mostrar _MENU_',
+            info: 'Mostrando _START_ a _END_ de _TOTAL_',
+            infoEmpty: 'Sin resultados',
+            emptyTable: 'Sin artículos.',
+            zeroRecords: 'Sin resultados',
+            paginate: {
+              first: 'Primero',
+              last: 'Ultimo',
+              next: 'Siguiente',
+              previous: 'Anterior',
+            },
+          },
+        });
+      }
+    }
+
+    mercArtProvLoaded = true;
+    if (mercArtProvStatus) {
+      mercArtProvStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados.';
+    }
+  } catch (error) {
+    mercArtProvLoaded = false;
+    if (mercArtProvStatus) {
+      mercArtProvStatus.textContent = error.message || 'Error al cargar articulos por proveedor.';
+    }
+  }
+}
+
+async function exportMercaderiaArticulosProveedor() {
+  try {
+    if (!window.XLSX) await loadXlsxLibrary();
+    if (!window.XLSX) throw new Error('XLSX no disponible');
+    const rows =
+      mercArtProvDataTable?.rows({ search: 'applied' }).data().toArray() ||
+      mercArtProvRows ||
+      [];
+    const headers = mercArtProvColumns.map((col) => col.label);
+    const data = rows.map((row) => mercArtProvColumns.map((col) => row[col.key] ?? ''));
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Articulos');
+    XLSX.writeFile(workbook, 'articulos_proveedor.xlsx');
+    if (mercArtProvStatus) mercArtProvStatus.textContent = `Exportados: ${rows.length}`;
+  } catch (error) {
+    if (mercArtProvStatus) mercArtProvStatus.textContent = error.message || 'No se pudo exportar.';
+  }
+}
+
+function initMercaderiaArticulosProveedor() {
+  if (!viewMercaderiaArticulosProveedor) return;
+  if (mercArtProvRefreshBtn) {
+    mercArtProvRefreshBtn.addEventListener('click', () => {
+      mercArtProvLoaded = false;
+      loadMercaderiaArticulosProveedor(true);
+    });
+  }
+  if (mercArtProvExportBtn) {
+    mercArtProvExportBtn.addEventListener('click', exportMercaderiaArticulosProveedor);
+  }
 }
 
 function validateMercaderiaFotosLimit() {
@@ -12544,6 +12678,7 @@ function getFirstAllowedView(perms = {}) {
       'pedidos-todos',
       'pedidos-nuevo',
       'mercaderia',
+      'mercaderia-articulos-proveedor',
       'mercaderia-fotos',
       'abm',
       'control-ordenes',
@@ -12621,6 +12756,7 @@ async function loadCurrentUser() {
       hasFidelizacionSubPerms,
       Boolean(data?.permissions?.fidelizacion)
     );
+    normalizeMercaderiaPermissions(currentPermissions, data?.permissions || {});
     applyMenuPermissions(currentPermissions);
     const path = window.location.pathname || '';
     const viewParam = new URLSearchParams(window.location.search || '').get('view');
@@ -14137,6 +14273,7 @@ const permissionGroups = [
     title: 'Mercaderia',
     items: [
       { key: 'mercaderia', label: 'Articulos Mas Vendido' },
+      { key: 'mercaderia-articulos-proveedor', label: 'Articulos/Proveedor' },
       { key: 'mercaderia-fotos', label: 'Mercaderia - Fotos' },
       { key: 'abm', label: 'ABM Articulos' },
       { key: 'control-ordenes', label: 'Control Ordenes' },
@@ -14203,6 +14340,16 @@ function normalizeFidelizacionPermissions(perms = {}, hasSubPerms = true, legacy
     !perms['fidelizacion-dashboard']
   ) {
     perms['fidelizacion-panel'] = true;
+  }
+  return perms;
+}
+
+function normalizeMercaderiaPermissions(perms = {}, rawPerms = {}) {
+  if (
+    perms.mercaderia === true &&
+    !Object.prototype.hasOwnProperty.call(rawPerms, 'mercaderia-articulos-proveedor')
+  ) {
+    perms['mercaderia-articulos-proveedor'] = true;
   }
   return perms;
 }
@@ -14285,7 +14432,7 @@ function renderPermissions() {
   const submenuMap = {
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
-    mercaderia: ['mercaderia-fotos', 'abm', 'control-ordenes'],
+    mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
   };
@@ -17938,6 +18085,7 @@ function switchView(target) {
       viewPedidosTodos,
       viewPedidosNuevo,
       viewMercaderia,
+      viewMercaderiaArticulosProveedor,
       viewMercaderiaFotos,
       viewAbm,
       viewControlOrdenes,
@@ -17980,6 +18128,7 @@ function switchView(target) {
       viewPedidosTodos,
       viewPedidosNuevo,
       viewMercaderia,
+      viewMercaderiaArticulosProveedor,
       viewMercaderiaFotos,
       viewAbm,
       viewControlOrdenes,
@@ -18054,6 +18203,9 @@ function switchView(target) {
   } else if (target === 'mercaderia') {
       viewMercaderia.classList.remove('hidden');
       loadMercaderia();
+  } else if (target === 'mercaderia-articulos-proveedor') {
+    viewMercaderiaArticulosProveedor.classList.remove('hidden');
+    loadMercaderiaArticulosProveedor();
   } else if (target === 'mercaderia-fotos') {
     viewMercaderiaFotos.classList.remove('hidden');
     if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa un stock mínimo y presiona Actualizar.';
@@ -18145,6 +18297,7 @@ initSalonResumen();
 initFidelizacion();
 initPedidosResumen();
 initMercaderia();
+initMercaderiaArticulosProveedor();
 initMercaderiaFotos();
 initAbm();
 initControlOrdenes();

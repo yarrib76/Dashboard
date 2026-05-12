@@ -589,6 +589,7 @@ const ROLE_PERMISSIONS = [
   'facturas',
   'comisiones',
   'mercaderia',
+  'mercaderia-articulos-proveedor',
   'mercaderia-fotos',
   'abm',
   'control-ordenes',
@@ -8309,6 +8310,34 @@ app.get('/api/mercaderia/abm', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar ABM de mercaderia', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/articulos-proveedor', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         Proveedor,
+         Pais,
+         Articulo,
+         Detalle,
+         Costo,
+         Ganancia,
+         Cantidad,
+         PrecioOrigen,
+         Moneda,
+         PrecioConvertido,
+         PrecioManual,
+         PrecioArgDolar,
+         PrecioArgenPesos,
+         PrecioVenta,
+         CotizacionDolar
+       FROM ${DB_NAME}.reportearticulo
+       ORDER BY Proveedor, Articulo`
+    );
+    res.json({ data: rows || [], generatedAt: formatDateTimeLocal(new Date()) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos por proveedor', error: error.message });
   }
 });
 
