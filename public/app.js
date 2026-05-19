@@ -243,6 +243,7 @@ const clientesTransicionDiagnostico = document.getElementById('clientes-transici
 const clientesTransicionDesdeBody = document.querySelector('#clientes-transicion-desde-table tbody');
 const clientesTransicionHaciaBody = document.querySelector('#clientes-transicion-hacia-table tbody');
 const clientesTransicionClientesBody = document.querySelector('#clientes-transicion-clientes-table tbody');
+const clientesTransicionClientesHead = document.querySelector('#clientes-transicion-clientes-table thead');
 const clientesTransicionStatus = document.getElementById('clientes-transicion-status');
 const clientesTransicionExport = document.getElementById('clientes-transicion-export');
 const clientesTransicionListMode = document.getElementById('clientes-transicion-list-mode');
@@ -336,6 +337,7 @@ let clientesReportesModalPageSizeValue = 10;
 let clientesReportesEvolucionPayload = null;
 let clientesTransicionActual = null;
 let clientesTransicionModo = 'actuales';
+let clientesTransicionSort = { key: 'cliente', dir: 'asc' };
 let currentView = '';
 let apisRows = [];
 let apisEditingId = 0;
@@ -9281,13 +9283,66 @@ function formatClienteTransicionFidelizacion(row = {}) {
   return 'Sin Conversion';
 }
 
-function renderClientesTransicionListado() {
-  if (!clientesTransicionClientesBody || !clientesTransicionActual) return;
+function getClienteTransicionContacto(row = {}) {
+  return [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
+}
+
+function getClienteTransicionRows() {
+  if (!clientesTransicionActual) return [];
   const detail = clientesTransicionActual.detail || {};
   const rows = clientesTransicionModo === 'salidas' ? detail.salidas || [] : detail.clientes || [];
+  const key = clientesTransicionSort.key || 'cliente';
+  const dir = clientesTransicionSort.dir === 'desc' ? -1 : 1;
+
+  return [...rows].sort((a, b) => {
+    let left = '';
+    let right = '';
+    if (key === 'fidelizacion') {
+      left = formatClienteTransicionFidelizacion(a);
+      right = formatClienteTransicionFidelizacion(b);
+    } else if (key === 'contacto') {
+      left = getClienteTransicionContacto(a);
+      right = getClienteTransicionContacto(b);
+    } else {
+      left = a[key];
+      right = b[key];
+    }
+
+    if (key === 'diasSinComprar') {
+      left = Number(left);
+      right = Number(right);
+      left = Number.isFinite(left) ? left : -1;
+      right = Number.isFinite(right) ? right : -1;
+      return (left - right) * dir;
+    }
+
+    if (key === 'ultimaCompra') {
+      left = left ? new Date(left).getTime() : 0;
+      right = right ? new Date(right).getTime() : 0;
+      return (left - right) * dir;
+    }
+
+    return String(left || '').localeCompare(String(right || ''), 'es', { sensitivity: 'base' }) * dir;
+  });
+}
+
+function updateClientesTransicionSortHeaders() {
+  if (!clientesTransicionClientesHead) return;
+  clientesTransicionClientesHead.querySelectorAll('.table-sort-btn').forEach((btn) => {
+    const active = btn.dataset.sort === clientesTransicionSort.key;
+    const icon = btn.querySelector('span');
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-sort', active ? (clientesTransicionSort.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    if (icon) icon.textContent = active ? (clientesTransicionSort.dir === 'asc' ? '↑' : '↓') : '↕';
+  });
+}
+
+function renderClientesTransicionListado() {
+  if (!clientesTransicionClientesBody || !clientesTransicionActual) return;
+  const rows = getClienteTransicionRows();
   clientesTransicionClientesBody.innerHTML = '';
   rows.forEach((row) => {
-    const contacto = [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
+    const contacto = getClienteTransicionContacto(row);
     const fidelizacion = formatClienteTransicionFidelizacion(row);
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -9303,6 +9358,7 @@ function renderClientesTransicionListado() {
   });
   const label = clientesTransicionModo === 'salidas' ? 'salida(s) desde el segmento' : 'cliente(s) en el segmento';
   setStatusMessage(clientesTransicionStatus, `${rows.length} ${label}.`);
+  updateClientesTransicionSortHeaders();
 }
 
 function openClientesTransicionModal(mes, estado) {
@@ -9321,6 +9377,7 @@ function openClientesTransicionModal(mes, estado) {
   const diagnostico = buildClientesTransicionDiagnostico(mes, estado, detail, currentTotal, prevTotal);
   clientesTransicionActual = { mes, estado, transition, detail, diagnostico };
   clientesTransicionModo = 'actuales';
+  clientesTransicionSort = { key: 'cliente', dir: 'asc' };
   if (clientesTransicionListMode) clientesTransicionListMode.value = clientesTransicionModo;
 
   if (clientesTransicionTitle) clientesTransicionTitle.textContent = `${estado} - ${mes}`;
@@ -9342,10 +9399,10 @@ async function exportClientesTransicionXlsx() {
   if (!window.XLSX) await loadXlsxLibrary();
   if (!window.XLSX) throw new Error('XLSX no disponible');
   const mode = clientesTransicionListMode?.value || clientesTransicionModo || 'actuales';
-  const rows =
-    mode === 'salidas'
-      ? clientesTransicionActual.detail?.salidas || []
-      : clientesTransicionActual.detail?.clientes || [];
+  const previousMode = clientesTransicionModo;
+  clientesTransicionModo = mode;
+  const rows = getClienteTransicionRows();
+  clientesTransicionModo = previousMode;
   const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Fidelizacion', 'Email', 'Telefono'];
   const mapRows = (rows) => rows.map((row) => [
     row.cliente || '',
@@ -9455,6 +9512,17 @@ function initClientesReportes() {
   });
   safeOn(clientesTransicionListMode, 'change', () => {
     clientesTransicionModo = clientesTransicionListMode.value || 'actuales';
+    renderClientesTransicionListado();
+  });
+  safeOn(clientesTransicionClientesHead, 'click', (event) => {
+    const btn = event.target.closest('.table-sort-btn[data-sort]');
+    if (!btn) return;
+    const key = btn.dataset.sort;
+    if (clientesTransicionSort.key === key) {
+      clientesTransicionSort.dir = clientesTransicionSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      clientesTransicionSort = { key, dir: 'asc' };
+    }
     renderClientesTransicionListado();
   });
   safeOn(clientesTransicionExport, 'click', async () => {

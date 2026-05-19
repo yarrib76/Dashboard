@@ -1042,6 +1042,30 @@ input[type='month'] {
   white-space: nowrap;
 }
 
+.table-sort-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.table-sort-btn span {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.table-sort-btn.is-active span {
+  color: var(--accent);
+}
+
 .pagination.inline {
   display: flex;
   align-items: center;
