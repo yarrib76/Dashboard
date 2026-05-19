@@ -9256,6 +9256,31 @@ function renderTransitionMap(body, map = {}) {
   });
 }
 
+function formatClienteTransicionFidelizacion(row = {}) {
+  const estado = String(row.fidelizacionEstado || '').trim().toUpperCase();
+  const resultado = String(row.fidelizacionResultado || '').trim().toUpperCase();
+  const fechaConversion =
+    row.fidelizacionUltimaConversion || row.fidelizacionConvertidaFecha || row.fidelizacionCerradaFecha;
+  const tieneFidelizacion =
+    estado ||
+    resultado ||
+    row.fidelizacionFecha ||
+    row.fidelizacionCerradaFecha ||
+    row.fidelizacionConvertidaFecha ||
+    row.fidelizacionUltimaConversion;
+
+  if (!tieneFidelizacion) return '-';
+  if (
+    row.fidelizacionUltimaConversion ||
+    row.fidelizacionConvertidaFecha ||
+    resultado === 'CONVERTIDA' ||
+    resultado === 'CONVERTIDA_FUERA_VENTANA'
+  ) {
+    return fechaConversion ? formatDateLong(fechaConversion) : 'Convertida';
+  }
+  return 'Sin Conversion';
+}
+
 function renderClientesTransicionListado() {
   if (!clientesTransicionClientesBody || !clientesTransicionActual) return;
   const detail = clientesTransicionActual.detail || {};
@@ -9263,6 +9288,7 @@ function renderClientesTransicionListado() {
   clientesTransicionClientesBody.innerHTML = '';
   rows.forEach((row) => {
     const contacto = [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
+    const fidelizacion = formatClienteTransicionFidelizacion(row);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeAttr(row.cliente || 'Cliente')}</td>
@@ -9270,6 +9296,7 @@ function renderClientesTransicionListado() {
       <td>${renderClienteEstadoBadge(row.to)}</td>
       <td>${formatDate(row.ultimaCompra)}</td>
       <td>${row.diasSinComprar ?? '-'}</td>
+      <td>${escapeAttr(fidelizacion)}</td>
       <td>${escapeAttr(contacto)}</td>
     `;
     clientesTransicionClientesBody.appendChild(tr);
@@ -9319,13 +9346,14 @@ async function exportClientesTransicionXlsx() {
     mode === 'salidas'
       ? clientesTransicionActual.detail?.salidas || []
       : clientesTransicionActual.detail?.clientes || [];
-  const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Email', 'Telefono'];
+  const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Fidelizacion', 'Email', 'Telefono'];
   const mapRows = (rows) => rows.map((row) => [
     row.cliente || '',
     row.from || '',
     row.to || '',
     row.ultimaCompra || '',
     row.diasSinComprar ?? '',
+    formatClienteTransicionFidelizacion(row),
     row.email || '',
     row.telefono || '',
   ]);

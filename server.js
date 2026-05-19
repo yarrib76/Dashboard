@@ -3550,14 +3550,39 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
            c.mail,
            c.telefono,
            DATE(MAX(f.Fecha)) AS ultimaCompra,
-           DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar
+           DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar,
+           fid.estado AS fidelizacionEstado,
+           fid.resultado AS fidelizacionResultado,
+           fid.created_at AS fidelizacionFecha,
+           fid.closed_at AS fidelizacionCerradaFecha,
+           fid.converted_at AS fidelizacionConvertidaFecha,
+           fid_conv.fidelizacionUltimaConversion
          FROM clientes c
          LEFT JOIN facturah f
            ON f.id_clientes = c.id_clientes
           AND DATE(f.Fecha) <= ?
+         LEFT JOIN (
+           SELECT fr.*
+           FROM fidelizacion_recomendacion fr
+           INNER JOIN (
+             SELECT cliente_id, MAX(id) AS max_id
+             FROM fidelizacion_recomendacion
+             WHERE DATE(created_at) <= ?
+             GROUP BY cliente_id
+           ) latest ON latest.max_id = fr.id
+         ) fid ON fid.cliente_id = c.id_clientes
+         LEFT JOIN (
+           SELECT cliente_id, MAX(converted_at) AS fidelizacionUltimaConversion
+           FROM fidelizacion_recomendacion
+           WHERE converted_at IS NOT NULL
+             AND DATE(converted_at) <= ?
+           GROUP BY cliente_id
+         ) fid_conv ON fid_conv.cliente_id = c.id_clientes
          WHERE c.id_clientes <> 1
-         GROUP BY c.id_clientes, c.nombre, c.apellido, c.mail, c.telefono`,
-        [item.corte, item.corte]
+         GROUP BY c.id_clientes, c.nombre, c.apellido, c.mail, c.telefono,
+           fid.estado, fid.resultado, fid.created_at, fid.closed_at, fid.converted_at,
+           fid_conv.fidelizacionUltimaConversion`,
+        [item.corte, item.corte, item.corte, item.corte]
       );
       const counts = Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((estado) => [estado, 0]));
       const clientes = rows.map(enrichClienteReporteRow);
@@ -3599,6 +3624,12 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
           telefono: row.telefono || '',
           ultimaCompra: row.ultimaCompra || null,
           diasSinComprar: row.diasSinComprar,
+          fidelizacionEstado: row.fidelizacionEstado || '',
+          fidelizacionResultado: row.fidelizacionResultado || '',
+          fidelizacionFecha: row.fidelizacionFecha || null,
+          fidelizacionCerradaFecha: row.fidelizacionCerradaFecha || null,
+          fidelizacionConvertidaFecha: row.fidelizacionConvertidaFecha || null,
+          fidelizacionUltimaConversion: row.fidelizacionUltimaConversion || null,
           from,
           to,
         });
@@ -3617,6 +3648,18 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
           telefono: row.telefono || '',
           ultimaCompra: currentRow?.ultimaCompra || row.ultimaCompra || null,
           diasSinComprar: currentRow?.diasSinComprar ?? row.diasSinComprar,
+          fidelizacionEstado:
+            currentRow?.fidelizacionEstado || row.fidelizacionEstado || '',
+          fidelizacionResultado:
+            currentRow?.fidelizacionResultado || row.fidelizacionResultado || '',
+          fidelizacionFecha:
+            currentRow?.fidelizacionFecha || row.fidelizacionFecha || null,
+          fidelizacionCerradaFecha:
+            currentRow?.fidelizacionCerradaFecha || row.fidelizacionCerradaFecha || null,
+          fidelizacionConvertidaFecha:
+            currentRow?.fidelizacionConvertidaFecha || row.fidelizacionConvertidaFecha || null,
+          fidelizacionUltimaConversion:
+            currentRow?.fidelizacionUltimaConversion || row.fidelizacionUltimaConversion || null,
           from,
           to,
         });
