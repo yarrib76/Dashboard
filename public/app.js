@@ -12863,7 +12863,6 @@ function resolvePermissionKey(target) {
   if (target === 'dashboard-comparativo') return 'dashboard';
   if (target === 'fidelizacion-runs') return 'fidelizacion-dashboard';
   if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
-  if (target === 'clientes-reportes') return 'clientes';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
   if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
@@ -12937,6 +12936,7 @@ function applyMenuPermissions(perms = {}) {
     const visibleItems = group.querySelectorAll('.menu-item[data-target]');
     const anyVisible = Array.from(visibleItems).some((btn) => btn.style.display !== 'none');
     const forcedGroupPerms = {
+      clientes: 'clientes-menu',
       pedidos: 'pedidos-menu',
       fidelizacion: 'fidelizacion-menu',
     };
@@ -14532,7 +14532,9 @@ const permissionGroups = [
         { key: 'panel-control', label: 'Panel de Control' },
         { key: 'cargar-ticket', label: 'CargarTicket' },
         { key: 'empleados', label: 'Empleados' },
-      { key: 'clientes', label: 'Clientes' },
+        { key: 'clientes-menu', label: 'Menu Clientes' },
+        { key: 'clientes', label: 'Clientes - AMB' },
+        { key: 'clientes-reportes', label: 'Clientes - Reportes' },
         { key: 'ia', label: 'IA' },
         { key: 'salon', label: 'Salon' },
         { key: 'fidelizacion-menu', label: 'Menu Fidelizacion' },
@@ -14717,6 +14719,7 @@ function renderPermissions() {
     });
   });
   const submenuMap = {
+    'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
     mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'abm', 'control-ordenes'],
