@@ -1016,6 +1016,20 @@ input[type='month'] {
   margin-bottom: 12px;
 }
 
+.clientes-transicion-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.clientes-transicion-controls {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.clientes-transicion-controls .status {
+  margin: 0;
+}
+
 .pagination.inline {
   display: flex;
   align-items: center;
