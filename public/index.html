@@ -724,6 +724,61 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="clientes-transicion-overlay">
+    <div class="modal large">
+      <div class="modal-header">
+        <h3 id="clientes-transicion-title">Diagnostico</h3>
+        <button id="clientes-transicion-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="clientes-transicion-diagnostico" id="clientes-transicion-diagnostico"></div>
+        <div class="clientes-transicion-grid">
+          <div class="table-wrap">
+            <table class="table" id="clientes-transicion-desde-table">
+              <thead>
+                <tr>
+                  <th>Venian de</th>
+                  <th>Clientes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="clientes-transicion-hacia-table">
+              <thead>
+                <tr>
+                  <th>Se fueron a</th>
+                  <th>Clientes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="actions between clientes-reportes-modal-actions">
+          <p class="status" id="clientes-transicion-status"></p>
+          <button id="clientes-transicion-export" class="btn-excel" type="button">XLSX</button>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="clientes-transicion-clientes-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Desde</th>
+                <th>Hacia</th>
+                <th>Ultima compra</th>
+                <th>Dias</th>
+                <th>Contacto</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <section class="view hidden" id="view-ia">
     <article class="card wide">
       <div class="actions between">

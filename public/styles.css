@@ -995,6 +995,27 @@ input[type='month'] {
   gap: 12px;
 }
 
+.clientes-transicion-diagnostico {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--panel);
+}
+
+.clientes-transicion-diagnostico p {
+  margin: 0;
+}
+
+.clientes-transicion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .pagination.inline {
   display: flex;
   align-items: center;

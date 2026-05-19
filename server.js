@@ -3539,27 +3539,88 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
     const corte = normalizeClientesReporteCorte(req.query.corte);
     const months = getClientesReporteMonthEnds(corte, 12);
     const data = [];
+    const snapshots = [];
 
     for (const item of months) {
       const [rows] = await pool.query(
         `SELECT
+           c.id_clientes AS id,
+           c.nombre,
+           c.apellido,
+           c.mail,
+           c.telefono,
+           DATE(MAX(f.Fecha)) AS ultimaCompra,
            DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar
          FROM clientes c
          LEFT JOIN facturah f
            ON f.id_clientes = c.id_clientes
           AND DATE(f.Fecha) <= ?
          WHERE c.id_clientes <> 1
-         GROUP BY c.id_clientes`,
+         GROUP BY c.id_clientes, c.nombre, c.apellido, c.mail, c.telefono`,
         [item.corte, item.corte]
       );
       const counts = Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((estado) => [estado, 0]));
-      rows.map(enrichClienteReporteRow).forEach((row) => {
+      const clientes = rows.map(enrichClienteReporteRow);
+      clientes.forEach((row) => {
         counts[row.estado] = (counts[row.estado] || 0) + 1;
       });
+      snapshots.push({ ...item, clientes });
       data.push({ mes: item.label, corte: item.corte, ...counts });
     }
 
-    res.json({ corte, data });
+    const transitions = [];
+    for (let idx = 1; idx < snapshots.length; idx += 1) {
+      const prev = snapshots[idx - 1];
+      const current = snapshots[idx];
+      const prevById = new Map(prev.clientes.map((row) => [Number(row.id), row]));
+      const currentById = new Map(current.clientes.map((row) => [Number(row.id), row]));
+      const detail = {};
+      Object.values(CLIENTE_ESTADOS).forEach((estado) => {
+        detail[estado] = {
+          desde: Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((key) => [key, 0])),
+          hacia: Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((key) => [key, 0])),
+          permanecen: 0,
+          clientes: [],
+        };
+      });
+
+      current.clientes.forEach((row) => {
+        const prevRow = prevById.get(Number(row.id));
+        const from = prevRow?.estado || CLIENTE_ESTADOS.SIN_COMPRAS;
+        const to = row.estado || CLIENTE_ESTADOS.SIN_COMPRAS;
+        if (!detail[to]) return;
+        detail[to].desde[from] = (detail[to].desde[from] || 0) + 1;
+        if (from === to) detail[to].permanecen += 1;
+        detail[to].clientes.push({
+          id: Number(row.id) || 0,
+          cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim() || row.apodo || 'Cliente',
+          email: row.mail || '',
+          telefono: row.telefono || '',
+          ultimaCompra: row.ultimaCompra || null,
+          diasSinComprar: row.diasSinComprar,
+          from,
+          to,
+        });
+      });
+
+      prev.clientes.forEach((row) => {
+        const currentRow = currentById.get(Number(row.id));
+        const from = row.estado || CLIENTE_ESTADOS.SIN_COMPRAS;
+        const to = currentRow?.estado || CLIENTE_ESTADOS.SIN_COMPRAS;
+        if (!detail[from]) return;
+        detail[from].hacia[to] = (detail[from].hacia[to] || 0) + 1;
+      });
+
+      transitions.push({
+        mes: current.label,
+        corte: current.corte,
+        mesAnterior: prev.label,
+        corteAnterior: prev.corte,
+        detail,
+      });
+    }
+
+    res.json({ corte, data, transitions });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar evolucion de clientes', error: error.message });
   }

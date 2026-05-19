@@ -236,6 +236,15 @@ const clientesReportesModalPrev = document.getElementById('clientes-reportes-mod
 const clientesReportesModalNext = document.getElementById('clientes-reportes-modal-next');
 const clientesReportesModalPageInfo = document.getElementById('clientes-reportes-modal-page-info');
 const clientesReportesModalStatus = document.getElementById('clientes-reportes-modal-status');
+const clientesTransicionOverlay = document.getElementById('clientes-transicion-overlay');
+const clientesTransicionTitle = document.getElementById('clientes-transicion-title');
+const clientesTransicionClose = document.getElementById('clientes-transicion-close');
+const clientesTransicionDiagnostico = document.getElementById('clientes-transicion-diagnostico');
+const clientesTransicionDesdeBody = document.querySelector('#clientes-transicion-desde-table tbody');
+const clientesTransicionHaciaBody = document.querySelector('#clientes-transicion-hacia-table tbody');
+const clientesTransicionClientesBody = document.querySelector('#clientes-transicion-clientes-table tbody');
+const clientesTransicionStatus = document.getElementById('clientes-transicion-status');
+const clientesTransicionExport = document.getElementById('clientes-transicion-export');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -323,6 +332,8 @@ let clientesReportesSearchTimer = null;
 let clientesReportesModalEstado = '';
 let clientesReportesModalPage = 1;
 let clientesReportesModalPageSizeValue = 10;
+let clientesReportesEvolucionPayload = null;
+let clientesTransicionActual = null;
 let currentView = '';
 let apisRows = [];
 let apisEditingId = 0;
@@ -9014,6 +9025,13 @@ function renderClientesReportesEvolucion(rows = []) {
   const labels = rows.map((row) => row.mes || '');
   const estados = ['Activo', 'Baja frecuencia', 'En riesgo', 'Inactivo', 'Sin compras'];
   const colors = ['#0ea5a6', '#f59e0b', '#ef4444', '#7f1d1d', '#64748b'];
+  const handlePointClick = (_event, elements) => {
+    if (!elements?.length) return;
+    const point = elements[0];
+    const estado = estados[point.datasetIndex];
+    const mes = labels[point.index];
+    openClientesTransicionModal(mes, estado);
+  };
   if (chartState.clientesEvolucion) chartState.clientesEvolucion.destroy();
   chartState.clientesEvolucion = new Chart(clientesReportesEvolucionChart.getContext('2d'), {
     type: 'line',
@@ -9030,6 +9048,7 @@ function renderClientesReportesEvolucion(rows = []) {
     },
     options: {
       responsive: true,
+      onClick: handlePointClick,
       plugins: { legend: { position: 'bottom' } },
       scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
     },
@@ -9038,6 +9057,7 @@ function renderClientesReportesEvolucion(rows = []) {
 
 function renderClientesReportes(payload = {}, evolucionPayload = {}) {
   clientesReportesData = payload;
+  clientesReportesEvolucionPayload = evolucionPayload;
   fillClientesReporteSelect(clientesReportesVendedora, payload.filtros?.vendedoras || [], 'Todas');
   fillClientesReporteSelect(clientesReportesLocalidad, payload.filtros?.localidades || [], 'Todas');
   fillClientesReporteSelect(clientesReportesProvincia, payload.filtros?.provincias || [], 'Todas');
@@ -9160,6 +9180,152 @@ async function exportClientesReportesModalXlsx() {
   XLSX.writeFile(workbook, `clientes-${estadoSlug || 'reporte'}.xlsx`);
 }
 
+function getTransitionCount(map = {}, estado) {
+  return Number(map?.[estado]) || 0;
+}
+
+function buildClientesTransicionDiagnostico(mes, estado, detail = {}, currentTotal = 0, prevTotal = 0) {
+  const delta = currentTotal - prevTotal;
+  const haciaActivo = getTransitionCount(detail.hacia, 'Activo');
+  const desdeActivo = getTransitionCount(detail.desde, 'Activo');
+  const haciaRiesgo = getTransitionCount(detail.hacia, 'En riesgo');
+  const haciaInactivo = getTransitionCount(detail.hacia, 'Inactivo');
+  const desdeRiesgo = getTransitionCount(detail.desde, 'En riesgo');
+  const desdeInactivo = getTransitionCount(detail.desde, 'Inactivo');
+  let lectura = '';
+
+  if (estado === 'Activo') {
+    lectura =
+      delta >= 0
+        ? 'El segmento activo crecio. Es positivo si el crecimiento viene de clientes recuperados o de primeras compras.'
+        : 'El segmento activo cayo. Revisar si esos clientes estan pasando a baja frecuencia o a riesgo.';
+  } else if (estado === 'Baja frecuencia') {
+    if (delta > 0 && desdeActivo > 0) {
+      lectura = 'Subio por clientes que dejaron de estar activos. Es una alerta temprana de perdida de ritmo.';
+    } else if (delta < 0 && haciaActivo >= haciaRiesgo) {
+      lectura = 'Bajo principalmente por recuperacion hacia activos. Es una senal positiva.';
+    } else if (delta < 0 && haciaRiesgo > haciaActivo) {
+      lectura = 'Bajo, pero una parte relevante paso a en riesgo. Es deterioro, no recuperacion.';
+    } else {
+      lectura = 'Revisar entradas y salidas para confirmar si el cambio es recuperacion o deterioro.';
+    }
+  } else if (estado === 'En riesgo') {
+    if (delta < 0 && haciaActivo > haciaInactivo) {
+      lectura = 'Bajo por recuperacion hacia activos. Es una senal positiva.';
+    } else if (delta < 0 && haciaInactivo >= haciaActivo) {
+      lectura = 'Bajo, pero por paso a inactivos. Es perdida de cartera.';
+    } else if (delta > 0) {
+      lectura = 'Subio el riesgo. Conviene priorizar seguimiento antes de que pasen a inactivos.';
+    } else {
+      lectura = 'Sin variacion relevante, revisar permanencias para entender cartera estancada.';
+    }
+  } else if (estado === 'Inactivo') {
+    lectura =
+      delta > 0
+        ? 'Subieron los inactivos. Normalmente indica clientes que venian en riesgo y no volvieron a comprar.'
+        : 'Bajaron los inactivos. Es positivo si se movieron hacia activos.';
+  } else if (estado === 'Sin compras') {
+    lectura =
+      delta > 0
+        ? 'Subieron los clientes sin compras. Puede indicar altas de clientes todavia no convertidas.'
+        : 'Bajaron los clientes sin compras. Es positivo si se convirtieron en activos.';
+  }
+
+  return {
+    delta,
+    lectura,
+    resumen: `${estado} en ${mes}: ${currentTotal} cliente(s). Mes anterior: ${prevTotal}. Variacion: ${
+      delta >= 0 ? '+' : ''
+    }${delta}.`,
+    notas: `Entradas desde riesgo: ${desdeRiesgo}. Entradas desde inactivos: ${desdeInactivo}. Salidas a activo: ${haciaActivo}.`,
+  };
+}
+
+function renderTransitionMap(body, map = {}) {
+  if (!body) return;
+  body.innerHTML = '';
+  Object.entries(map).forEach(([estado, total]) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${renderClienteEstadoBadge(estado)}</td>
+      <td>${Number(total) || 0}</td>
+    `;
+    body.appendChild(tr);
+  });
+}
+
+function openClientesTransicionModal(mes, estado) {
+  const transition = (clientesReportesEvolucionPayload?.transitions || []).find((item) => item.mes === mes);
+  if (!transition) {
+    setStatusMessage(clientesReportesStatus, 'No hay mes anterior para calcular transiciones.', 'error');
+    return;
+  }
+  const detail = transition.detail?.[estado];
+  if (!detail) return;
+  const currentRow = (clientesReportesEvolucionPayload?.data || []).find((row) => row.mes === mes) || {};
+  const prevRow =
+    (clientesReportesEvolucionPayload?.data || []).find((row) => row.mes === transition.mesAnterior) || {};
+  const currentTotal = Number(currentRow[estado]) || 0;
+  const prevTotal = Number(prevRow[estado]) || 0;
+  const diagnostico = buildClientesTransicionDiagnostico(mes, estado, detail, currentTotal, prevTotal);
+  clientesTransicionActual = { mes, estado, transition, detail, diagnostico };
+
+  if (clientesTransicionTitle) clientesTransicionTitle.textContent = `${estado} - ${mes}`;
+  if (clientesTransicionDiagnostico) {
+    clientesTransicionDiagnostico.innerHTML = `
+      <p><strong>${escapeAttr(diagnostico.resumen)}</strong></p>
+      <p>${escapeAttr(diagnostico.lectura)}</p>
+      <p>${escapeAttr(diagnostico.notas)}</p>
+    `;
+  }
+  renderTransitionMap(clientesTransicionDesdeBody, detail.desde || {});
+  renderTransitionMap(clientesTransicionHaciaBody, detail.hacia || {});
+  if (clientesTransicionClientesBody) {
+    clientesTransicionClientesBody.innerHTML = '';
+    (detail.clientes || []).forEach((row) => {
+      const contacto = [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeAttr(row.cliente || 'Cliente')}</td>
+        <td>${renderClienteEstadoBadge(row.from)}</td>
+        <td>${renderClienteEstadoBadge(row.to)}</td>
+        <td>${formatDate(row.ultimaCompra)}</td>
+        <td>${row.diasSinComprar ?? '-'}</td>
+        <td>${escapeAttr(contacto)}</td>
+      `;
+      clientesTransicionClientesBody.appendChild(tr);
+    });
+  }
+  setStatusMessage(clientesTransicionStatus, `${Number(detail.clientes?.length) || 0} cliente(s) en el segmento.`);
+  openOverlay(clientesTransicionOverlay);
+}
+
+async function exportClientesTransicionXlsx() {
+  if (!clientesTransicionActual) return;
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const rows = clientesTransicionActual.detail?.clientes || [];
+  const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Email', 'Telefono'];
+  const data = rows.map((row) => [
+    row.cliente || '',
+    row.from || '',
+    row.to || '',
+    row.ultimaCompra || '',
+    row.diasSinComprar ?? '',
+    row.email || '',
+    row.telefono || '',
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Transicion');
+  const fileEstado = clientesTransicionActual.estado
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-');
+  XLSX.writeFile(workbook, `transicion-${clientesTransicionActual.mes}-${fileEstado}.xlsx`);
+}
+
 async function loadClientesReportes({ silent = false } = {}) {
   if (!viewClientesReportes) return;
   try {
@@ -9236,6 +9402,18 @@ function initClientesReportes() {
       setStatusMessage(clientesReportesModalStatus, 'Excel generado.', 'ok');
     } catch (error) {
       setStatusMessage(clientesReportesModalStatus, error.message || 'No se pudo exportar.', 'error');
+    }
+  });
+  safeOn(clientesTransicionClose, 'click', () => closeOverlay(clientesTransicionOverlay));
+  safeOn(clientesTransicionOverlay, 'click', (event) => {
+    if (event.target === clientesTransicionOverlay) closeOverlay(clientesTransicionOverlay);
+  });
+  safeOn(clientesTransicionExport, 'click', async () => {
+    try {
+      await exportClientesTransicionXlsx();
+      setStatusMessage(clientesTransicionStatus, 'Excel generado.', 'ok');
+    } catch (error) {
+      setStatusMessage(clientesTransicionStatus, error.message || 'No se pudo exportar.', 'error');
     }
   });
 }
