@@ -11,6 +11,7 @@ const chartState = {
   fidRazones: null,
   fidTiempo: null,
   fidVendedoras: null,
+  clientesEvolucion: null,
 };
 const dashboardComparativoInflationState = {
   payload: null,
@@ -214,6 +215,22 @@ const clientesNewProvincia = document.getElementById('clientes-new-region');
 const clientesNewCodPostal = document.getElementById('clientes-new-zip');
 const clientesNewCuit = document.getElementById('clientes-new-cuit');
 const clientesNewEncuesta = document.getElementById('clientes-new-encuesta');
+const clientesReportesCorte = document.getElementById('clientes-reportes-corte');
+const clientesReportesRefresh = document.getElementById('clientes-reportes-refresh');
+const clientesReportesSearch = document.getElementById('clientes-reportes-search');
+const clientesReportesEstado = document.getElementById('clientes-reportes-estado');
+const clientesReportesVendedora = document.getElementById('clientes-reportes-vendedora');
+const clientesReportesLocalidad = document.getElementById('clientes-reportes-localidad');
+const clientesReportesProvincia = document.getElementById('clientes-reportes-provincia');
+const clientesReportesTabs = document.getElementById('clientes-reportes-tabs');
+const clientesReportesSummary = document.getElementById('clientes-reportes-summary');
+const clientesReportesSummaryBody = document.querySelector('#clientes-reportes-summary-table tbody');
+const clientesReportesTableBody = document.querySelector('#clientes-reportes-table tbody');
+const clientesReportesRecuperacionBody = document.querySelector('#clientes-reportes-recuperacion-table tbody');
+const clientesReportesFrecuenciaBody = document.querySelector('#clientes-reportes-frecuencia-table tbody');
+const clientesReportesEvolucionBody = document.querySelector('#clientes-reportes-evolucion-table tbody');
+const clientesReportesEvolucionChart = document.getElementById('clientes-reportes-evolucion-chart');
+const clientesReportesStatus = document.getElementById('clientes-reportes-status');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -295,6 +312,9 @@ let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
 let clientesNewMode = 'create';
 let clientesEditId = null;
+let clientesReportesLoaded = false;
+let clientesReportesData = null;
+let clientesReportesSearchTimer = null;
 let currentView = '';
 let apisRows = [];
 let apisEditingId = 0;
@@ -390,6 +410,7 @@ const viewDashboardComparativo = document.getElementById('view-dashboard-compara
 const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
+const viewClientesReportes = document.getElementById('view-clientes-reportes');
 const viewIa = document.getElementById('view-ia');
 const viewSalon = document.getElementById('view-salon');
 const viewFidelizacionPanel = document.getElementById('view-fidelizacion-panel');
@@ -8873,6 +8894,238 @@ function renderClientesCards(rows) {
   });
 }
 
+function getClienteReporteLabel(row = {}) {
+  return `${row.nombre || ''} ${row.apellido || ''}`.trim() || row.apodo || 'Cliente';
+}
+
+function getClienteEstadoClass(estado) {
+  const key = String(estado || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-');
+  return `cliente-estado cliente-estado--${key || 'sin-estado'}`;
+}
+
+function renderClienteEstadoBadge(estado) {
+  return `<span class="${getClienteEstadoClass(estado)}">${escapeAttr(estado || '-')}</span>`;
+}
+
+function fillClientesReporteSelect(selectEl, values = [], defaultLabel = 'Todos') {
+  if (!selectEl) return;
+  const current = selectEl.value || '';
+  const safeValues = current && !values.includes(current) ? [current, ...values] : values;
+  selectEl.innerHTML = `<option value="">${defaultLabel}</option>`;
+  safeValues.forEach((value) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = value;
+    selectEl.appendChild(option);
+  });
+  if (current) selectEl.value = current;
+}
+
+function renderClientesReportesResumen(rows = []) {
+  if (clientesReportesSummary) {
+    clientesReportesSummary.innerHTML = rows
+      .map(
+        (row) => `
+          <div class="stat-card cliente-reporte-stat">
+            <p class="label">${escapeAttr(row.estado || '-')}</p>
+            <strong>${Number(row.total) || 0}</strong>
+            <span>${formatMoney(row.monto12m || 0)} 12m</span>
+          </div>
+        `
+      )
+      .join('');
+  }
+  if (!clientesReportesSummaryBody) return;
+  clientesReportesSummaryBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${renderClienteEstadoBadge(row.estado)}</td>
+      <td>${Number(row.total) || 0}</td>
+      <td>${formatMoney(row.monto12m || 0)}</td>
+      <td>${formatMoney(row.ticketPromedio || 0)}</td>
+    `;
+    clientesReportesSummaryBody.appendChild(tr);
+  });
+}
+
+function renderClientesReportesListado(rows = []) {
+  if (!clientesReportesTableBody) return;
+  clientesReportesTableBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const contacto = [row.mail, row.telefono].filter(Boolean).join(' / ') || '-';
+    tr.innerHTML = `
+      <td>${escapeAttr(getClienteReporteLabel(row))}</td>
+      <td>${escapeAttr(contacto)}</td>
+      <td>${formatDate(row.ultimaCompra)}</td>
+      <td>${row.diasSinComprar ?? '-'}</td>
+      <td>${renderClienteEstadoBadge(row.estado)}</td>
+      <td>${Number(row.compras12m) || 0}</td>
+      <td>${formatMoney(row.monto12m || 0)}</td>
+      <td>${formatMoney(row.ticketPromedio || 0)}</td>
+      <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
+    `;
+    clientesReportesTableBody.appendChild(tr);
+  });
+}
+
+function renderClientesReportesRecuperacion(rows = []) {
+  if (!clientesReportesRecuperacionBody) return;
+  clientesReportesRecuperacionBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(getClienteReporteLabel(row))}</td>
+      <td>${renderClienteEstadoBadge(row.estado)}</td>
+      <td>${formatDate(row.ultimaCompra)}</td>
+      <td>${row.diasSinComprar ?? '-'}</td>
+      <td>${formatMoney(row.montoHistorico || 0)}</td>
+      <td>${formatMoney(row.monto12m || 0)}</td>
+      <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
+    `;
+    clientesReportesRecuperacionBody.appendChild(tr);
+  });
+}
+
+function renderClientesReportesFrecuencia(rows = []) {
+  if (!clientesReportesFrecuenciaBody) return;
+  clientesReportesFrecuenciaBody.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(getClienteReporteLabel(row))}</td>
+      <td>${formatDate(row.ultimaCompra)}</td>
+      <td>${row.diasSinComprar ?? '-'}</td>
+      <td>${Number(row.compras12m) || 0}</td>
+      <td>${formatMoney(row.monto12m || 0)}</td>
+      <td>${formatMoney(row.ticketPromedio || 0)}</td>
+      <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
+    `;
+    clientesReportesFrecuenciaBody.appendChild(tr);
+  });
+}
+
+function renderClientesReportesEvolucion(rows = []) {
+  if (clientesReportesEvolucionBody) {
+    clientesReportesEvolucionBody.innerHTML = '';
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeAttr(row.mes || '')}</td>
+        <td>${Number(row.Activo) || 0}</td>
+        <td>${Number(row['Baja frecuencia']) || 0}</td>
+        <td>${Number(row['En riesgo']) || 0}</td>
+        <td>${Number(row.Inactivo) || 0}</td>
+        <td>${Number(row['Sin compras']) || 0}</td>
+      `;
+      clientesReportesEvolucionBody.appendChild(tr);
+    });
+  }
+  if (!clientesReportesEvolucionChart || !window.Chart) return;
+  const labels = rows.map((row) => row.mes || '');
+  const estados = ['Activo', 'Baja frecuencia', 'En riesgo', 'Inactivo', 'Sin compras'];
+  const colors = ['#0ea5a6', '#f59e0b', '#ef4444', '#7f1d1d', '#64748b'];
+  if (chartState.clientesEvolucion) chartState.clientesEvolucion.destroy();
+  chartState.clientesEvolucion = new Chart(clientesReportesEvolucionChart.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: estados.map((estado, idx) => ({
+        label: estado,
+        data: rows.map((row) => Number(row[estado]) || 0),
+        borderColor: colors[idx],
+        backgroundColor: colors[idx],
+        tension: 0.25,
+        borderWidth: 2,
+      })),
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function renderClientesReportes(payload = {}, evolucionPayload = {}) {
+  clientesReportesData = payload;
+  fillClientesReporteSelect(clientesReportesEstado, payload.estados || [], 'Todos');
+  fillClientesReporteSelect(clientesReportesVendedora, payload.filtros?.vendedoras || [], 'Todas');
+  fillClientesReporteSelect(clientesReportesLocalidad, payload.filtros?.localidades || [], 'Todas');
+  fillClientesReporteSelect(clientesReportesProvincia, payload.filtros?.provincias || [], 'Todas');
+  renderClientesReportesResumen(payload.resumen || []);
+  renderClientesReportesListado(payload.data || []);
+  renderClientesReportesRecuperacion(payload.recuperacion || []);
+  renderClientesReportesFrecuencia(payload.frecuenciaBaja || []);
+  renderClientesReportesEvolucion(evolucionPayload.data || []);
+}
+
+function getClientesReportesParams(includeEstado = true) {
+  const params = new URLSearchParams();
+  if (clientesReportesCorte?.value) params.set('corte', clientesReportesCorte.value);
+  const q = String(clientesReportesSearch?.value || '').trim();
+  if (q) params.set('q', q);
+  if (includeEstado && clientesReportesEstado?.value) params.set('estado', clientesReportesEstado.value);
+  if (clientesReportesVendedora?.value) params.set('vendedora', clientesReportesVendedora.value);
+  if (clientesReportesLocalidad?.value) params.set('localidad', clientesReportesLocalidad.value);
+  if (clientesReportesProvincia?.value) params.set('provincia', clientesReportesProvincia.value);
+  return params;
+}
+
+async function loadClientesReportes({ silent = false } = {}) {
+  if (!viewClientesReportes) return;
+  try {
+    if (!clientesReportesCorte?.value) {
+      clientesReportesCorte.value = new Date().toISOString().slice(0, 10);
+    }
+    if (!silent) setStatusMessage(clientesReportesStatus, 'Cargando...');
+    const params = getClientesReportesParams(true);
+    const evolucionParams = new URLSearchParams();
+    if (clientesReportesCorte?.value) evolucionParams.set('corte', clientesReportesCorte.value);
+    const [payload, evolucionPayload] = await Promise.all([
+      fetchJSON(`/api/clientes/reportes/estado?${params.toString()}`),
+      fetchJSON(`/api/clientes/reportes/evolucion?${evolucionParams.toString()}`),
+    ]);
+    renderClientesReportes(payload, evolucionPayload);
+    setStatusMessage(
+      clientesReportesStatus,
+      `Corte ${payload.corte || clientesReportesCorte.value}: ${Number(payload.data?.length) || 0} clientes`,
+      'ok'
+    );
+  } catch (error) {
+    setStatusMessage(clientesReportesStatus, error.message || 'Error al cargar reportes de clientes.', 'error');
+  }
+}
+
+function initClientesReportes() {
+  if (!viewClientesReportes) return;
+  if (clientesReportesCorte && !clientesReportesCorte.value) {
+    clientesReportesCorte.value = new Date().toISOString().slice(0, 10);
+  }
+  safeOn(clientesReportesRefresh, 'click', () => loadClientesReportes());
+  [clientesReportesCorte, clientesReportesEstado, clientesReportesVendedora, clientesReportesLocalidad, clientesReportesProvincia].forEach(
+    (el) => safeOn(el, 'change', () => loadClientesReportes())
+  );
+  safeOn(clientesReportesSearch, 'input', () => {
+    clearTimeout(clientesReportesSearchTimer);
+    clientesReportesSearchTimer = setTimeout(() => loadClientesReportes(), 300);
+  });
+  safeOn(clientesReportesTabs, 'click', (event) => {
+    const btn = event.target.closest('.tab[data-tab]');
+    if (!btn) return;
+    clientesReportesTabs.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+    document.querySelectorAll('.clientes-reportes-panel').forEach((panel) => panel.classList.remove('active'));
+    btn.classList.add('active');
+    const panel = document.getElementById(`clientes-reportes-panel-${btn.dataset.tab}`);
+    if (panel) panel.classList.add('active');
+  });
+}
+
 function initMonthRangeSelect(selectEl, selectedValue) {
   if (!selectEl) return;
   selectEl.innerHTML = '';
@@ -12610,6 +12863,7 @@ function resolvePermissionKey(target) {
   if (target === 'dashboard-comparativo') return 'dashboard';
   if (target === 'fidelizacion-runs') return 'fidelizacion-dashboard';
   if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
+  if (target === 'clientes-reportes') return 'clientes';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
   if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
@@ -12700,6 +12954,7 @@ function getFirstAllowedView(perms = {}) {
       'cargar-ticket',
       'empleados',
       'clientes',
+      'clientes-reportes',
       'ia',
       'salon',
       'fidelizacion-panel',
@@ -18107,6 +18362,7 @@ function switchView(target) {
       viewCargarTicket,
       viewEmpleados,
       viewClientes,
+      viewClientesReportes,
       viewIa,
       viewSalon,
       viewFidelizacionPanel,
@@ -18150,6 +18406,7 @@ function switchView(target) {
       viewCargarTicket,
       viewEmpleados,
       viewClientes,
+      viewClientesReportes,
       viewIa,
       viewSalon,
       viewFidelizacionPanel,
@@ -18188,6 +18445,14 @@ function switchView(target) {
   } else if (target === 'clientes') {
     viewClientes.classList.remove('hidden');
     loadClientes(clientesPage);
+  } else if (target === 'clientes-reportes') {
+    viewClientesReportes.classList.remove('hidden');
+    if (!clientesReportesLoaded) {
+      loadClientesReportes();
+      clientesReportesLoaded = true;
+    } else {
+      loadClientesReportes({ silent: true });
+    }
   } else if (target === 'ia') {
     viewIa.classList.remove('hidden');
   } else if (target === 'salon') {
@@ -18323,6 +18588,7 @@ initCargarTicket();
 initNoEncuestadosModal();
 initFechaEmpleados();
 initClientes();
+initClientesReportes();
 initPedidosClientes();
 initIaChat();
 initSalonResumen();

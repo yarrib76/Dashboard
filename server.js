@@ -12,6 +12,11 @@ const {
   buildInflacionApiPayload,
 } = require('./lib/dashboardComparativo');
 const { normalizeIdempotencyKey, validateFacturaPayload } = require('./lib/facturas');
+const {
+  CLIENTE_ESTADOS,
+  enrichClienteReporteRow,
+  buildClientesResumen,
+} = require('./lib/clientesReportes');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const path = require('path');
@@ -3368,6 +3373,193 @@ app.patch('/api/clientes/encuesta', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al guardar encuesta', error: error.message });
+  }
+});
+
+function normalizeClientesReporteCorte(value) {
+  const raw = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return formatDateLocal(new Date());
+}
+
+function getClientesReporteMonthEnds(corte, count = 12) {
+  const [year, month, day] = String(corte).split('-').map((value) => Number(value));
+  const base = new Date(year, month - 1, day || 1);
+  const months = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const d = new Date(base.getFullYear(), base.getMonth() - offset + 1, 0);
+    const isCurrentCutoffMonth =
+      d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth();
+    months.push({
+      label: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      corte: isCurrentCutoffMonth ? formatDateLocal(base) : formatDateLocal(d),
+    });
+  }
+  return months;
+}
+
+app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
+  try {
+    const corte = normalizeClientesReporteCorte(req.query.corte);
+    const estadoFilter = String(req.query.estado || '').trim();
+    const vendedoraFilter = String(req.query.vendedora || '').trim();
+    const localidadFilter = String(req.query.localidad || '').trim();
+    const provinciaFilter = String(req.query.provincia || '').trim();
+    const terms =
+      typeof req.query.q === 'string'
+        ? req.query.q
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+        : [];
+
+    const filters = ['c.id_clientes <> 1'];
+    const params = [];
+    terms.forEach((term) => {
+      const like = `%${term}%`;
+      filters.push(
+        '(c.nombre LIKE ? OR c.apellido LIKE ? OR c.mail LIKE ? OR c.telefono LIKE ? OR c.apodo LIKE ?)'
+      );
+      params.push(like, like, like, like, like);
+    });
+    if (localidadFilter) {
+      filters.push('c.localidad = ?');
+      params.push(localidadFilter);
+    }
+    if (provinciaFilter) {
+      filters.push('p.nombre = ?');
+      params.push(provinciaFilter);
+    }
+    if (vendedoraFilter) {
+      filters.push('COALESCE(vend.vendedoraFrecuente, "") = ?');
+      params.push(vendedoraFilter);
+    }
+    const where = `WHERE ${filters.join(' AND ')}`;
+
+    const [rawRows] = await pool.query(
+      `SELECT
+         c.id_clientes AS id,
+         c.nombre,
+         c.apellido,
+         c.apodo,
+         c.mail,
+         c.telefono,
+         c.localidad,
+         COALESCE(p.nombre, '') AS provincia,
+         agg.ultimaCompra,
+         agg.diasSinComprar,
+         COALESCE(agg.cantComprasHistorico, 0) AS cantComprasHistorico,
+         COALESCE(agg.compras12m, 0) AS compras12m,
+         COALESCE(agg.monto12m, 0) AS monto12m,
+         COALESCE(agg.montoHistorico, 0) AS montoHistorico,
+         COALESCE(vend.vendedoraFrecuente, '') AS vendedoraFrecuente
+       FROM clientes c
+       LEFT JOIN provincias p ON p.id = c.id_provincia
+       LEFT JOIN (
+         SELECT
+           f.id_clientes,
+           DATE(MAX(f.Fecha)) AS ultimaCompra,
+           DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar,
+           COUNT(*) AS cantComprasHistorico,
+           SUM(CASE WHEN DATE(f.Fecha) >= DATE_SUB(?, INTERVAL 12 MONTH) THEN 1 ELSE 0 END) AS compras12m,
+           SUM(CASE WHEN DATE(f.Fecha) >= DATE_SUB(?, INTERVAL 12 MONTH) THEN COALESCE(f.Total, 0) ELSE 0 END) AS monto12m,
+           SUM(COALESCE(f.Total, 0)) AS montoHistorico
+         FROM facturah f
+         WHERE f.id_clientes IS NOT NULL
+           AND DATE(f.Fecha) <= ?
+         GROUP BY f.id_clientes
+       ) agg ON agg.id_clientes = c.id_clientes
+       LEFT JOIN (
+         SELECT
+           ranked.id_clientes,
+           SUBSTRING_INDEX(
+             GROUP_CONCAT(ranked.vendedora ORDER BY ranked.cantidad DESC, ranked.vendedora ASC SEPARATOR '||'),
+             '||',
+             1
+           ) AS vendedoraFrecuente
+         FROM (
+           SELECT
+             f.id_clientes,
+             TRIM(f.vendedora) AS vendedora,
+             COUNT(*) AS cantidad
+           FROM facturah f
+           WHERE f.id_clientes IS NOT NULL
+             AND DATE(f.Fecha) <= ?
+             AND f.vendedora IS NOT NULL
+             AND TRIM(f.vendedora) <> ''
+           GROUP BY f.id_clientes, TRIM(f.vendedora)
+         ) ranked
+         GROUP BY ranked.id_clientes
+       ) vend ON vend.id_clientes = c.id_clientes
+       ${where}
+       ORDER BY
+         CASE WHEN agg.ultimaCompra IS NULL THEN 1 ELSE 0 END ASC,
+         agg.ultimaCompra DESC,
+         c.nombre ASC,
+         c.apellido ASC`,
+      [corte, corte, corte, corte, corte, ...params]
+    );
+
+    const rows = rawRows.map(enrichClienteReporteRow);
+    const filteredRows = estadoFilter ? rows.filter((row) => row.estado === estadoFilter) : rows;
+    const resumen = buildClientesResumen(rows);
+    const recuperacion = rows
+      .filter((row) => row.estado === CLIENTE_ESTADOS.EN_RIESGO || row.estado === CLIENTE_ESTADOS.INACTIVO)
+      .sort((a, b) => Number(b.montoHistorico || 0) - Number(a.montoHistorico || 0));
+    const frecuenciaBaja = rows
+      .filter((row) => row.estado === CLIENTE_ESTADOS.BAJA_FRECUENCIA)
+      .sort((a, b) => Number(b.monto12m || 0) - Number(a.monto12m || 0));
+    const unique = (key) =>
+      Array.from(new Set(rows.map((row) => String(row[key] || '').trim()).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      );
+
+    res.json({
+      corte,
+      estados: Object.values(CLIENTE_ESTADOS),
+      resumen,
+      data: filteredRows,
+      recuperacion,
+      frecuenciaBaja,
+      filtros: {
+        vendedoras: unique('vendedoraFrecuente'),
+        localidades: unique('localidad'),
+        provincias: unique('provincia'),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar reporte de clientes', error: error.message });
+  }
+});
+
+app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
+  try {
+    const corte = normalizeClientesReporteCorte(req.query.corte);
+    const months = getClientesReporteMonthEnds(corte, 12);
+    const data = [];
+
+    for (const item of months) {
+      const [rows] = await pool.query(
+        `SELECT
+           DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar
+         FROM clientes c
+         LEFT JOIN facturah f
+           ON f.id_clientes = c.id_clientes
+          AND DATE(f.Fecha) <= ?
+         WHERE c.id_clientes <> 1
+         GROUP BY c.id_clientes`,
+        [item.corte, item.corte]
+      );
+      const counts = Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((estado) => [estado, 0]));
+      rows.map(enrichClienteReporteRow).forEach((row) => {
+        counts[row.estado] = (counts[row.estado] || 0) + 1;
+      });
+      data.push({ mes: item.label, corte: item.corte, ...counts });
+    }
+
+    res.json({ corte, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar evolucion de clientes', error: error.message });
   }
 });
 

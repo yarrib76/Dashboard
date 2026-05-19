@@ -879,8 +879,104 @@ input[type='month'] {
 }
 
 .client-inline input[type='search'],
+.client-inline input[type='date'],
 .client-inline select {
   min-width: 160px;
+}
+
+.clientes-reportes {
+  display: grid;
+  gap: 16px;
+}
+
+.clientes-reportes-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.report-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.clientes-reportes-panel {
+  display: none;
+}
+
+.clientes-reportes-panel.active {
+  display: grid;
+  gap: 14px;
+}
+
+.clientes-reportes .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.cliente-reporte-stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.cliente-reporte-stat .label,
+.cliente-reporte-stat span {
+  margin: 0;
+  color: var(--muted);
+}
+
+.cliente-reporte-stat strong {
+  display: block;
+  margin: 6px 0;
+  font-size: 1.7rem;
+}
+
+.cliente-estado {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cliente-estado--activo {
+  color: #ecfeff;
+  background: #0f766e;
+}
+
+.cliente-estado--baja-frecuencia {
+  color: #111827;
+  background: #fbbf24;
+}
+
+.cliente-estado--en-riesgo {
+  color: #fff7ed;
+  background: #ea580c;
+}
+
+.cliente-estado--inactivo {
+  color: #fee2e2;
+  background: #991b1b;
+}
+
+.cliente-estado--sin-compras {
+  color: #f8fafc;
+  background: #64748b;
+}
+
+.chart-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel);
 }
 
 .pagination.inline {
