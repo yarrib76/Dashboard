@@ -9314,8 +9314,11 @@ async function exportClientesTransicionXlsx() {
   if (!clientesTransicionActual) return;
   if (!window.XLSX) await loadXlsxLibrary();
   if (!window.XLSX) throw new Error('XLSX no disponible');
-  const actualRows = clientesTransicionActual.detail?.clientes || [];
-  const salidaRows = clientesTransicionActual.detail?.salidas || [];
+  const mode = clientesTransicionListMode?.value || clientesTransicionModo || 'actuales';
+  const rows =
+    mode === 'salidas'
+      ? clientesTransicionActual.detail?.salidas || []
+      : clientesTransicionActual.detail?.clientes || [];
   const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Email', 'Telefono'];
   const mapRows = (rows) => rows.map((row) => [
     row.cliente || '',
@@ -9329,20 +9332,15 @@ async function exportClientesTransicionXlsx() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(
     workbook,
-    XLSX.utils.aoa_to_sheet([headers, ...mapRows(actualRows)]),
-    'Actuales'
-  );
-  XLSX.utils.book_append_sheet(
-    workbook,
-    XLSX.utils.aoa_to_sheet([headers, ...mapRows(salidaRows)]),
-    'Salidas'
+    XLSX.utils.aoa_to_sheet([headers, ...mapRows(rows)]),
+    mode === 'salidas' ? 'Salidas' : 'Actuales'
   );
   const fileEstado = clientesTransicionActual.estado
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-');
-  XLSX.writeFile(workbook, `transicion-${clientesTransicionActual.mes}-${fileEstado}.xlsx`);
+  XLSX.writeFile(workbook, `transicion-${clientesTransicionActual.mes}-${fileEstado}-${mode}.xlsx`);
 }
 
 async function loadClientesReportes({ silent = false } = {}) {
@@ -9433,6 +9431,7 @@ function initClientesReportes() {
   });
   safeOn(clientesTransicionExport, 'click', async () => {
     try {
+      clientesTransicionModo = clientesTransicionListMode?.value || clientesTransicionModo || 'actuales';
       await exportClientesTransicionXlsx();
       setStatusMessage(clientesTransicionStatus, 'Excel generado.', 'ok');
     } catch (error) {

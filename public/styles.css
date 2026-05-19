@@ -1017,17 +1017,29 @@ input[type='month'] {
 }
 
 .clientes-transicion-actions {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 14px;
 }
 
 .clientes-transicion-controls {
+  width: auto !important;
+  flex: 0 1 auto;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-start !important;
+  flex-wrap: nowrap !important;
 }
 
 .clientes-transicion-controls .status {
   margin: 0;
+  white-space: nowrap;
+}
+
+.clientes-transicion-actions .btn-excel {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .pagination.inline {
