@@ -245,6 +245,7 @@ const clientesTransicionHaciaBody = document.querySelector('#clientes-transicion
 const clientesTransicionClientesBody = document.querySelector('#clientes-transicion-clientes-table tbody');
 const clientesTransicionStatus = document.getElementById('clientes-transicion-status');
 const clientesTransicionExport = document.getElementById('clientes-transicion-export');
+const clientesTransicionListMode = document.getElementById('clientes-transicion-list-mode');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -334,6 +335,7 @@ let clientesReportesModalPage = 1;
 let clientesReportesModalPageSizeValue = 10;
 let clientesReportesEvolucionPayload = null;
 let clientesTransicionActual = null;
+let clientesTransicionModo = 'actuales';
 let currentView = '';
 let apisRows = [];
 let apisEditingId = 0;
@@ -9254,6 +9256,28 @@ function renderTransitionMap(body, map = {}) {
   });
 }
 
+function renderClientesTransicionListado() {
+  if (!clientesTransicionClientesBody || !clientesTransicionActual) return;
+  const detail = clientesTransicionActual.detail || {};
+  const rows = clientesTransicionModo === 'salidas' ? detail.salidas || [] : detail.clientes || [];
+  clientesTransicionClientesBody.innerHTML = '';
+  rows.forEach((row) => {
+    const contacto = [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeAttr(row.cliente || 'Cliente')}</td>
+      <td>${renderClienteEstadoBadge(row.from)}</td>
+      <td>${renderClienteEstadoBadge(row.to)}</td>
+      <td>${formatDate(row.ultimaCompra)}</td>
+      <td>${row.diasSinComprar ?? '-'}</td>
+      <td>${escapeAttr(contacto)}</td>
+    `;
+    clientesTransicionClientesBody.appendChild(tr);
+  });
+  const label = clientesTransicionModo === 'salidas' ? 'salida(s) desde el segmento' : 'cliente(s) en el segmento';
+  setStatusMessage(clientesTransicionStatus, `${rows.length} ${label}.`);
+}
+
 function openClientesTransicionModal(mes, estado) {
   const transition = (clientesReportesEvolucionPayload?.transitions || []).find((item) => item.mes === mes);
   if (!transition) {
@@ -9269,6 +9293,8 @@ function openClientesTransicionModal(mes, estado) {
   const prevTotal = Number(prevRow[estado]) || 0;
   const diagnostico = buildClientesTransicionDiagnostico(mes, estado, detail, currentTotal, prevTotal);
   clientesTransicionActual = { mes, estado, transition, detail, diagnostico };
+  clientesTransicionModo = 'actuales';
+  if (clientesTransicionListMode) clientesTransicionListMode.value = clientesTransicionModo;
 
   if (clientesTransicionTitle) clientesTransicionTitle.textContent = `${estado} - ${mes}`;
   if (clientesTransicionDiagnostico) {
@@ -9280,23 +9306,7 @@ function openClientesTransicionModal(mes, estado) {
   }
   renderTransitionMap(clientesTransicionDesdeBody, detail.desde || {});
   renderTransitionMap(clientesTransicionHaciaBody, detail.hacia || {});
-  if (clientesTransicionClientesBody) {
-    clientesTransicionClientesBody.innerHTML = '';
-    (detail.clientes || []).forEach((row) => {
-      const contacto = [row.email, row.telefono].filter(Boolean).join(' / ') || '-';
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeAttr(row.cliente || 'Cliente')}</td>
-        <td>${renderClienteEstadoBadge(row.from)}</td>
-        <td>${renderClienteEstadoBadge(row.to)}</td>
-        <td>${formatDate(row.ultimaCompra)}</td>
-        <td>${row.diasSinComprar ?? '-'}</td>
-        <td>${escapeAttr(contacto)}</td>
-      `;
-      clientesTransicionClientesBody.appendChild(tr);
-    });
-  }
-  setStatusMessage(clientesTransicionStatus, `${Number(detail.clientes?.length) || 0} cliente(s) en el segmento.`);
+  renderClientesTransicionListado();
   openOverlay(clientesTransicionOverlay);
 }
 
@@ -9304,9 +9314,10 @@ async function exportClientesTransicionXlsx() {
   if (!clientesTransicionActual) return;
   if (!window.XLSX) await loadXlsxLibrary();
   if (!window.XLSX) throw new Error('XLSX no disponible');
-  const rows = clientesTransicionActual.detail?.clientes || [];
+  const actualRows = clientesTransicionActual.detail?.clientes || [];
+  const salidaRows = clientesTransicionActual.detail?.salidas || [];
   const headers = ['Cliente', 'Desde', 'Hacia', 'Ultima compra', 'Dias sin comprar', 'Email', 'Telefono'];
-  const data = rows.map((row) => [
+  const mapRows = (rows) => rows.map((row) => [
     row.cliente || '',
     row.from || '',
     row.to || '',
@@ -9315,9 +9326,17 @@ async function exportClientesTransicionXlsx() {
     row.email || '',
     row.telefono || '',
   ]);
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Transicion');
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([headers, ...mapRows(actualRows)]),
+    'Actuales'
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([headers, ...mapRows(salidaRows)]),
+    'Salidas'
+  );
   const fileEstado = clientesTransicionActual.estado
     .toLowerCase()
     .normalize('NFD')
@@ -9407,6 +9426,10 @@ function initClientesReportes() {
   safeOn(clientesTransicionClose, 'click', () => closeOverlay(clientesTransicionOverlay));
   safeOn(clientesTransicionOverlay, 'click', (event) => {
     if (event.target === clientesTransicionOverlay) closeOverlay(clientesTransicionOverlay);
+  });
+  safeOn(clientesTransicionListMode, 'change', () => {
+    clientesTransicionModo = clientesTransicionListMode.value || 'actuales';
+    renderClientesTransicionListado();
   });
   safeOn(clientesTransicionExport, 'click', async () => {
     try {

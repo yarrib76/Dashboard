@@ -3581,6 +3581,7 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
           hacia: Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((key) => [key, 0])),
           permanecen: 0,
           clientes: [],
+          salidas: [],
         };
       });
 
@@ -3609,6 +3610,16 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
         const to = currentRow?.estado || CLIENTE_ESTADOS.SIN_COMPRAS;
         if (!detail[from]) return;
         detail[from].hacia[to] = (detail[from].hacia[to] || 0) + 1;
+        detail[from].salidas.push({
+          id: Number(row.id) || 0,
+          cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim() || row.apodo || 'Cliente',
+          email: row.mail || '',
+          telefono: row.telefono || '',
+          ultimaCompra: currentRow?.ultimaCompra || row.ultimaCompra || null,
+          diasSinComprar: currentRow?.diasSinComprar ?? row.diasSinComprar,
+          from,
+          to,
+        });
       });
 
       transitions.push({

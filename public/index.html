@@ -757,7 +757,16 @@
           </div>
         </div>
         <div class="actions between clientes-reportes-modal-actions">
-          <p class="status" id="clientes-transicion-status"></p>
+          <div class="actions inline compact">
+            <label class="client-inline">
+              <span>Listado</span>
+              <select id="clientes-transicion-list-mode">
+                <option value="actuales">Actuales del segmento</option>
+                <option value="salidas">Salidas desde el segmento</option>
+              </select>
+            </label>
+            <p class="status" id="clientes-transicion-status"></p>
+          </div>
           <button id="clientes-transicion-export" class="btn-excel" type="button">XLSX</button>
         </div>
         <div class="table-wrap">
