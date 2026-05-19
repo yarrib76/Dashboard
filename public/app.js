@@ -217,20 +217,25 @@ const clientesNewCuit = document.getElementById('clientes-new-cuit');
 const clientesNewEncuesta = document.getElementById('clientes-new-encuesta');
 const clientesReportesCorte = document.getElementById('clientes-reportes-corte');
 const clientesReportesRefresh = document.getElementById('clientes-reportes-refresh');
-const clientesReportesSearch = document.getElementById('clientes-reportes-search');
-const clientesReportesEstado = document.getElementById('clientes-reportes-estado');
 const clientesReportesVendedora = document.getElementById('clientes-reportes-vendedora');
 const clientesReportesLocalidad = document.getElementById('clientes-reportes-localidad');
 const clientesReportesProvincia = document.getElementById('clientes-reportes-provincia');
-const clientesReportesTabs = document.getElementById('clientes-reportes-tabs');
 const clientesReportesSummary = document.getElementById('clientes-reportes-summary');
 const clientesReportesSummaryBody = document.querySelector('#clientes-reportes-summary-table tbody');
-const clientesReportesTableBody = document.querySelector('#clientes-reportes-table tbody');
-const clientesReportesRecuperacionBody = document.querySelector('#clientes-reportes-recuperacion-table tbody');
-const clientesReportesFrecuenciaBody = document.querySelector('#clientes-reportes-frecuencia-table tbody');
 const clientesReportesEvolucionBody = document.querySelector('#clientes-reportes-evolucion-table tbody');
 const clientesReportesEvolucionChart = document.getElementById('clientes-reportes-evolucion-chart');
 const clientesReportesStatus = document.getElementById('clientes-reportes-status');
+const clientesReportesModalOverlay = document.getElementById('clientes-reportes-modal-overlay');
+const clientesReportesModalTitle = document.getElementById('clientes-reportes-modal-title');
+const clientesReportesModalClose = document.getElementById('clientes-reportes-modal-close');
+const clientesReportesModalSearch = document.getElementById('clientes-reportes-modal-search');
+const clientesReportesModalPageSize = document.getElementById('clientes-reportes-modal-page-size');
+const clientesReportesModalExport = document.getElementById('clientes-reportes-modal-export');
+const clientesReportesModalTableBody = document.querySelector('#clientes-reportes-modal-table tbody');
+const clientesReportesModalPrev = document.getElementById('clientes-reportes-modal-prev');
+const clientesReportesModalNext = document.getElementById('clientes-reportes-modal-next');
+const clientesReportesModalPageInfo = document.getElementById('clientes-reportes-modal-page-info');
+const clientesReportesModalStatus = document.getElementById('clientes-reportes-modal-status');
 const userNameEl = document.getElementById('user-name');
 const avatarEl = document.getElementById('user-avatar');
 const logoutBtn = document.getElementById('logout-btn');
@@ -315,6 +320,9 @@ let clientesEditId = null;
 let clientesReportesLoaded = false;
 let clientesReportesData = null;
 let clientesReportesSearchTimer = null;
+let clientesReportesModalEstado = '';
+let clientesReportesModalPage = 1;
+let clientesReportesModalPageSizeValue = 10;
 let currentView = '';
 let apisRows = [];
 let apisEditingId = 0;
@@ -8911,6 +8919,17 @@ function renderClienteEstadoBadge(estado) {
   return `<span class="${getClienteEstadoClass(estado)}">${escapeAttr(estado || '-')}</span>`;
 }
 
+function getClienteEstadoDescripcion(estado) {
+  const descriptions = {
+    Activo: 'Cliente con ultima compra dentro de los ultimos 90 dias respecto de la fecha de corte.',
+    'Baja frecuencia': 'Cliente con ultima compra entre 91 y 180 dias respecto de la fecha de corte. Puede estar perdiendo ritmo de compra.',
+    'En riesgo': 'Cliente con ultima compra entre 181 y 365 dias respecto de la fecha de corte. Conviene priorizar seguimiento comercial.',
+    Inactivo: 'Cliente sin compras hace mas de 365 dias respecto de la fecha de corte. Se considera cartera perdida o muy fria.',
+    'Sin compras': 'Cliente registrado sin facturas asociadas hasta la fecha de corte.',
+  };
+  return descriptions[estado] || 'Segmento calculado por dias desde la ultima compra hasta la fecha de corte.';
+}
+
 function fillClientesReporteSelect(selectEl, values = [], defaultLabel = 'Todos') {
   if (!selectEl) return;
   const current = selectEl.value || '';
@@ -8930,11 +8949,11 @@ function renderClientesReportesResumen(rows = []) {
     clientesReportesSummary.innerHTML = rows
       .map(
         (row) => `
-          <div class="stat-card cliente-reporte-stat">
+          <button class="stat-card cliente-reporte-stat" type="button" data-estado="${escapeAttr(row.estado || '')}" title="${escapeAttr(getClienteEstadoDescripcion(row.estado))}" aria-label="${escapeAttr(`${row.estado || 'Estado'}: ${getClienteEstadoDescripcion(row.estado)}`)}">
             <p class="label">${escapeAttr(row.estado || '-')}</p>
             <strong>${Number(row.total) || 0}</strong>
             <span>${formatMoney(row.monto12m || 0)} 12m</span>
-          </div>
+          </button>
         `
       )
       .join('');
@@ -8943,6 +8962,7 @@ function renderClientesReportesResumen(rows = []) {
   clientesReportesSummaryBody.innerHTML = '';
   rows.forEach((row) => {
     const tr = document.createElement('tr');
+    tr.dataset.estado = row.estado || '';
     tr.innerHTML = `
       <td>${renderClienteEstadoBadge(row.estado)}</td>
       <td>${Number(row.total) || 0}</td>
@@ -8953,9 +8973,9 @@ function renderClientesReportesResumen(rows = []) {
   });
 }
 
-function renderClientesReportesListado(rows = []) {
-  if (!clientesReportesTableBody) return;
-  clientesReportesTableBody.innerHTML = '';
+function renderClientesReportesModalTable(rows = []) {
+  if (!clientesReportesModalTableBody) return;
+  clientesReportesModalTableBody.innerHTML = '';
   rows.forEach((row) => {
     const tr = document.createElement('tr');
     const contacto = [row.mail, row.telefono].filter(Boolean).join(' / ') || '-';
@@ -8970,43 +8990,7 @@ function renderClientesReportesListado(rows = []) {
       <td>${formatMoney(row.ticketPromedio || 0)}</td>
       <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
     `;
-    clientesReportesTableBody.appendChild(tr);
-  });
-}
-
-function renderClientesReportesRecuperacion(rows = []) {
-  if (!clientesReportesRecuperacionBody) return;
-  clientesReportesRecuperacionBody.innerHTML = '';
-  rows.forEach((row) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeAttr(getClienteReporteLabel(row))}</td>
-      <td>${renderClienteEstadoBadge(row.estado)}</td>
-      <td>${formatDate(row.ultimaCompra)}</td>
-      <td>${row.diasSinComprar ?? '-'}</td>
-      <td>${formatMoney(row.montoHistorico || 0)}</td>
-      <td>${formatMoney(row.monto12m || 0)}</td>
-      <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
-    `;
-    clientesReportesRecuperacionBody.appendChild(tr);
-  });
-}
-
-function renderClientesReportesFrecuencia(rows = []) {
-  if (!clientesReportesFrecuenciaBody) return;
-  clientesReportesFrecuenciaBody.innerHTML = '';
-  rows.forEach((row) => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeAttr(getClienteReporteLabel(row))}</td>
-      <td>${formatDate(row.ultimaCompra)}</td>
-      <td>${row.diasSinComprar ?? '-'}</td>
-      <td>${Number(row.compras12m) || 0}</td>
-      <td>${formatMoney(row.monto12m || 0)}</td>
-      <td>${formatMoney(row.ticketPromedio || 0)}</td>
-      <td>${escapeAttr(row.vendedoraFrecuente || 'Sin asignar')}</td>
-    `;
-    clientesReportesFrecuenciaBody.appendChild(tr);
+    clientesReportesModalTableBody.appendChild(tr);
   });
 }
 
@@ -9054,27 +9038,126 @@ function renderClientesReportesEvolucion(rows = []) {
 
 function renderClientesReportes(payload = {}, evolucionPayload = {}) {
   clientesReportesData = payload;
-  fillClientesReporteSelect(clientesReportesEstado, payload.estados || [], 'Todos');
   fillClientesReporteSelect(clientesReportesVendedora, payload.filtros?.vendedoras || [], 'Todas');
   fillClientesReporteSelect(clientesReportesLocalidad, payload.filtros?.localidades || [], 'Todas');
   fillClientesReporteSelect(clientesReportesProvincia, payload.filtros?.provincias || [], 'Todas');
   renderClientesReportesResumen(payload.resumen || []);
-  renderClientesReportesListado(payload.data || []);
-  renderClientesReportesRecuperacion(payload.recuperacion || []);
-  renderClientesReportesFrecuencia(payload.frecuenciaBaja || []);
   renderClientesReportesEvolucion(evolucionPayload.data || []);
+  if (clientesReportesModalOverlay?.classList.contains('open')) {
+    renderClientesReportesModal();
+  }
 }
 
-function getClientesReportesParams(includeEstado = true) {
+function getClientesReportesParams() {
   const params = new URLSearchParams();
   if (clientesReportesCorte?.value) params.set('corte', clientesReportesCorte.value);
-  const q = String(clientesReportesSearch?.value || '').trim();
-  if (q) params.set('q', q);
-  if (includeEstado && clientesReportesEstado?.value) params.set('estado', clientesReportesEstado.value);
   if (clientesReportesVendedora?.value) params.set('vendedora', clientesReportesVendedora.value);
   if (clientesReportesLocalidad?.value) params.set('localidad', clientesReportesLocalidad.value);
   if (clientesReportesProvincia?.value) params.set('provincia', clientesReportesProvincia.value);
   return params;
+}
+
+function getClientesReportesModalRows() {
+  const estado = clientesReportesModalEstado;
+  const term = String(clientesReportesModalSearch?.value || '').trim().toLowerCase();
+  return (clientesReportesData?.data || [])
+    .filter((row) => !estado || row.estado === estado)
+    .filter((row) => {
+      if (!term) return true;
+      const base = [
+        getClienteReporteLabel(row),
+        row.mail,
+        row.telefono,
+        row.apodo,
+        row.vendedoraFrecuente,
+        row.localidad,
+        row.provincia,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return term
+        .split(/\s+/)
+        .filter(Boolean)
+        .every((token) => base.includes(token));
+    });
+}
+
+function renderClientesReportesModal() {
+  const rows = getClientesReportesModalRows();
+  const totalPages = Math.max(1, Math.ceil(rows.length / clientesReportesModalPageSizeValue));
+  clientesReportesModalPage = Math.min(Math.max(1, clientesReportesModalPage), totalPages);
+  const start = (clientesReportesModalPage - 1) * clientesReportesModalPageSizeValue;
+  const pageRows = rows.slice(start, start + clientesReportesModalPageSizeValue);
+  renderClientesReportesModalTable(pageRows);
+  if (clientesReportesModalTitle) {
+    clientesReportesModalTitle.textContent = clientesReportesModalEstado
+      ? `Clientes - ${clientesReportesModalEstado}`
+      : 'Clientes';
+  }
+  if (clientesReportesModalPageInfo) {
+    clientesReportesModalPageInfo.textContent = `Pagina ${clientesReportesModalPage} de ${totalPages}`;
+  }
+  if (clientesReportesModalPrev) clientesReportesModalPrev.disabled = clientesReportesModalPage <= 1;
+  if (clientesReportesModalNext) clientesReportesModalNext.disabled = clientesReportesModalPage >= totalPages;
+  setStatusMessage(clientesReportesModalStatus, `${rows.length} cliente(s)`);
+}
+
+function openClientesReportesModal(estado) {
+  clientesReportesModalEstado = estado || '';
+  clientesReportesModalPage = 1;
+  if (clientesReportesModalSearch) clientesReportesModalSearch.value = '';
+  if (clientesReportesModalPageSize) {
+    clientesReportesModalPageSize.value = String(clientesReportesModalPageSizeValue);
+  }
+  renderClientesReportesModal();
+  openOverlay(clientesReportesModalOverlay);
+}
+
+async function exportClientesReportesModalXlsx() {
+  const rows = getClientesReportesModalRows();
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) throw new Error('XLSX no disponible');
+  const headers = [
+    'Cliente',
+    'Email',
+    'Telefono',
+    'Ultima compra',
+    'Dias sin comprar',
+    'Estado',
+    'Compras 12m',
+    'Monto 12m',
+    'Monto historico',
+    'Ticket promedio',
+    'Vendedora',
+    'Localidad',
+    'Provincia',
+  ];
+  const data = rows.map((row) => [
+    getClienteReporteLabel(row),
+    row.mail || '',
+    row.telefono || '',
+    row.ultimaCompra || '',
+    row.diasSinComprar ?? '',
+    row.estado || '',
+    Number(row.compras12m) || 0,
+    Number(row.monto12m) || 0,
+    Number(row.montoHistorico) || 0,
+    Number(row.ticketPromedio) || 0,
+    row.vendedoraFrecuente || '',
+    row.localidad || '',
+    row.provincia || '',
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
+  const estadoSlug = (clientesReportesModalEstado || 'clientes')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  XLSX.writeFile(workbook, `clientes-${estadoSlug || 'reporte'}.xlsx`);
 }
 
 async function loadClientesReportes({ silent = false } = {}) {
@@ -9084,7 +9167,7 @@ async function loadClientesReportes({ silent = false } = {}) {
       clientesReportesCorte.value = new Date().toISOString().slice(0, 10);
     }
     if (!silent) setStatusMessage(clientesReportesStatus, 'Cargando...');
-    const params = getClientesReportesParams(true);
+    const params = getClientesReportesParams();
     const evolucionParams = new URLSearchParams();
     if (clientesReportesCorte?.value) evolucionParams.set('corte', clientesReportesCorte.value);
     const [payload, evolucionPayload] = await Promise.all([
@@ -9108,21 +9191,52 @@ function initClientesReportes() {
     clientesReportesCorte.value = new Date().toISOString().slice(0, 10);
   }
   safeOn(clientesReportesRefresh, 'click', () => loadClientesReportes());
-  [clientesReportesCorte, clientesReportesEstado, clientesReportesVendedora, clientesReportesLocalidad, clientesReportesProvincia].forEach(
+  [clientesReportesCorte, clientesReportesVendedora, clientesReportesLocalidad, clientesReportesProvincia].forEach(
     (el) => safeOn(el, 'change', () => loadClientesReportes())
   );
-  safeOn(clientesReportesSearch, 'input', () => {
-    clearTimeout(clientesReportesSearchTimer);
-    clientesReportesSearchTimer = setTimeout(() => loadClientesReportes(), 300);
-  });
-  safeOn(clientesReportesTabs, 'click', (event) => {
-    const btn = event.target.closest('.tab[data-tab]');
+  safeOn(clientesReportesSummary, 'click', (event) => {
+    const btn = event.target.closest('[data-estado]');
     if (!btn) return;
-    clientesReportesTabs.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
-    document.querySelectorAll('.clientes-reportes-panel').forEach((panel) => panel.classList.remove('active'));
-    btn.classList.add('active');
-    const panel = document.getElementById(`clientes-reportes-panel-${btn.dataset.tab}`);
-    if (panel) panel.classList.add('active');
+    openClientesReportesModal(btn.dataset.estado || '');
+  });
+  safeOn(clientesReportesSummaryBody, 'click', (event) => {
+    const row = event.target.closest('tr[data-estado]');
+    if (!row) return;
+    openClientesReportesModal(row.dataset.estado || '');
+  });
+  safeOn(clientesReportesModalClose, 'click', () => closeOverlay(clientesReportesModalOverlay));
+  safeOn(clientesReportesModalOverlay, 'click', (event) => {
+    if (event.target === clientesReportesModalOverlay) closeOverlay(clientesReportesModalOverlay);
+  });
+  safeOn(clientesReportesModalSearch, 'input', () => {
+    clearTimeout(clientesReportesSearchTimer);
+    clientesReportesSearchTimer = setTimeout(() => {
+      clientesReportesModalPage = 1;
+      renderClientesReportesModal();
+    }, 200);
+  });
+  safeOn(clientesReportesModalPageSize, 'change', () => {
+    clientesReportesModalPageSizeValue = Number(clientesReportesModalPageSize.value) || 10;
+    clientesReportesModalPage = 1;
+    renderClientesReportesModal();
+  });
+  safeOn(clientesReportesModalPrev, 'click', () => {
+    if (clientesReportesModalPage > 1) {
+      clientesReportesModalPage -= 1;
+      renderClientesReportesModal();
+    }
+  });
+  safeOn(clientesReportesModalNext, 'click', () => {
+    clientesReportesModalPage += 1;
+    renderClientesReportesModal();
+  });
+  safeOn(clientesReportesModalExport, 'click', async () => {
+    try {
+      await exportClientesReportesModalXlsx();
+      setStatusMessage(clientesReportesModalStatus, 'Excel generado.', 'ok');
+    } catch (error) {
+      setStatusMessage(clientesReportesModalStatus, error.message || 'No se pudo exportar.', 'error');
+    }
   });
 }
 

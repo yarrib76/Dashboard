@@ -902,15 +902,6 @@ input[type='month'] {
   flex-wrap: wrap;
 }
 
-.clientes-reportes-panel {
-  display: none;
-}
-
-.clientes-reportes-panel.active {
-  display: grid;
-  gap: 14px;
-}
-
 .clientes-reportes .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -922,6 +913,9 @@ input[type='month'] {
   border-radius: 8px;
   padding: 12px;
   background: var(--panel);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
 .cliente-reporte-stat .label,
@@ -934,6 +928,16 @@ input[type='month'] {
   display: block;
   margin: 6px 0;
   font-size: 1.7rem;
+}
+
+.cliente-reporte-stat:hover,
+#clientes-reportes-summary-table tbody tr:hover {
+  border-color: rgba(123, 215, 255, 0.6);
+  background: rgba(123, 215, 255, 0.08);
+}
+
+#clientes-reportes-summary-table tbody tr {
+  cursor: pointer;
 }
 
 .cliente-estado {
@@ -977,6 +981,18 @@ input[type='month'] {
   border-radius: 8px;
   padding: 12px;
   background: var(--panel);
+}
+
+.clientes-reportes-evolucion-detail summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.clientes-reportes-modal-actions {
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
 .pagination.inline {

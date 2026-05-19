@@ -610,16 +610,6 @@
 
       <div class="clientes-reportes-filters">
         <label class="client-inline">
-          <span>Buscar</span>
-          <input type="search" id="clientes-reportes-search" placeholder="Nombre, email o telefono" />
-        </label>
-        <label class="client-inline">
-          <span>Estado</span>
-          <select id="clientes-reportes-estado">
-            <option value="">Todos</option>
-          </select>
-        </label>
-        <label class="client-inline">
           <span>Vendedora</span>
           <select id="clientes-reportes-vendedora">
             <option value="">Todas</option>
@@ -639,34 +629,75 @@
         </label>
       </div>
 
-      <div class="report-tabs" id="clientes-reportes-tabs">
-        <button class="tab active" type="button" data-tab="resumen">Resumen</button>
-        <button class="tab" type="button" data-tab="listado">Listado</button>
-        <button class="tab" type="button" data-tab="recuperacion">Recuperacion</button>
-        <button class="tab" type="button" data-tab="frecuencia">Frecuencia baja</button>
-        <button class="tab" type="button" data-tab="evolucion">Evolucion</button>
+      <div class="stats-grid" id="clientes-reportes-summary"></div>
+      <div class="table-wrap">
+        <table class="table" id="clientes-reportes-summary-table">
+          <thead>
+            <tr>
+              <th>Estado</th>
+              <th>Clientes</th>
+              <th>Monto 12m</th>
+              <th>Ticket promedio</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
-
-      <div class="clientes-reportes-panel active" id="clientes-reportes-panel-resumen">
-        <div class="stats-grid" id="clientes-reportes-summary"></div>
+      <div class="chart-card">
+        <canvas id="clientes-reportes-evolucion-chart" height="120"></canvas>
+      </div>
+      <details class="clientes-reportes-evolucion-detail">
+        <summary>Evolucion mensual</summary>
         <div class="table-wrap">
-          <table class="table" id="clientes-reportes-summary-table">
+          <table class="table" id="clientes-reportes-evolucion-table">
             <thead>
               <tr>
-                <th>Estado</th>
-                <th>Clientes</th>
-                <th>Monto 12m</th>
-                <th>Ticket promedio</th>
+                <th>Mes</th>
+                <th>Activo</th>
+                <th>Baja frecuencia</th>
+                <th>En riesgo</th>
+                <th>Inactivo</th>
+                <th>Sin compras</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
-      </div>
+      </details>
 
-      <div class="clientes-reportes-panel" id="clientes-reportes-panel-listado">
+      <p class="status" id="clientes-reportes-status"></p>
+    </article>
+  </section>
+
+  <div class="modal-overlay" id="clientes-reportes-modal-overlay">
+    <div class="modal large">
+      <div class="modal-header">
+        <h3 id="clientes-reportes-modal-title">Clientes</h3>
+        <button id="clientes-reportes-modal-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="actions between clientes-reportes-modal-actions">
+          <div class="actions inline compact">
+            <label class="client-inline">
+              <span>Buscar</span>
+              <input type="search" id="clientes-reportes-modal-search" placeholder="Nombre, email, telefono o vendedora" />
+            </label>
+            <label class="client-inline">
+              <span>Por pagina</span>
+              <select id="clientes-reportes-modal-page-size">
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="40">40</option>
+                <option value="60">60</option>
+                <option value="80">80</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+          </div>
+          <button id="clientes-reportes-modal-export" class="btn-excel" type="button">XLSX</button>
+        </div>
         <div class="table-wrap">
-          <table class="table" id="clientes-reportes-table">
+          <table class="table" id="clientes-reportes-modal-table">
             <thead>
               <tr>
                 <th>Cliente</th>
@@ -683,70 +714,15 @@
             <tbody></tbody>
           </table>
         </div>
-      </div>
-
-      <div class="clientes-reportes-panel" id="clientes-reportes-panel-recuperacion">
-        <div class="table-wrap">
-          <table class="table" id="clientes-reportes-recuperacion-table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Estado</th>
-                <th>Ultima compra</th>
-                <th>Dias</th>
-                <th>Monto historico</th>
-                <th>Monto 12m</th>
-                <th>Vendedora</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+        <div class="pagination" id="clientes-reportes-modal-pagination">
+          <button id="clientes-reportes-modal-prev" type="button">Anterior</button>
+          <span id="clientes-reportes-modal-page-info">Pagina 1</span>
+          <button id="clientes-reportes-modal-next" type="button">Siguiente</button>
         </div>
+        <p class="status" id="clientes-reportes-modal-status"></p>
       </div>
-
-      <div class="clientes-reportes-panel" id="clientes-reportes-panel-frecuencia">
-        <div class="table-wrap">
-          <table class="table" id="clientes-reportes-frecuencia-table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Ultima compra</th>
-                <th>Dias</th>
-                <th>Compras 12m</th>
-                <th>Monto 12m</th>
-                <th>Ticket prom.</th>
-                <th>Vendedora</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="clientes-reportes-panel" id="clientes-reportes-panel-evolucion">
-        <div class="chart-card">
-          <canvas id="clientes-reportes-evolucion-chart" height="120"></canvas>
-        </div>
-        <div class="table-wrap">
-          <table class="table" id="clientes-reportes-evolucion-table">
-            <thead>
-              <tr>
-                <th>Mes</th>
-                <th>Activo</th>
-                <th>Baja frecuencia</th>
-                <th>En riesgo</th>
-                <th>Inactivo</th>
-                <th>Sin compras</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <p class="status" id="clientes-reportes-status"></p>
-    </article>
-  </section>
+    </div>
+  </div>
 
   <section class="view hidden" id="view-ia">
     <article class="card wide">
