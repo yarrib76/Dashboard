@@ -3400,9 +3400,45 @@ function getClientesReporteMonthEnds(corte, count = 12) {
   return months;
 }
 
+const CLIENTES_REPORTE_TIPOS_VENTA = {
+  GENERAL: 'general',
+  PEDIDOS: 'pedidos',
+  LOCAL: 'local',
+};
+
+function normalizeClientesReporteTipoVenta(value) {
+  const tipo = String(value || '').trim().toLowerCase();
+  if (Object.values(CLIENTES_REPORTE_TIPOS_VENTA).includes(tipo)) return tipo;
+  return CLIENTES_REPORTE_TIPOS_VENTA.GENERAL;
+}
+
+function getClientesReporteTipoVentaSql(tipoVenta, facturaAlias = 'f') {
+  if (tipoVenta === CLIENTES_REPORTE_TIPOS_VENTA.PEDIDOS) {
+    return `AND EXISTS (
+      SELECT 1
+      FROM controlpedidos cp_web
+      WHERE cp_web.nrofactura = ${facturaAlias}.NroFactura
+        AND cp_web.ordenWeb IS NOT NULL
+        AND cp_web.ordenWeb <> 0
+    )`;
+  }
+  if (tipoVenta === CLIENTES_REPORTE_TIPOS_VENTA.LOCAL) {
+    return `AND NOT EXISTS (
+      SELECT 1
+      FROM controlpedidos cp_web
+      WHERE cp_web.nrofactura = ${facturaAlias}.NroFactura
+        AND cp_web.ordenWeb IS NOT NULL
+        AND cp_web.ordenWeb <> 0
+    )`;
+  }
+  return '';
+}
+
 app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
   try {
     const corte = normalizeClientesReporteCorte(req.query.corte);
+    const tipoVenta = normalizeClientesReporteTipoVenta(req.query.tipoVenta);
+    const tipoVentaSql = getClientesReporteTipoVentaSql(tipoVenta, 'f');
     const estadoFilter = String(req.query.estado || '').trim();
     const vendedoraFilter = String(req.query.vendedora || '').trim();
     const localidadFilter = String(req.query.localidad || '').trim();
@@ -3469,6 +3505,7 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
          FROM facturah f
          WHERE f.id_clientes IS NOT NULL
            AND DATE(f.Fecha) <= ?
+           ${tipoVentaSql}
          GROUP BY f.id_clientes
        ) agg ON agg.id_clientes = c.id_clientes
        LEFT JOIN (
@@ -3487,6 +3524,7 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
            FROM facturah f
            WHERE f.id_clientes IS NOT NULL
              AND DATE(f.Fecha) <= ?
+             ${tipoVentaSql}
              AND f.vendedora IS NOT NULL
              AND TRIM(f.vendedora) <> ''
            GROUP BY f.id_clientes, TRIM(f.vendedora)
@@ -3518,6 +3556,7 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
 
     res.json({
       corte,
+      tipoVenta,
       estados: Object.values(CLIENTE_ESTADOS),
       resumen,
       data: filteredRows,
@@ -3537,6 +3576,8 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
 app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
   try {
     const corte = normalizeClientesReporteCorte(req.query.corte);
+    const tipoVenta = normalizeClientesReporteTipoVenta(req.query.tipoVenta);
+    const tipoVentaSql = getClientesReporteTipoVentaSql(tipoVenta, 'f');
     const months = getClientesReporteMonthEnds(corte, 12);
     const data = [];
     const snapshots = [];
@@ -3561,6 +3602,7 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
          LEFT JOIN facturah f
            ON f.id_clientes = c.id_clientes
           AND DATE(f.Fecha) <= ?
+          ${tipoVentaSql}
          LEFT JOIN (
            SELECT fr.*
            FROM fidelizacion_recomendacion fr
@@ -3674,7 +3716,7 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
       });
     }
 
-    res.json({ corte, data, transitions });
+    res.json({ corte, tipoVenta, data, transitions });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar evolucion de clientes', error: error.message });
   }
