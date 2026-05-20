@@ -3509,8 +3509,8 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
             .filter(Boolean)
         : [];
 
-    const filters = ['c.id_clientes <> 1'];
-    const params = [];
+    const filters = ['c.id_clientes <> 1', '(c.created_at IS NULL OR c.created_at < DATE_ADD(?, INTERVAL 1 DAY))'];
+    const params = [corte];
     terms.forEach((term) => {
       const like = `%${term}%`;
       filters.push(
@@ -3646,9 +3646,12 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
          c.nombre,
          c.apellido,
          c.mail,
-         c.telefono
+         c.telefono,
+         c.created_at
        FROM clientes c
-       WHERE c.id_clientes <> 1`
+       WHERE c.id_clientes <> 1
+         AND (c.created_at IS NULL OR c.created_at < DATE_ADD(?, INTERVAL 1 DAY))`,
+      [corte]
     );
     const [facturasRows] = await pool.query(
       `SELECT
@@ -3694,16 +3697,21 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
 
     for (const item of months) {
       const counts = Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((estado) => [estado, 0]));
-      const clientes = clientesRows.map((cliente) => {
-        const id = Number(cliente.id);
-        const ultimaCompra = findClientesReporteLastDateOnOrBefore(facturasByCliente.get(id) || [], item.corte);
-        return enrichClienteReporteRow({
-          ...cliente,
-          ultimaCompra,
-          diasSinComprar: diffClientesReporteDays(item.corte, ultimaCompra),
-          ...buildClientesReporteFidelizacionSnapshot(fidelizacionByCliente.get(id) || [], item.corte),
+      const clientes = clientesRows
+        .filter((cliente) => {
+          const createdAt = toClientesReporteDateKey(cliente.created_at);
+          return !createdAt || createdAt <= item.corte;
+        })
+        .map((cliente) => {
+          const id = Number(cliente.id);
+          const ultimaCompra = findClientesReporteLastDateOnOrBefore(facturasByCliente.get(id) || [], item.corte);
+          return enrichClienteReporteRow({
+            ...cliente,
+            ultimaCompra,
+            diasSinComprar: diffClientesReporteDays(item.corte, ultimaCompra),
+            ...buildClientesReporteFidelizacionSnapshot(fidelizacionByCliente.get(id) || [], item.corte),
+          });
         });
-      });
       clientes.forEach((row) => {
         counts[row.estado] = (counts[row.estado] || 0) + 1;
       });
