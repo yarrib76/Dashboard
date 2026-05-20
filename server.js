@@ -8633,34 +8633,48 @@ app.get('/api/encuestas/ventas', async (req, res) => {
 
     const [rows] = await pool.query(
       `SELECT
-         f.NroFactura AS factura,
+         matched.factura,
          DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
          COALESCE(NULLIF(TRIM(f.vendedora), ''), 'Sin vendedora') AS vendedora,
-         c.id_clientes AS clienteId,
-         TRIM(CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, ''))) AS cliente,
+         matched.clienteId,
+         matched.cliente,
          CASE
+           WHEN matched.factura IS NULL THEN NULL
            WHEN EXISTS (
              SELECT 1
              FROM controlpedidos cp
-             WHERE cp.nrofactura = f.NroFactura
+             WHERE cp.nrofactura = matched.factura
                AND cp.ordenWeb IS NOT NULL
                AND cp.ordenWeb <> 0
            ) THEN 'pedidos'
            ELSE 'salon'
          END AS tipoVenta,
          ROUND(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END, 2) AS total
-       FROM facturah f
-       INNER JOIN clientes c ON c.id_clientes = f.id_clientes
-       WHERE f.fecha >= ?
-         AND f.fecha < ?
-         AND c.updated_at >= ?
-         AND c.updated_at < ?
-         AND COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') = ?
+       FROM (
+         SELECT
+           c.id_clientes AS clienteId,
+           TRIM(CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, ''))) AS cliente,
+           (
+             SELECT f2.NroFactura
+             FROM facturah f2
+             WHERE f2.id_clientes = c.id_clientes
+               AND f2.fecha BETWEEN DATE_SUB(DATE(c.updated_at), INTERVAL 15 DAY)
+                                AND DATE_ADD(DATE(c.updated_at), INTERVAL 15 DAY)
+             ORDER BY ABS(DATEDIFF(f2.fecha, c.updated_at)), f2.fecha DESC
+             LIMIT 1
+           ) AS factura
+         FROM clientes c
+         WHERE c.updated_at >= ?
+           AND c.updated_at < ?
+           AND COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') = ?
+       ) matched
+       LEFT JOIN facturah f ON f.NroFactura = matched.factura
        ORDER BY f.fecha DESC, f.NroFactura DESC`,
-      [desde, hasta, desde, hasta, encuesta]
+      [desde, hasta, encuesta]
     );
 
-    const totals = rows.reduce(
+    const data = rows.filter((row) => row.factura);
+    const totals = data.reduce(
       (acc, row) => {
         const total = Number(row.total) || 0;
         acc.total += total;
@@ -8674,7 +8688,16 @@ app.get('/api/encuestas/ventas', async (req, res) => {
         }
         return acc;
       },
-      { total: 0, pedidos: 0, salon: 0, cantidad: 0, cantidadPedidos: 0, cantidadSalon: 0 }
+      {
+        total: 0,
+        pedidos: 0,
+        salon: 0,
+        cantidad: 0,
+        cantidadPedidos: 0,
+        cantidadSalon: 0,
+        clientes: rows.length,
+        sinMatch: rows.length - data.length,
+      }
     );
 
     res.json({
@@ -8684,7 +8707,7 @@ app.get('/api/encuestas/ventas', async (req, res) => {
       desde,
       hasta,
       totals,
-      data: rows || [],
+      data,
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar ventas por encuesta', error: error.message });

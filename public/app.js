@@ -10373,7 +10373,9 @@ async function openEncuestasVentasModal({ year, month, encuesta }) {
     renderEncuestasVentas(encuestasVentasRows);
     setStatus(
       encuestasVentasStatus,
-      `${totals.cantidad || 0} ventas - Clientes encuestados en ${monthNames[month - 1]} ${year}`
+      `${totals.cantidad || 0} ventas vinculadas de ${totals.clientes || 0} clientes - Sin match: ${
+        totals.sinMatch || 0
+      }`
     );
   } catch (error) {
     setStatus(encuestasVentasStatus, error.message || 'Error al cargar ventas.', true);
