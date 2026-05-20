@@ -3400,6 +3400,64 @@ function getClientesReporteMonthEnds(corte, count = 12) {
   return months;
 }
 
+function toClientesReporteDateKey(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return formatDateLocal(value);
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return formatDateLocal(date);
+}
+
+function diffClientesReporteDays(corte, fecha) {
+  const corteKey = toClientesReporteDateKey(corte);
+  const fechaKey = toClientesReporteDateKey(fecha);
+  if (!corteKey || !fechaKey) return null;
+  const corteDate = parseISODate(corteKey);
+  const fechaDate = parseISODate(fechaKey);
+  return Math.max(0, Math.floor((corteDate.getTime() - fechaDate.getTime()) / 86400000));
+}
+
+function findClientesReporteLastDateOnOrBefore(dates = [], corte) {
+  let left = 0;
+  let right = dates.length - 1;
+  let match = null;
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    if (dates[mid] <= corte) {
+      match = dates[mid];
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
+  return match;
+}
+
+function buildClientesReporteFidelizacionSnapshot(rows = [], corte) {
+  let latest = null;
+  let ultimaConversion = null;
+  rows.forEach((row) => {
+    const createdAt = toClientesReporteDateKey(row.created_at);
+    const convertedAt = toClientesReporteDateKey(row.converted_at);
+    if (createdAt && createdAt <= corte) {
+      if (!latest || Number(row.id) > Number(latest.id)) latest = row;
+    }
+    if (convertedAt && convertedAt <= corte && (!ultimaConversion || convertedAt > ultimaConversion)) {
+      ultimaConversion = convertedAt;
+    }
+  });
+  return {
+    fidelizacionEstado: latest?.estado || '',
+    fidelizacionResultado: latest?.resultado || '',
+    fidelizacionFecha: latest?.created_at || null,
+    fidelizacionCerradaFecha: latest?.closed_at || null,
+    fidelizacionConvertidaFecha: latest?.converted_at || null,
+    fidelizacionUltimaConversion: ultimaConversion || null,
+  };
+}
+
 const CLIENTES_REPORTE_TIPOS_VENTA = {
   GENERAL: 'general',
   PEDIDOS: 'pedidos',
@@ -3499,12 +3557,12 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
            DATE(MAX(f.Fecha)) AS ultimaCompra,
            DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar,
            COUNT(*) AS cantComprasHistorico,
-           SUM(CASE WHEN DATE(f.Fecha) >= DATE_SUB(?, INTERVAL 12 MONTH) THEN 1 ELSE 0 END) AS compras12m,
-           SUM(CASE WHEN DATE(f.Fecha) >= DATE_SUB(?, INTERVAL 12 MONTH) THEN COALESCE(f.Total, 0) ELSE 0 END) AS monto12m,
+           SUM(CASE WHEN f.Fecha >= DATE_SUB(?, INTERVAL 12 MONTH) THEN 1 ELSE 0 END) AS compras12m,
+           SUM(CASE WHEN f.Fecha >= DATE_SUB(?, INTERVAL 12 MONTH) THEN COALESCE(f.Total, 0) ELSE 0 END) AS monto12m,
            SUM(COALESCE(f.Total, 0)) AS montoHistorico
          FROM facturah f
          WHERE f.id_clientes IS NOT NULL
-           AND DATE(f.Fecha) <= ?
+           AND f.Fecha < DATE_ADD(?, INTERVAL 1 DAY)
            ${tipoVentaSql}
          GROUP BY f.id_clientes
        ) agg ON agg.id_clientes = c.id_clientes
@@ -3523,7 +3581,7 @@ app.get('/api/clientes/reportes/estado', requireAuth, async (req, res) => {
              COUNT(*) AS cantidad
            FROM facturah f
            WHERE f.id_clientes IS NOT NULL
-             AND DATE(f.Fecha) <= ?
+             AND f.Fecha < DATE_ADD(?, INTERVAL 1 DAY)
              ${tipoVentaSql}
              AND f.vendedora IS NOT NULL
              AND TRIM(f.vendedora) <> ''
@@ -3582,52 +3640,70 @@ app.get('/api/clientes/reportes/evolucion', requireAuth, async (req, res) => {
     const data = [];
     const snapshots = [];
 
+    const [clientesRows] = await pool.query(
+      `SELECT
+         c.id_clientes AS id,
+         c.nombre,
+         c.apellido,
+         c.mail,
+         c.telefono
+       FROM clientes c
+       WHERE c.id_clientes <> 1`
+    );
+    const [facturasRows] = await pool.query(
+      `SELECT
+         f.id_clientes AS id,
+         DATE(f.Fecha) AS fecha
+       FROM facturah f
+       WHERE f.id_clientes IS NOT NULL
+         AND f.Fecha < DATE_ADD(?, INTERVAL 1 DAY)
+         ${tipoVentaSql}
+       ORDER BY f.id_clientes ASC, f.Fecha ASC`,
+      [corte]
+    );
+    const [fidelizacionRows] = await pool.query(
+      `SELECT
+         id,
+         cliente_id,
+         estado,
+         resultado,
+         created_at,
+         closed_at,
+         converted_at
+       FROM fidelizacion_recomendacion
+       WHERE created_at < DATE_ADD(?, INTERVAL 1 DAY)
+          OR converted_at < DATE_ADD(?, INTERVAL 1 DAY)
+       ORDER BY cliente_id ASC, created_at ASC, id ASC`,
+      [corte, corte]
+    );
+    const facturasByCliente = new Map();
+    facturasRows.forEach((row) => {
+      const id = Number(row.id);
+      const fecha = toClientesReporteDateKey(row.fecha);
+      if (!id || !fecha) return;
+      if (!facturasByCliente.has(id)) facturasByCliente.set(id, []);
+      facturasByCliente.get(id).push(fecha);
+    });
+    const fidelizacionByCliente = new Map();
+    fidelizacionRows.forEach((row) => {
+      const id = Number(row.cliente_id);
+      if (!id) return;
+      if (!fidelizacionByCliente.has(id)) fidelizacionByCliente.set(id, []);
+      fidelizacionByCliente.get(id).push(row);
+    });
+
     for (const item of months) {
-      const [rows] = await pool.query(
-        `SELECT
-           c.id_clientes AS id,
-           c.nombre,
-           c.apellido,
-           c.mail,
-           c.telefono,
-           DATE(MAX(f.Fecha)) AS ultimaCompra,
-           DATEDIFF(?, DATE(MAX(f.Fecha))) AS diasSinComprar,
-           fid.estado AS fidelizacionEstado,
-           fid.resultado AS fidelizacionResultado,
-           fid.created_at AS fidelizacionFecha,
-           fid.closed_at AS fidelizacionCerradaFecha,
-           fid.converted_at AS fidelizacionConvertidaFecha,
-           fid_conv.fidelizacionUltimaConversion
-         FROM clientes c
-         LEFT JOIN facturah f
-           ON f.id_clientes = c.id_clientes
-          AND DATE(f.Fecha) <= ?
-          ${tipoVentaSql}
-         LEFT JOIN (
-           SELECT fr.*
-           FROM fidelizacion_recomendacion fr
-           INNER JOIN (
-             SELECT cliente_id, MAX(id) AS max_id
-             FROM fidelizacion_recomendacion
-             WHERE DATE(created_at) <= ?
-             GROUP BY cliente_id
-           ) latest ON latest.max_id = fr.id
-         ) fid ON fid.cliente_id = c.id_clientes
-         LEFT JOIN (
-           SELECT cliente_id, MAX(converted_at) AS fidelizacionUltimaConversion
-           FROM fidelizacion_recomendacion
-           WHERE converted_at IS NOT NULL
-             AND DATE(converted_at) <= ?
-           GROUP BY cliente_id
-         ) fid_conv ON fid_conv.cliente_id = c.id_clientes
-         WHERE c.id_clientes <> 1
-         GROUP BY c.id_clientes, c.nombre, c.apellido, c.mail, c.telefono,
-           fid.estado, fid.resultado, fid.created_at, fid.closed_at, fid.converted_at,
-           fid_conv.fidelizacionUltimaConversion`,
-        [item.corte, item.corte, item.corte, item.corte]
-      );
       const counts = Object.fromEntries(Object.values(CLIENTE_ESTADOS).map((estado) => [estado, 0]));
-      const clientes = rows.map(enrichClienteReporteRow);
+      const clientes = clientesRows.map((cliente) => {
+        const id = Number(cliente.id);
+        const ultimaCompra = findClientesReporteLastDateOnOrBefore(facturasByCliente.get(id) || [], item.corte);
+        return enrichClienteReporteRow({
+          ...cliente,
+          ultimaCompra,
+          diasSinComprar: diffClientesReporteDays(item.corte, ultimaCompra),
+          ...buildClientesReporteFidelizacionSnapshot(fidelizacionByCliente.get(id) || [], item.corte),
+        });
+      });
       clientes.forEach((row) => {
         counts[row.estado] = (counts[row.estado] || 0) + 1;
       });
