@@ -8611,6 +8611,86 @@ app.get('/api/encuestas/mes', async (_req, res) => {
   }
 });
 
+app.get('/api/encuestas/ventas', async (req, res) => {
+  try {
+    const year = Number.parseInt(req.query.year, 10);
+    const month = Number.parseInt(req.query.month, 10);
+    const encuesta = String(req.query.encuesta || '').trim();
+
+    if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({ message: 'El año debe ser numérico (por ejemplo, 2026)' });
+    }
+    if (!Number.isFinite(month) || month < 1 || month > 12) {
+      return res.status(400).json({ message: 'El mes debe estar entre 1 y 12' });
+    }
+    if (!encuesta) {
+      return res.status(400).json({ message: 'El canal de encuesta es obligatorio' });
+    }
+
+    const desde = `${year}-${String(month).padStart(2, '0')}-01`;
+    const hastaDate = new Date(Date.UTC(year, month, 1));
+    const hasta = hastaDate.toISOString().slice(0, 10);
+
+    const [rows] = await pool.query(
+      `SELECT
+         f.NroFactura AS factura,
+         DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
+         COALESCE(NULLIF(TRIM(f.vendedora), ''), 'Sin vendedora') AS vendedora,
+         c.id_clientes AS clienteId,
+         TRIM(CONCAT(COALESCE(c.nombre, ''), ' ', COALESCE(c.apellido, ''))) AS cliente,
+         CASE
+           WHEN EXISTS (
+             SELECT 1
+             FROM controlpedidos cp
+             WHERE cp.nrofactura = f.NroFactura
+               AND cp.ordenWeb IS NOT NULL
+               AND cp.ordenWeb <> 0
+           ) THEN 'pedidos'
+           ELSE 'salon'
+         END AS tipoVenta,
+         ROUND(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END, 2) AS total
+       FROM facturah f
+       INNER JOIN clientes c ON c.id_clientes = f.id_clientes
+       WHERE f.fecha >= ?
+         AND f.fecha < ?
+         AND c.updated_at >= ?
+         AND c.updated_at < ?
+         AND COALESCE(NULLIF(TRIM(c.encuesta), ''), 'Sin dato') = ?
+       ORDER BY f.fecha DESC, f.NroFactura DESC`,
+      [desde, hasta, desde, hasta, encuesta]
+    );
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        const total = Number(row.total) || 0;
+        acc.total += total;
+        acc.cantidad += 1;
+        if (row.tipoVenta === 'pedidos') {
+          acc.pedidos += total;
+          acc.cantidadPedidos += 1;
+        } else {
+          acc.salon += total;
+          acc.cantidadSalon += 1;
+        }
+        return acc;
+      },
+      { total: 0, pedidos: 0, salon: 0, cantidad: 0, cantidadPedidos: 0, cantidadSalon: 0 }
+    );
+
+    res.json({
+      year,
+      month,
+      encuesta,
+      desde,
+      hasta,
+      totals,
+      data: rows || [],
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar ventas por encuesta', error: error.message });
+  }
+});
+
 app.get('/api/proveedores', async (_req, res) => {
   try {
     const [rows] = await pool.query(

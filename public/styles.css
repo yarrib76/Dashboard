@@ -1754,6 +1754,51 @@ body.theme-light #ecommerce-image-prompt {
   overflow: auto;
 }
 
+.encuestas-ventas-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.encuestas-ventas-summary > div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel);
+}
+
+.encuestas-ventas-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+.encuestas-ventas-summary strong {
+  font-size: 1.2rem;
+}
+
+.encuestas-ventas-type {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.encuestas-ventas-type--pedidos {
+  color: #ecfeff;
+  background: #0f766e;
+}
+
+.encuestas-ventas-type--salon {
+  color: #111827;
+  background: #fbbf24;
+}
+
 #carritos-overlay .table-wrap {
   max-height: 70vh;
   width: 100%;

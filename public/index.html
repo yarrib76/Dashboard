@@ -4048,6 +4048,50 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="encuestas-ventas-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="encuestas-ventas-title">Ventas por canal</h3>
+        <button id="encuestas-ventas-close" class="close-btn" type="button">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="encuestas-ventas-summary" id="encuestas-ventas-summary">
+          <div>
+            <span>Total facturado</span>
+            <strong id="encuestas-ventas-total">$0</strong>
+          </div>
+          <div>
+            <span>Pedidos</span>
+            <strong id="encuestas-ventas-pedidos">$0</strong>
+          </div>
+          <div>
+            <span>Salón</span>
+            <strong id="encuestas-ventas-salon">$0</strong>
+          </div>
+        </div>
+        <div class="modal-controls">
+          <input type="search" id="encuestas-ventas-search" placeholder="Filtrar ventas..." />
+          <p class="status" id="encuestas-ventas-status"></p>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="encuestas-ventas-table">
+            <thead>
+              <tr>
+                <th>Factura</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Tipo</th>
+                <th>Vendedora</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="pedido-ticket-overlay">
     <div class="modal ticket-modal">
       <div class="modal-header">

@@ -934,6 +934,15 @@ const clienteEncuestaName = document.getElementById('cliente-encuesta-name');
 const clienteEncuestaSelect = document.getElementById('cliente-encuesta-select');
 const clienteEncuestaSave = document.getElementById('cliente-encuesta-save');
 const clienteEncuestaStatus = document.getElementById('cliente-encuesta-status');
+const encuestasVentasOverlay = document.getElementById('encuestas-ventas-overlay');
+const encuestasVentasClose = document.getElementById('encuestas-ventas-close');
+const encuestasVentasTitle = document.getElementById('encuestas-ventas-title');
+const encuestasVentasStatus = document.getElementById('encuestas-ventas-status');
+const encuestasVentasSearch = document.getElementById('encuestas-ventas-search');
+const encuestasVentasTableBody = document.querySelector('#encuestas-ventas-table tbody');
+const encuestasVentasTotal = document.getElementById('encuestas-ventas-total');
+const encuestasVentasPedidos = document.getElementById('encuestas-ventas-pedidos');
+const encuestasVentasSalon = document.getElementById('encuestas-ventas-salon');
 const pedidoTicketOverlay = document.getElementById('pedido-ticket-overlay');
 const pedidoTicketTitle = document.getElementById('pedido-ticket-title');
 const pedidoTicketClose = document.getElementById('pedido-ticket-close');
@@ -8075,6 +8084,7 @@ function renderEncuestas(data, breakdown = []) {
   if (!window.Chart) return;
   const canvas = document.getElementById('chart-encuestas');
   if (!canvas) return;
+  const selectedYear = document.getElementById('year-encuestas')?.value || new Date().getFullYear();
   const porEncuesta = {};
   data.forEach((row) => {
     const label = row.encuesta || 'Sin dato';
@@ -8125,6 +8135,22 @@ function renderEncuestas(data, breakdown = []) {
     },
     options: {
       responsive: true,
+      onHover: (_event, active) => {
+        canvas.style.cursor = active.length ? 'pointer' : 'default';
+      },
+      onClick: (_event, elements, chart) => {
+        const point = elements?.[0];
+        if (!point) return;
+        const dataset = chart.data.datasets[point.datasetIndex];
+        const encuesta = dataset?.label || '';
+        const month = point.index + 1;
+        if (!encuesta) return;
+        openEncuestasVentasModal({
+          year: selectedYear,
+          month,
+          encuesta,
+        });
+      },
       plugins: {
         legend: { position: 'bottom' },
         tooltip: {
@@ -10270,6 +10296,87 @@ async function loadEncuestas(year) {
         true
       );
     }
+    console.error(error);
+  }
+}
+
+let encuestasVentasRows = [];
+
+function closeEncuestasVentasModal() {
+  if (encuestasVentasOverlay) encuestasVentasOverlay.classList.remove('open');
+  if (encuestasVentasSearch) encuestasVentasSearch.value = '';
+}
+
+function renderEncuestasVentas(rows) {
+  if (!encuestasVentasTableBody) return;
+  encuestasVentasTableBody.innerHTML = '';
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="6">Sin ventas para el filtro seleccionado.</td>';
+    encuestasVentasTableBody.appendChild(tr);
+    return;
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    const tipo = row.tipoVenta === 'pedidos' ? 'Pedidos' : 'Salón';
+    tr.innerHTML = `
+      <td>${escapeAttr(row.factura || '')}</td>
+      <td>${escapeAttr(formatDate(row.fecha || ''))}</td>
+      <td>${escapeAttr(row.cliente || 'Sin cliente')}</td>
+      <td><span class="encuestas-ventas-type encuestas-ventas-type--${escapeAttr(row.tipoVenta || 'salon')}">${tipo}</span></td>
+      <td>${escapeAttr(row.vendedora || 'Sin vendedora')}</td>
+      <td>${formatMoney(row.total || 0)}</td>
+    `;
+    encuestasVentasTableBody.appendChild(tr);
+  });
+}
+
+function filterEncuestasVentas() {
+  const term = String(encuestasVentasSearch?.value || '').trim().toLowerCase();
+  if (!term) {
+    renderEncuestasVentas(encuestasVentasRows);
+    return;
+  }
+  renderEncuestasVentas(
+    encuestasVentasRows.filter((row) =>
+      Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(term))
+    )
+  );
+}
+
+async function openEncuestasVentasModal({ year, month, encuesta }) {
+  try {
+    if (!encuestasVentasOverlay) return;
+    if (encuestasVentasTitle) {
+      encuestasVentasTitle.textContent = `${encuesta} - ${monthNames[month - 1]} ${year}`;
+    }
+    if (encuestasVentasSearch) encuestasVentasSearch.value = '';
+    if (encuestasVentasTableBody) encuestasVentasTableBody.innerHTML = '';
+    if (encuestasVentasTotal) encuestasVentasTotal.textContent = formatMoney(0);
+    if (encuestasVentasPedidos) encuestasVentasPedidos.textContent = formatMoney(0);
+    if (encuestasVentasSalon) encuestasVentasSalon.textContent = formatMoney(0);
+    setStatus(encuestasVentasStatus, 'Cargando ventas...');
+    encuestasVentasOverlay.classList.add('open');
+
+    const params = new URLSearchParams({ year, month, encuesta });
+    const res = await fetchJSON(`/api/encuestas/ventas?${params.toString()}`);
+    const totals = res.totals || {};
+    encuestasVentasRows = Array.isArray(res.data) ? res.data : [];
+
+    if (encuestasVentasTotal) encuestasVentasTotal.textContent = formatMoney(totals.total || 0);
+    if (encuestasVentasPedidos) {
+      encuestasVentasPedidos.textContent = `${formatMoney(totals.pedidos || 0)} (${totals.cantidadPedidos || 0})`;
+    }
+    if (encuestasVentasSalon) {
+      encuestasVentasSalon.textContent = `${formatMoney(totals.salon || 0)} (${totals.cantidadSalon || 0})`;
+    }
+    renderEncuestasVentas(encuestasVentasRows);
+    setStatus(
+      encuestasVentasStatus,
+      `${totals.cantidad || 0} ventas - Clientes encuestados en ${monthNames[month - 1]} ${year}`
+    );
+  } catch (error) {
+    setStatus(encuestasVentasStatus, error.message || 'Error al cargar ventas.', true);
     console.error(error);
   }
 }
@@ -14009,6 +14116,15 @@ if (pedidosTodosGrid) {
     });
   }
   if (clienteEncuestaSave) clienteEncuestaSave.addEventListener('click', saveClienteEncuesta);
+  if (encuestasVentasClose) {
+    encuestasVentasClose.addEventListener('click', closeEncuestasVentasModal);
+  }
+  if (encuestasVentasOverlay) {
+    encuestasVentasOverlay.addEventListener('click', (e) => {
+      if (e.target === encuestasVentasOverlay) closeEncuestasVentasModal();
+    });
+  }
+  if (encuestasVentasSearch) encuestasVentasSearch.addEventListener('input', filterEncuestasVentas);
   if (pedidoTicketClose) {
     pedidoTicketClose.addEventListener('click', closePedidoTicketModal);
   }
