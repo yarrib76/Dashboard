@@ -11663,9 +11663,35 @@ app.get('/api/salon/resumen', async (req, res) => {
       [fechaDesde, fechaHasta]
     );
 
+    const [[clientesRow]] = await pool.query(
+      `SELECT
+         COUNT(DISTINCT CASE
+           WHEN DATE(primera.fecha_primera) BETWEEN ? AND ? THEN f.id_clientes
+         END) AS clientesNuevos,
+         COUNT(DISTINCT CASE
+           WHEN DATE(primera.fecha_primera) < ? THEN f.id_clientes
+         END) AS clientesRecurrentes
+       FROM facturah f
+       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+       INNER JOIN (
+         SELECT id_clientes, MIN(fecha) AS fecha_primera
+         FROM facturah
+         WHERE id_clientes IS NOT NULL
+           AND id_clientes <> 1
+         GROUP BY id_clientes
+       ) primera ON primera.id_clientes = f.id_clientes
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+         AND f.id_clientes IS NOT NULL
+         AND f.id_clientes <> 1`,
+      [fechaDesde, fechaHasta, fechaDesde, fechaDesde, fechaHasta]
+    );
+
     const total = Number(row?.total) || 0;
     const cantidad = Number(row?.cantidad) || 0;
     const ticketPromedio = cantidad > 0 ? total / cantidad : 0;
+    const clientesNuevos = Number(clientesRow?.clientesNuevos) || 0;
+    const clientesRecurrentes = Number(clientesRow?.clientesRecurrentes) || 0;
 
     res.json({
       desde: fechaDesde,
@@ -11673,6 +11699,8 @@ app.get('/api/salon/resumen', async (req, res) => {
       total,
       cantidad,
       ticketPromedio,
+      clientesNuevos,
+      clientesRecurrentes,
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar resumen de salón', error: error.message });

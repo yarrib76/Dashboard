@@ -1162,6 +1162,8 @@ const salonActualizarBtn = document.getElementById('salon-actualizar');
 const statSalonTotal = document.getElementById('stat-salon-total');
 const statSalonCantidad = document.getElementById('stat-salon-cantidad');
 const statSalonTicket = document.getElementById('stat-salon-ticket');
+const statSalonClientesNuevos = document.getElementById('stat-salon-clientes-nuevos');
+const statSalonClientesRecurrentes = document.getElementById('stat-salon-clientes-recurrentes');
 const salonStatus = document.getElementById('salon-status');
 const salonVendedorasChartEl = document.getElementById('chart-salon-vendedoras');
 const pedidosDesdeInput = document.getElementById('pedidos-desde');
@@ -1416,6 +1418,8 @@ async function loadSalonResumen() {
     if (statSalonTotal) statSalonTotal.textContent = formatMoney(data.total || 0);
     if (statSalonCantidad) statSalonCantidad.textContent = data.cantidad ?? 0;
     if (statSalonTicket) statSalonTicket.textContent = formatMoney(data.ticketPromedio || 0);
+    if (statSalonClientesNuevos) statSalonClientesNuevos.textContent = data.clientesNuevos ?? 0;
+    if (statSalonClientesRecurrentes) statSalonClientesRecurrentes.textContent = data.clientesRecurrentes ?? 0;
     if (salonStatus) salonStatus.textContent = `Rango: ${data.desde || desde} a ${data.hasta || hasta}`;
     renderSalonVendedorasChart(vendData);
   } catch (error) {
