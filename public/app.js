@@ -1523,6 +1523,7 @@ function renderSalonVendedoraTable(rows) {
   if (!salonVendedoraTableEl) return;
   const data = rows.map((row) => ({
     cliente: row.cliente || '',
+    tipoCliente: row.tipoCliente || '',
     factura: row.factura || '',
     total: Number(row.total) || 0,
     fecha: row.fecha || '',
@@ -1537,9 +1538,10 @@ function renderSalonVendedoraTable(rows) {
   salonVendedoraTable = new DataTable('#salon-vendedora-table', {
     data,
     pageLength: 10,
-    order: [[3, 'desc']],
+    order: [[4, 'desc']],
     columns: [
       { data: 'cliente' },
+      { data: 'tipoCliente' },
       { data: 'factura' },
       { data: 'total', render: (val) => formatMoney(val) },
       { data: 'fecha' },

@@ -11819,16 +11819,29 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
       const [rows] = await pool.query(
         `SELECT
            CONCAT(cli.nombre, ' ', cli.apellido) AS cliente,
+           CASE
+             WHEN f.id_clientes = 1 THEN 'No aplica'
+             WHEN DATE(primera.fecha_primera) BETWEEN ? AND ? THEN 'Nuevo'
+             WHEN DATE(primera.fecha_primera) < ? THEN 'Recurrente'
+             ELSE 'Nuevo'
+           END AS tipoCliente,
            f.NroFactura AS factura,
            f.Total AS total,
            DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
            DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora
          FROM facturah f
          INNER JOIN clientes cli ON cli.id_clientes = f.id_clientes
+         LEFT JOIN (
+           SELECT id_clientes, MIN(fecha) AS fecha_primera
+           FROM facturah
+           WHERE id_clientes IS NOT NULL
+             AND id_clientes <> 1
+           GROUP BY id_clientes
+         ) primera ON primera.id_clientes = f.id_clientes
          LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
          WHERE ${conditions.join(' AND ')}
          ORDER BY f.fecha DESC, f.NroFactura DESC`,
-        params
+        [fechaDesde, fechaHasta, fechaDesde, ...params]
       );
 
       res.json({ desde: fechaDesde, hasta: fechaHasta, data: rows || [] });
