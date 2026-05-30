@@ -576,6 +576,13 @@ async function getUserRoleNameById(userId) {
 
 const ROLE_PERMISSIONS = [
   'dashboard',
+  'dashboard-encuestas',
+  'dashboard-empaquetados',
+  'dashboard-pedidos-dia',
+  'dashboard-pedidos-vendedora',
+  'dashboard-ventas-vendedora',
+  'dashboard-pedidos-clientes',
+  'dashboard-comparativo',
   'panel-control',
   'cargar-ticket',
   'empleados',
@@ -609,6 +616,55 @@ const ROLE_PERMISSIONS = [
   'apis',
   'configuracion',
 ];
+
+const DASHBOARD_REPORT_PERMISSIONS = [
+  'dashboard-encuestas',
+  'dashboard-empaquetados',
+  'dashboard-pedidos-dia',
+  'dashboard-pedidos-vendedora',
+  'dashboard-ventas-vendedora',
+  'dashboard-pedidos-clientes',
+  'dashboard-comparativo',
+];
+
+function normalizeDashboardPermissions(permissions = {}, hasDashboardSubPerms = true) {
+  if (hasDashboardSubPerms || permissions.dashboard !== true) return permissions;
+  DASHBOARD_REPORT_PERMISSIONS.forEach((permission) => {
+    permissions[permission] = true;
+  });
+  return permissions;
+}
+
+async function getPermissionsForUser(userId) {
+  if (!userId) return {};
+  const [rows] = await pool.query(
+    `SELECT rp.permiso, rp.habilitado
+     FROM RolesPermisos rp
+     INNER JOIN users u ON u.id_roles = rp.id_roles
+     WHERE u.id = ?`,
+    [userId]
+  );
+  const permissions = (rows || []).reduce((acc, row) => {
+    acc[row.permiso] = !!row.habilitado;
+    return acc;
+  }, {});
+  const hasDashboardSubPerms = DASHBOARD_REPORT_PERMISSIONS.some((permission) =>
+    Object.prototype.hasOwnProperty.call(permissions, permission)
+  );
+  return normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+}
+
+function requirePermission(permission) {
+  return async (req, res, next) => {
+    try {
+      const permissions = await getPermissionsForUser(req.user?.id);
+      if (permissions[permission] === true) return next();
+      return res.status(403).json({ message: 'No tenes permisos para ver este reporte' });
+    } catch (error) {
+      return res.status(500).json({ message: 'Error al validar permisos', error: error.message });
+    }
+  };
+}
 
 const FIDELIZACION_DEFAULT_CONFIG = {
   cooldown_days: 30,
@@ -1607,7 +1663,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-app.get('/api/paqueteria', async (_req, res) => {
+app.get('/api/paqueteria', requireAuth, requirePermission('dashboard-empaquetados'), async (_req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT
@@ -2953,7 +3009,7 @@ app.patch('/api/pedidos/entregado', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/api/paqueteria/lista', async (req, res) => {
+app.get('/api/paqueteria/lista', requireAuth, requirePermission('dashboard-empaquetados'), async (req, res) => {
   try {
     const tipo = req.query.tipo;
     const baseWhere = `cp.estado = 0 AND cp.empaquetado = 1`;
@@ -4320,6 +4376,10 @@ app.get('/api/me', (req, res) => {
         acc[row.permiso] = !!row.habilitado;
         return acc;
       }, {});
+      const hasDashboardSubPerms = DASHBOARD_REPORT_PERMISSIONS.some((permission) =>
+        Object.prototype.hasOwnProperty.call(permissions, permission)
+      );
+      normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
       const hasFidelizacionSubPerms =
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-panel') ||
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-mis') ||
@@ -8541,7 +8601,7 @@ app.put('/api/config/usuarios/:id/password', async (req, res) => {
   }
 });
 
-app.get('/api/encuestas/mes', async (_req, res) => {
+app.get('/api/encuestas/mes', requireAuth, requirePermission('dashboard-encuestas'), async (_req, res) => {
   try {
     const currentYear = new Date().getFullYear();
     const yearParam = Number.parseInt(_req.query.year, 10);
@@ -8611,7 +8671,7 @@ app.get('/api/encuestas/mes', async (_req, res) => {
   }
 });
 
-app.get('/api/encuestas/ventas', async (req, res) => {
+app.get('/api/encuestas/ventas', requireAuth, requirePermission('dashboard-encuestas'), async (req, res) => {
   try {
     const year = Number.parseInt(req.query.year, 10);
     const month = Number.parseInt(req.query.month, 10);
@@ -10063,7 +10123,7 @@ app.post('/api/mercaderia/prediccion', async (req, res) => {
   }
 });
 
-app.get('/api/pedidos/productividad', async (req, res) => {
+app.get('/api/pedidos/productividad', requireAuth, requirePermission('dashboard-pedidos-dia'), async (req, res) => {
   try {
     const hoy = new Date();
     const defaultDesde = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate(), 0, 0, 0));
@@ -10136,7 +10196,7 @@ app.get('/api/pedidos/productividad', async (req, res) => {
   }
 });
 
-app.get('/api/pedidos/mensual', async (_req, res) => {
+app.get('/api/pedidos/mensual', requireAuth, requirePermission('dashboard-pedidos-vendedora'), async (_req, res) => {
   try {
     const currentYear = new Date().getFullYear();
     const yearParam = Number.parseInt(_req.query.year, 10);
@@ -10170,7 +10230,7 @@ app.get('/api/pedidos/mensual', async (_req, res) => {
   }
 });
 
-app.get('/api/ventas/mensual', async (req, res) => {
+app.get('/api/ventas/mensual', requireAuth, requirePermission('dashboard-ventas-vendedora'), async (req, res) => {
   try {
     const currentYear = new Date().getFullYear();
     const yearParam = Number.parseInt(req.query.year, 10);
@@ -10206,7 +10266,7 @@ app.get('/api/ventas/mensual', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/comparativo-anual', async (req, res) => {
+app.get('/api/dashboard/comparativo-anual', requireAuth, requirePermission('dashboard-comparativo'), async (req, res) => {
   try {
     const validation = validateDashboardComparativoParams(req.query || {});
     if (!validation.ok) {
@@ -10278,7 +10338,7 @@ app.get('/api/dashboard/comparativo-anual', async (req, res) => {
   }
 });
 
-app.get('/api/dashboard/inflacion-estimada', async (req, res) => {
+app.get('/api/dashboard/inflacion-estimada', requireAuth, requirePermission('dashboard-comparativo'), async (req, res) => {
   try {
     const validation = validateDashboardComparativoParams({
       ...(req.query || {}),
@@ -10322,7 +10382,7 @@ app.get('/api/dashboard/inflacion-estimada', async (req, res) => {
   }
 });
 
-app.get('/api/pedidos/clientes', async (req, res) => {
+app.get('/api/pedidos/clientes', requireAuth, requirePermission('dashboard-pedidos-clientes'), async (req, res) => {
   try {
     const fechaParam = req.query.fecha ? parseISODate(req.query.fecha) : new Date();
     const yyyy = fechaParam.getFullYear();

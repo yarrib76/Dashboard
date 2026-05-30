@@ -13420,7 +13420,7 @@ async function exportCajasControlFacturasXlsx() {
 }
 
 function resolvePermissionKey(target) {
-  if (target === 'dashboard-comparativo') return 'dashboard';
+  if (target === 'dashboard-comparativo') return 'dashboard-comparativo';
   if (target === 'fidelizacion-runs') return 'fidelizacion-dashboard';
   if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
@@ -13506,6 +13506,19 @@ function applyMenuPermissions(perms = {}) {
   });
 }
 
+function applyDashboardReportPermissions(perms = {}) {
+  const cards = document.querySelectorAll('[data-dashboard-report]');
+  cards.forEach((card) => {
+    const permission = card.dataset.dashboardReport;
+    const allowed = perms.dashboard === true && perms[permission] === true;
+    card.style.display = allowed ? '' : 'none';
+  });
+}
+
+function canViewDashboardReport(permission) {
+  return currentPermissions?.dashboard === true && currentPermissions?.[permission] === true;
+}
+
 function getFirstAllowedView(perms = {}) {
     const order = [
       'dashboard',
@@ -13558,7 +13571,6 @@ function getFirstAllowedView(perms = {}) {
     }
   return (
     order.find((key) => {
-      if (key === 'dashboard-comparativo') return perms.dashboard === true;
       if (key === 'fidelizacion-runs') return perms['fidelizacion-dashboard'] === true;
       return perms[key] === true;
     }) || ''
@@ -13589,6 +13601,7 @@ async function loadCurrentUser() {
     }
     ecommerceWatermarkLogoUrl = getWatermarkLogoByLocal(data?.local);
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
+    normalizeDashboardPermissions(currentPermissions, data?.permissions || {});
     const hasEcommerceSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel');
@@ -13605,6 +13618,7 @@ async function loadCurrentUser() {
     );
     normalizeMercaderiaPermissions(currentPermissions, data?.permissions || {});
     applyMenuPermissions(currentPermissions);
+    applyDashboardReportPermissions(currentPermissions);
     const path = window.location.pathname || '';
     const viewParam = new URLSearchParams(window.location.search || '').get('view');
     if (path.startsWith('/consultadetalladaecomerce')) {
@@ -13633,6 +13647,7 @@ async function loadCurrentUser() {
 const refreshEncuestasBtn = document.getElementById('refresh-encuestas');
 if (refreshEncuestasBtn) {
   refreshEncuestasBtn.addEventListener('click', () => {
+    if (!canViewDashboardReport('dashboard-encuestas')) return;
     const selectYear = document.getElementById('year-encuestas');
     loadEncuestas(selectYear?.value);
   });
@@ -13640,6 +13655,7 @@ if (refreshEncuestasBtn) {
 const refreshProductividadBtn = document.getElementById('refresh-productividad');
 if (refreshProductividadBtn) {
   refreshProductividadBtn.addEventListener('click', () => {
+    if (!canViewDashboardReport('dashboard-pedidos-dia')) return;
     const desde = document.getElementById('fecha-desde').value;
     const hasta = document.getElementById('fecha-hasta').value;
     loadProductividad(desde, hasta);
@@ -13648,6 +13664,7 @@ if (refreshProductividadBtn) {
 const refreshMensualBtn = document.getElementById('refresh-mensual');
 if (refreshMensualBtn) {
   refreshMensualBtn.addEventListener('click', () => {
+    if (!canViewDashboardReport('dashboard-pedidos-vendedora')) return;
     const selectYear = document.getElementById('year-mensual');
     loadMensual(selectYear?.value);
   });
@@ -13655,12 +13672,14 @@ if (refreshMensualBtn) {
 const refreshVentasBtn = document.getElementById('refresh-ventas');
 if (refreshVentasBtn) {
   refreshVentasBtn.addEventListener('click', () => {
+    if (!canViewDashboardReport('dashboard-ventas-vendedora')) return;
     const selectYear = document.getElementById('year-ventas');
     loadVentas(selectYear?.value);
   });
 }
 if (dashboardComparativoRefresh) {
   dashboardComparativoRefresh.addEventListener('click', () => {
+    if (currentPermissions?.['dashboard-comparativo'] !== true) return;
     loadDashboardComparativo();
   });
 }
@@ -13682,6 +13701,7 @@ if (dashboardComparativoAllYears) {
 const refreshPaqueteriaBtn = document.getElementById('refresh-paqueteria');
 if (refreshPaqueteriaBtn) {
   refreshPaqueteriaBtn.addEventListener('click', () => {
+    if (!canViewDashboardReport('dashboard-empaquetados')) return;
     loadPaqueteria();
   });
 }
@@ -14288,15 +14308,16 @@ function initCollapsibles() {
       btn.setAttribute('aria-expanded', (!isHidden).toString());
       btn.textContent = isHidden ? 'Mostrar' : 'Ocultar';
       if (!isHidden) {
-        if (target === 'encuestas') loadEncuestas(defaultYearEncuestas);
+        if (target === 'encuestas' && canViewDashboardReport('dashboard-encuestas')) loadEncuestas(defaultYearEncuestas);
+        if (target === 'paqueteria' && canViewDashboardReport('dashboard-empaquetados')) loadPaqueteria();
         if (target === 'productividad') {
           const desde = document.getElementById('fecha-desde').value;
           const hasta = document.getElementById('fecha-hasta').value;
-          loadProductividad(desde, hasta);
+          if (canViewDashboardReport('dashboard-pedidos-dia')) loadProductividad(desde, hasta);
         }
-        if (target === 'mensual') loadMensual(defaultYearMensual);
-        if (target === 'ventas') loadVentas(defaultYearVentas);
-        if (target === 'pedidos-clientes') loadPedidosClientes();
+        if (target === 'mensual' && canViewDashboardReport('dashboard-pedidos-vendedora')) loadMensual(defaultYearMensual);
+        if (target === 'ventas' && canViewDashboardReport('dashboard-ventas-vendedora')) loadVentas(defaultYearVentas);
+        if (target === 'pedidos-clientes' && canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
       }
     });
   });
@@ -14313,8 +14334,12 @@ function initDateRange() {
   const todayISO = `${yyyy}-${mm}-${dd}`;
   desde.value = todayISO;
   hasta.value = todayISO;
-  desde.addEventListener('change', () => loadProductividad(desde.value, hasta.value));
-  hasta.addEventListener('change', () => loadProductividad(desde.value, hasta.value));
+  desde.addEventListener('change', () => {
+    if (canViewDashboardReport('dashboard-pedidos-dia')) loadProductividad(desde.value, hasta.value);
+  });
+  hasta.addEventListener('change', () => {
+    if (canViewDashboardReport('dashboard-pedidos-dia')) loadProductividad(desde.value, hasta.value);
+  });
 }
 
 function initFechaEmpleados() {
@@ -14337,24 +14362,28 @@ function initPedidosClientes() {
   const todayISO = `${yyyy}-${mm}-${dd}`;
   if (fechaPedidosClientes) {
     fechaPedidosClientes.value = todayISO;
-    fechaPedidosClientes.addEventListener('change', () => loadPedidosClientes());
+    fechaPedidosClientes.addEventListener('change', () => {
+      if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
+    });
   }
   if (refreshPedidosClientes) {
-    refreshPedidosClientes.addEventListener('click', () => loadPedidosClientes());
+    refreshPedidosClientes.addEventListener('click', () => {
+      if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
+    });
   }
   if (pcPageSizeSelect) {
     pcPageSize = Number(pcPageSizeSelect.value) || pcPageSize;
     pcPageSizeSelect.addEventListener('change', () => {
       pcPageSize = Number(pcPageSizeSelect.value) || pcPageSize;
       pcPage = 1;
-      loadPedidosClientes();
+      if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
     });
   }
   if (pcPrev) {
     pcPrev.addEventListener('click', () => {
       if (pcPage > 1) {
         pcPage -= 1;
-        loadPedidosClientes();
+        if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
       }
     });
   }
@@ -14362,7 +14391,7 @@ function initPedidosClientes() {
     pcNext.addEventListener('click', () => {
       if (pcPage < pcTotalPages) {
         pcPage += 1;
-        loadPedidosClientes();
+        if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
       }
     });
   }
@@ -14378,7 +14407,7 @@ function initPedidosClientes() {
         pedidosClientesSort.dir = 'asc';
       }
       pcPage = 1;
-      loadPedidosClientes();
+      if (canViewDashboardReport('dashboard-pedidos-clientes')) loadPedidosClientes();
     });
   }
 }
@@ -15098,6 +15127,13 @@ const permissionGroups = [
       title: 'General',
       items: [
         { key: 'dashboard', label: 'Dashboard' },
+        { key: 'dashboard-encuestas', label: 'Dashboard - Encuestas por mes' },
+        { key: 'dashboard-empaquetados', label: 'Dashboard - Empaquetados' },
+        { key: 'dashboard-pedidos-dia', label: 'Dashboard - Pedidos del día' },
+        { key: 'dashboard-pedidos-vendedora', label: 'Dashboard - Pedidos por vendedora' },
+        { key: 'dashboard-ventas-vendedora', label: 'Dashboard - Ventas por vendedora' },
+        { key: 'dashboard-pedidos-clientes', label: 'Dashboard - Pedidos de Clientes' },
+        { key: 'dashboard-comparativo', label: 'Dashboard - Comparativo anual' },
         { key: 'panel-control', label: 'Panel de Control' },
         { key: 'cargar-ticket', label: 'CargarTicket' },
         { key: 'empleados', label: 'Empleados' },
@@ -15165,9 +15201,29 @@ let usersPage = 1;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
 const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
+const dashboardReportPermissions = [
+  'dashboard-encuestas',
+  'dashboard-empaquetados',
+  'dashboard-pedidos-dia',
+  'dashboard-pedidos-vendedora',
+  'dashboard-ventas-vendedora',
+  'dashboard-pedidos-clientes',
+  'dashboard-comparativo',
+];
 
 function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
+}
+
+function normalizeDashboardPermissions(perms = {}, rawPerms = {}) {
+  const hasDashboardSubPerms = dashboardReportPermissions.some((permission) =>
+    Object.prototype.hasOwnProperty.call(rawPerms, permission)
+  );
+  if (hasDashboardSubPerms || perms.dashboard !== true) return perms;
+  dashboardReportPermissions.forEach((permission) => {
+    perms[permission] = true;
+  });
+  return perms;
 }
 
 function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
@@ -15229,10 +15285,12 @@ async function loadRolePermissions(roleId) {
   if (rolesStatus) rolesStatus.textContent = 'Cargando permisos...';
   const res = await fetchJSON(`/api/roles/${encodeURIComponent(roleId)}/permissions`);
   const perms = buildEmptyPermissions();
+  const rawPerms = {};
   let hasEcommerceSubPerms = false;
   let hasFidelizacionSubPerms = false;
   let legacyFidelizacionEnabled = false;
   (res.data || []).forEach((row) => {
+    rawPerms[row.permiso] = !!row.habilitado;
     if (row.permiso in perms) {
       perms[row.permiso] = !!row.habilitado;
       if (row.permiso === 'ecommerce-imagenweb' || row.permiso === 'ecommerce-panel') {
@@ -15251,6 +15309,7 @@ async function loadRolePermissions(roleId) {
       legacyFidelizacionEnabled = !!row.habilitado;
     }
   });
+  normalizeDashboardPermissions(perms, rawPerms);
   normalizeEcommercePermissions(perms, hasEcommerceSubPerms);
   normalizeFidelizacionPermissions(perms, hasFidelizacionSubPerms, legacyFidelizacionEnabled);
   const role = rolesData.find((r) => r.id === roleId);
@@ -15288,6 +15347,7 @@ function renderPermissions() {
     });
   });
   const submenuMap = {
+    dashboard: dashboardReportPermissions,
     'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
@@ -15770,6 +15830,7 @@ function initPaqueteriaModal() {
   if (!calendarClose || !calendarOverlay || !tablaEmpleadosBody) return;
   statButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (!canViewDashboardReport('dashboard-empaquetados')) return;
       const tipo = btn.dataset.tipo;
       const titleMap = {
         pendientes: 'Pendientes',
@@ -19138,9 +19199,15 @@ function switchView(target) {
   currentView = target;
 }
 
-const defaultYearEncuestas = initYearSelect('year-encuestas', (y) => loadEncuestas(y));
-const defaultYearMensual = initYearSelect('year-mensual', (y) => loadMensual(y));
-const defaultYearVentas = initYearSelect('year-ventas', (y) => loadVentas(y));
+const defaultYearEncuestas = initYearSelect('year-encuestas', (y) => {
+  if (canViewDashboardReport('dashboard-encuestas')) loadEncuestas(y);
+});
+const defaultYearMensual = initYearSelect('year-mensual', (y) => {
+  if (canViewDashboardReport('dashboard-pedidos-vendedora')) loadMensual(y);
+});
+const defaultYearVentas = initYearSelect('year-ventas', (y) => {
+  if (canViewDashboardReport('dashboard-ventas-vendedora')) loadVentas(y);
+});
 const defaultDashboardComparativoYearA = initYearSelect('dashboard-comparativo-year-a');
 const defaultDashboardComparativoYearB = initYearSelect('dashboard-comparativo-year-b');
 if (dashboardComparativoYearA && defaultDashboardComparativoYearA) {
@@ -19198,29 +19265,29 @@ initConfigTabs();
 initUsersModule();
 initUserTabs();
 loadTransportes();
-if (document.getElementById('chart-encuestas') && defaultYearEncuestas) {
+if (document.getElementById('chart-encuestas') && defaultYearEncuestas && canViewDashboardReport('dashboard-encuestas')) {
   loadEncuestas(defaultYearEncuestas);
 }
 initDateRange();
 const fechaDesdeInit = document.getElementById('fecha-desde');
 const fechaHastaInit = document.getElementById('fecha-hasta');
-if (fechaDesdeInit && fechaHastaInit) {
+if (fechaDesdeInit && fechaHastaInit && canViewDashboardReport('dashboard-pedidos-dia')) {
   loadProductividad(fechaDesdeInit.value, fechaHastaInit.value);
 }
-if (document.getElementById('chart-mensual') && defaultYearMensual) {
+if (document.getElementById('chart-mensual') && defaultYearMensual && canViewDashboardReport('dashboard-pedidos-vendedora')) {
   loadMensual(defaultYearMensual);
 }
-if (document.getElementById('chart-ventas') && defaultYearVentas) {
+if (document.getElementById('chart-ventas') && defaultYearVentas && canViewDashboardReport('dashboard-ventas-vendedora')) {
   loadVentas(defaultYearVentas);
 }
-if (statPendientes || statSinTransporte || statVencidos) {
+if ((statPendientes || statSinTransporte || statVencidos) && canViewDashboardReport('dashboard-empaquetados')) {
   loadPaqueteria();
 }
 loadCarritosAbandonados();
 loadPedidosControl();
 loadOperativos();
 startPanelControlAutoRefresh();
-if (tablaPedidosClientesBody) {
+if (tablaPedidosClientesBody && canViewDashboardReport('dashboard-pedidos-clientes')) {
   loadPedidosClientes();
 }
 
