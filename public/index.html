@@ -889,13 +889,35 @@
           <p class="value" id="stat-salon-clientes-recurrentes">0</p>
         </div>
       </div>
-        <div class="card">
-          <div class="actions between">
-            <h3>Ventas por vendedora (salón)</h3>
-            <p class="status">Cantidad de facturas en el rango seleccionado</p>
+        <div class="salon-insights-grid">
+          <div class="salon-chart-panel">
+            <div class="actions between">
+              <h3>Ventas por vendedora (salón)</h3>
+              <p class="status">Cantidad de facturas en el rango seleccionado</p>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="chart-salon-vendedoras"></canvas>
+            </div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="chart-salon-vendedoras"></canvas>
+          <div class="salon-rangos-panel">
+            <div class="actions between">
+              <h3>Ventas por rango</h3>
+              <p class="status">Tramos de $10.000</p>
+            </div>
+            <div class="table-wrap salon-rangos-wrap">
+              <table class="table salon-rangos-table">
+                <thead>
+                  <tr>
+                    <th>Rango</th>
+                    <th>Cant.</th>
+                    <th>Monto total</th>
+                    <th>% ventas</th>
+                    <th>% facturación</th>
+                  </tr>
+                </thead>
+                <tbody id="salon-rangos-body"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       <p class="status" id="salon-status"></p>

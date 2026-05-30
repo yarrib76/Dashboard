@@ -11771,6 +11771,52 @@ app.get('/api/salon/resumen', async (req, res) => {
     const ticketPromedio = cantidad > 0 ? total / cantidad : 0;
     const clientesNuevos = Number(clientesRow?.clientesNuevos) || 0;
     const clientesRecurrentes = Number(clientesRow?.clientesRecurrentes) || 0;
+    const importeVentaExpr = '(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END)';
+    const [rangosRows] = await pool.query(
+      `SELECT
+         bucket,
+         COUNT(*) AS cantidad,
+         ROUND(SUM(importe), 2) AS montoTotal
+       FROM (
+         SELECT
+           ${importeVentaExpr} AS importe,
+           CASE
+             WHEN ${importeVentaExpr} <= 10000 THEN 0
+             ELSE FLOOR((${importeVentaExpr} - 0.01) / 10000)
+           END AS bucket
+         FROM facturah f
+         LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
+         WHERE DATE(f.fecha) BETWEEN ? AND ?
+           AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+           AND ${importeVentaExpr} > 0
+       ) ventas
+       GROUP BY bucket
+       ORDER BY bucket`,
+      [fechaDesde, fechaHasta]
+    );
+    const rangosByBucket = new Map(
+      (rangosRows || []).map((rangeRow) => [
+        Number(rangeRow.bucket) || 0,
+        {
+          cantidad: Number(rangeRow.cantidad) || 0,
+          montoTotal: Number(rangeRow.montoTotal) || 0,
+        },
+      ])
+    );
+    const maxBucket = rangosByBucket.size ? Math.max(...rangosByBucket.keys()) : -1;
+    const rangos = [];
+    for (let bucket = 0; bucket <= maxBucket; bucket += 1) {
+      const lower = bucket === 0 ? 0 : bucket * 10000 + 1;
+      const upper = (bucket + 1) * 10000;
+      const values = rangosByBucket.get(bucket) || { cantidad: 0, montoTotal: 0 };
+      rangos.push({
+        rango: `$${lower.toLocaleString('es-AR')} - $${upper.toLocaleString('es-AR')}`,
+        desde: lower,
+        hasta: upper,
+        cantidad: values.cantidad,
+        montoTotal: values.montoTotal,
+      });
+    }
 
     res.json({
       desde: fechaDesde,
@@ -11780,6 +11826,7 @@ app.get('/api/salon/resumen', async (req, res) => {
       ticketPromedio,
       clientesNuevos,
       clientesRecurrentes,
+      rangos,
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar resumen de salón', error: error.message });

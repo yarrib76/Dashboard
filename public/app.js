@@ -1166,6 +1166,7 @@ const statSalonClientesNuevos = document.getElementById('stat-salon-clientes-nue
 const statSalonClientesRecurrentes = document.getElementById('stat-salon-clientes-recurrentes');
 const salonStatus = document.getElementById('salon-status');
 const salonVendedorasChartEl = document.getElementById('chart-salon-vendedoras');
+const salonRangosBody = document.getElementById('salon-rangos-body');
 const pedidosDesdeInput = document.getElementById('pedidos-desde');
 const pedidosHastaInput = document.getElementById('pedidos-hasta');
 const pedidosActualizarBtn = document.getElementById('pedidos-actualizar');
@@ -1421,10 +1422,47 @@ async function loadSalonResumen() {
     if (statSalonClientesNuevos) statSalonClientesNuevos.textContent = data.clientesNuevos ?? 0;
     if (statSalonClientesRecurrentes) statSalonClientesRecurrentes.textContent = data.clientesRecurrentes ?? 0;
     if (salonStatus) salonStatus.textContent = `Rango: ${data.desde || desde} a ${data.hasta || hasta}`;
+    renderSalonRangos(data.rangos || [], data.total || 0, data.cantidad || 0);
     renderSalonVendedorasChart(vendData);
   } catch (error) {
     if (salonStatus) salonStatus.textContent = error.message || 'Error al cargar resumen de salón';
   }
+}
+
+function renderSalonRangos(rows, totalFacturado = 0, totalVentas = 0) {
+  if (!salonRangosBody) return;
+  salonRangosBody.innerHTML = '';
+  const total = Number(totalFacturado) || 0;
+  const cantidadTotal = Number(totalVentas) || 0;
+  const rangos = Array.isArray(rows) ? rows : [];
+  if (!rangos.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="5" class="salon-rangos-empty">Sin ventas para el rango seleccionado.</td>';
+    salonRangosBody.appendChild(tr);
+    return;
+  }
+  rangos.forEach((row) => {
+    const cantidad = Number(row.cantidad) || 0;
+    const monto = Number(row.montoTotal) || 0;
+    const pctVentas = cantidadTotal > 0 ? (cantidad / cantidadTotal) * 100 : 0;
+    const pctFacturacion = total > 0 ? (monto / total) * 100 : 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="salon-rango-label">${escapeAttr(row.rango || '')}</span></td>
+      <td class="num">${cantidad}</td>
+      <td class="num">${formatMoney(monto)}</td>
+      <td class="num">${pctVentas.toFixed(1)}%</td>
+      <td>
+        <div class="salon-rango-share">
+          <span>${pctFacturacion.toFixed(1)}%</span>
+          <div class="salon-rango-bar" aria-hidden="true">
+            <i style="width:${Math.max(0, Math.min(100, pctFacturacion)).toFixed(1)}%"></i>
+          </div>
+        </div>
+      </td>
+    `;
+    salonRangosBody.appendChild(tr);
+  });
 }
 
 function renderSalonVendedorasChart(rows) {
