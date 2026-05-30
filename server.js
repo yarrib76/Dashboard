@@ -11809,6 +11809,7 @@ app.get('/api/salon/resumen', async (req, res) => {
       const lower = bucket === 0 ? 0 : bucket * 10000 + 1;
       const upper = (bucket + 1) * 10000;
       const values = rangosByBucket.get(bucket) || { cantidad: 0, montoTotal: 0 };
+      if (!values.cantidad) continue;
       rangos.push({
         rango: `$${lower.toLocaleString('es-AR')} - $${upper.toLocaleString('es-AR')}`,
         desde: lower,

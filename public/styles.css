@@ -1172,7 +1172,7 @@ input[type='month'] {
 
 .salon-insights-grid {
   display: grid;
-  grid-template-columns: minmax(420px, 1.35fr) minmax(420px, 1fr);
+  grid-template-columns: minmax(340px, 0.85fr) minmax(560px, 1.15fr);
   gap: 14px;
   align-items: stretch;
   margin-top: 14px;
@@ -1199,12 +1199,35 @@ input[type='month'] {
 }
 
 .salon-rangos-table {
-  min-width: 520px;
+  min-width: 0;
+  table-layout: fixed;
+  font-size: 0.92rem;
 }
 
 .salon-rangos-table th,
 .salon-rangos-table td {
   vertical-align: middle;
+  padding: 9px 7px;
+}
+
+.salon-rangos-table th:nth-child(1) {
+  width: 34%;
+}
+
+.salon-rangos-table th:nth-child(2) {
+  width: 10%;
+}
+
+.salon-rangos-table th:nth-child(3) {
+  width: 20%;
+}
+
+.salon-rangos-table th:nth-child(4) {
+  width: 14%;
+}
+
+.salon-rangos-table th:nth-child(5) {
+  width: 22%;
 }
 
 .salon-rangos-table th:nth-child(n + 2),
@@ -1226,10 +1249,10 @@ input[type='month'] {
 
 .salon-rango-share {
   display: grid;
-  grid-template-columns: 54px 1fr;
+  grid-template-columns: 50px 1fr;
   align-items: center;
   gap: 8px;
-  min-width: 130px;
+  min-width: 112px;
   font-weight: 700;
 }
 
