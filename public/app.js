@@ -10146,11 +10146,15 @@ function renderPedidosClientes(rows) {
   rows.forEach((row) => {
     const fidelizacionEstadoRef = String(row.fidelizacionEstadoRef || '').toUpperCase();
     const cerradaHaceDias = Number(row.fidelizacionCerradaHaceDias);
+    const fidelizacionVendedora = String(row.fidelizacionVendedora || '').trim();
+    const cerradaLabel =
+      fidelizacionEstadoRef === 'CERRADA_RECIENTE'
+        ? `cerrada hace ${Number.isFinite(cerradaHaceDias) ? cerradaHaceDias : 0} ${cerradaHaceDias === 1 ? 'día' : 'días'}`
+        : '';
+    const activaDetalle = [fidelizacionVendedora, cerradaLabel].filter(Boolean).join(', ');
     const fidelizacionBadge =
       Number(row.fidelizacionActiva || 0) === 1
-        ? fidelizacionEstadoRef === 'CERRADA_RECIENTE'
-          ? `<span class="badge yellow">ACTIVA (cerrada hace ${Number.isFinite(cerradaHaceDias) ? cerradaHaceDias : 0} ${cerradaHaceDias === 1 ? 'día' : 'días'})</span>`
-          : '<span class="badge yellow">ACTIVA</span>'
+        ? `<span class="badge yellow">ACTIVA${activaDetalle ? ` (${escapeAttr(activaDetalle)})` : ''}</span>`
         : '<span class="badge gray">-</span>';
     const tr = document.createElement('tr');
     tr.innerHTML = `

@@ -10497,6 +10497,25 @@ app.get('/api/pedidos/clientes', requireAuth, requirePermission('dashboard-pedid
            ELSE ''
          END AS fidelizacionEstadoRef,
          (
+           SELECT COALESCE(NULLIF(TRIM(v.Nombre), ''), 'Sin asignar')
+           FROM fidelizacion_recomendacion fr
+           LEFT JOIN vendedores v ON v.Id = fr.vendedora_id
+           WHERE fr.cliente_id = cp.id_cliente
+             AND (
+               fr.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA')
+               OR (
+                 fr.estado = 'CERRADA'
+                 AND fr.closed_at IS NOT NULL
+                 AND cp.fecha >= fr.closed_at
+                 AND cp.fecha < DATE_ADD(fr.closed_at, INTERVAL 11 DAY)
+               )
+             )
+           ORDER BY
+             CASE WHEN fr.estado IN ('PENDIENTE', 'EN_GESTION', 'CONTACTADA') THEN 0 ELSE 1 END,
+             COALESCE(fr.estado_updated_at, fr.closed_at, fr.created_at) DESC
+           LIMIT 1
+         ) AS fidelizacionVendedora,
+         (
            SELECT DATEDIFF(DATE(cp.fecha), DATE(fr.closed_at))
            FROM fidelizacion_recomendacion fr
            WHERE fr.cliente_id = cp.id_cliente
