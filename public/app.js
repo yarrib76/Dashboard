@@ -311,6 +311,7 @@ let pedidosListaVariant = '';
 let pedidoItemsTable = null;
 let salonVendedoraTable = null;
 let salonVentasDetalleCache = [];
+let salonDetalleTipoActual = '';
 let pedidoNotasCurrentId = null;
 let pedidoNotasEditingId = null;
 let currentPedidosTipo = '';
@@ -537,6 +538,8 @@ const salonVendedoraTitle = document.getElementById('salon-vendedora-title');
 const salonVendedoraClose = document.getElementById('salon-vendedora-close');
 const salonVendedoraTableEl = document.getElementById('salon-vendedora-table');
 const salonVendedoraStatus = document.getElementById('salon-vendedora-status');
+const salonRepetidosFilter = document.getElementById('salon-repetidos-filter');
+const salonRepetidosCheck = document.getElementById('salon-repetidos-check');
 const pedidoCardsEl = document.getElementById('pedido-cards');
 const pedidoCardsSearchInput = document.getElementById('pedido-cards-search');
 const pedidoItemsOverlay = document.getElementById('pedido-items-overlay');
@@ -1405,6 +1408,12 @@ function initSalonResumen() {
       open();
     });
   });
+  if (salonRepetidosCheck) {
+    salonRepetidosCheck.addEventListener('change', () => {
+      renderSalonVendedoraTable(getSalonDetalleVisibleRows());
+      updateSalonDetalleStatus();
+    });
+  }
   loadSalonResumen();
 }
 
@@ -1547,6 +1556,9 @@ function renderSalonVendedorasChart(rows) {
 
 function openSalonVendedoraModal(vendedora) {
   if (!salonVendedoraOverlay || !vendedora) return;
+  salonDetalleTipoActual = 'vendedora';
+  if (salonRepetidosFilter) salonRepetidosFilter.classList.add('hidden');
+  if (salonRepetidosCheck) salonRepetidosCheck.checked = false;
   if (salonVendedoraTitle) salonVendedoraTitle.textContent = `Ventas - ${vendedora}`;
   salonVentasDetalleCache = [];
   if (salonVendedoraTable) {
@@ -1559,6 +1571,9 @@ function openSalonVendedoraModal(vendedora) {
 
 function openSalonDetalleModal(tipo) {
   if (!salonVendedoraOverlay || !tipo) return;
+  salonDetalleTipoActual = tipo;
+  if (salonRepetidosFilter) salonRepetidosFilter.classList.toggle('hidden', tipo !== 'ventas');
+  if (salonRepetidosCheck) salonRepetidosCheck.checked = false;
   const titleMap = {
     ventas: 'Cantidad de ventas',
     nuevos: 'Clientes nuevos',
@@ -1583,17 +1598,37 @@ async function loadSalonDetalle(tipo) {
     const params = new URLSearchParams({ desde, hasta, tipo });
     const res = await fetchJSON(`/api/salon/detalle?${params.toString()}`);
     salonVentasDetalleCache = Array.isArray(res.data) ? res.data : [];
-    renderSalonVendedoraTable(salonVentasDetalleCache);
-    if (salonVendedoraStatus) {
-      const unidad = tipo === 'ventas' ? 'ventas' : 'clientes';
-      salonVendedoraStatus.textContent = salonVentasDetalleCache.length
-        ? `${salonVentasDetalleCache.length} ${unidad}`
-        : `Sin ${unidad}.`;
-    }
+    renderSalonVendedoraTable(getSalonDetalleVisibleRows());
+    updateSalonDetalleStatus();
   } catch (error) {
     if (salonVendedoraStatus)
       salonVendedoraStatus.textContent = error.message || 'Error al cargar detalle.';
   }
+}
+
+function getSalonDetalleVisibleRows() {
+  if (
+    salonDetalleTipoActual !== 'ventas' ||
+    !salonRepetidosCheck ||
+    !salonRepetidosCheck.checked
+  ) {
+    return salonVentasDetalleCache;
+  }
+  return salonVentasDetalleCache.filter((row) => Number(row.comprasClienteRango) > 1);
+}
+
+function updateSalonDetalleStatus() {
+  if (!salonVendedoraStatus) return;
+  const visibleRows = getSalonDetalleVisibleRows();
+  const unidad = salonDetalleTipoActual === 'ventas' || salonDetalleTipoActual === 'vendedora'
+    ? 'ventas'
+    : 'clientes';
+  const suffix = salonDetalleTipoActual === 'ventas' && salonRepetidosCheck?.checked
+    ? ' de clientes con más de 1 compra'
+    : '';
+  salonVendedoraStatus.textContent = visibleRows.length
+    ? `${visibleRows.length} ${unidad}${suffix}`
+    : `Sin ${unidad}${suffix}.`;
 }
 
 async function loadSalonVendedoraDetalle(vendedora) {
@@ -1626,6 +1661,7 @@ function renderSalonVendedoraTable(rows) {
     total: Number(row.total) || 0,
     fecha: row.fecha || '',
     hora: row.hora || '',
+    comprasClienteRango: Number(row.comprasClienteRango) || 0,
   }));
   if (salonVendedoraTable) {
     salonVendedoraTable.clear();

@@ -12043,7 +12043,23 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
         f.NroFactura AS factura,
         CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END AS total,
         DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
-        DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora
+        DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora,
+        CASE
+          WHEN f.id_clientes IS NULL OR f.id_clientes = 1 THEN 0
+          ELSE (
+            SELECT COUNT(*)
+            FROM facturah fr
+            WHERE fr.id_clientes = f.id_clientes
+              AND DATE(fr.fecha) BETWEEN ? AND ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM controlpedidos cpr
+                WHERE cpr.nrofactura = fr.NroFactura
+                  AND cpr.ordenWeb IS NOT NULL
+                  AND cpr.ordenWeb <> 0
+              )
+          )
+        END AS comprasClienteRango
       FROM facturah f
       LEFT JOIN clientes cli ON cli.id_clientes = f.id_clientes
       LEFT JOIN (
@@ -12056,7 +12072,7 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
 
       let whereSql = `WHERE DATE(f.fecha) BETWEEN ? AND ?
         AND ${salonFilterSql}`;
-      const params = [fechaDesde, fechaHasta, fechaDesde, fechaDesde, fechaHasta];
+      const params = [fechaDesde, fechaHasta, fechaDesde, fechaDesde, fechaHasta, fechaDesde, fechaHasta];
 
       if (tipo === 'ventas') {
         const [rows] = await pool.query(
