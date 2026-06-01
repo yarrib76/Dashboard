@@ -12014,6 +12014,97 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
     }
   });
 
+  app.get('/api/salon/detalle', async (req, res) => {
+    try {
+      const desdeDate = req.query.desde ? parseISODate(req.query.desde) : new Date();
+      const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
+      const fechaDesde = desdeDate.toISOString().slice(0, 10);
+      const fechaHasta = hastaDate.toISOString().slice(0, 10);
+      const tipo = String(req.query.tipo || 'ventas').trim().toLowerCase();
+      const tiposValidos = new Set(['ventas', 'nuevos', 'recurrentes']);
+      if (!tiposValidos.has(tipo)) return res.status(400).json({ message: 'tipo invalido' });
+
+      const salonFilterSql = `NOT EXISTS (
+        SELECT 1
+        FROM controlpedidos cp
+        WHERE cp.nrofactura = f.NroFactura
+          AND cp.ordenWeb IS NOT NULL
+          AND cp.ordenWeb <> 0
+      )`;
+      const tipoClienteSql = `CASE
+        WHEN f.id_clientes IS NULL OR f.id_clientes = 1 THEN 'No aplica'
+        WHEN DATE(primera.fecha_primera) BETWEEN ? AND ? THEN 'Nuevo'
+        WHEN DATE(primera.fecha_primera) < ? THEN 'Recurrente'
+        ELSE 'No aplica'
+      END`;
+      const selectSql = `SELECT
+        COALESCE(NULLIF(TRIM(CONCAT(COALESCE(cli.nombre, ''), ' ', COALESCE(cli.apellido, ''))), ''), 'Sin cliente') AS cliente,
+        ${tipoClienteSql} AS tipoCliente,
+        f.NroFactura AS factura,
+        CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END AS total,
+        DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
+        DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora
+      FROM facturah f
+      LEFT JOIN clientes cli ON cli.id_clientes = f.id_clientes
+      LEFT JOIN (
+        SELECT id_clientes, MIN(fecha) AS fecha_primera
+        FROM facturah
+        WHERE id_clientes IS NOT NULL
+          AND id_clientes <> 1
+        GROUP BY id_clientes
+      ) primera ON primera.id_clientes = f.id_clientes`;
+
+      let whereSql = `WHERE DATE(f.fecha) BETWEEN ? AND ?
+        AND ${salonFilterSql}`;
+      const params = [fechaDesde, fechaHasta, fechaDesde, fechaDesde, fechaHasta];
+
+      if (tipo === 'ventas') {
+        const [rows] = await pool.query(
+          `${selectSql}
+           ${whereSql}
+           ORDER BY f.fecha DESC, f.NroFactura DESC`,
+          params
+        );
+        return res.json({ desde: fechaDesde, hasta: fechaHasta, tipo, data: rows || [] });
+      }
+
+      whereSql += ` AND f.id_clientes IS NOT NULL
+        AND f.id_clientes <> 1
+        AND ${tipo === 'nuevos' ? 'DATE(primera.fecha_primera) BETWEEN ? AND ?' : 'DATE(primera.fecha_primera) < ?'}
+        AND f.NroFactura = (
+          SELECT f2.NroFactura
+          FROM facturah f2
+          WHERE f2.id_clientes = f.id_clientes
+            AND DATE(f2.fecha) BETWEEN ? AND ?
+            AND NOT EXISTS (
+              SELECT 1
+              FROM controlpedidos cp2
+              WHERE cp2.nrofactura = f2.NroFactura
+                AND cp2.ordenWeb IS NOT NULL
+                AND cp2.ordenWeb <> 0
+            )
+          ORDER BY f2.fecha ${tipo === 'nuevos' ? 'ASC' : 'DESC'}, f2.NroFactura ${tipo === 'nuevos' ? 'ASC' : 'DESC'}
+          LIMIT 1
+        )`;
+      if (tipo === 'nuevos') {
+        params.push(fechaDesde, fechaHasta);
+      } else {
+        params.push(fechaDesde);
+      }
+      params.push(fechaDesde, fechaHasta);
+
+      const [rows] = await pool.query(
+        `${selectSql}
+         ${whereSql}
+         ORDER BY f.fecha DESC, f.NroFactura DESC`,
+        params
+      );
+      return res.json({ desde: fechaDesde, hasta: fechaHasta, tipo, data: rows || [] });
+    } catch (error) {
+      return res.status(500).json({ message: 'Error al cargar detalle de salón', error: error.message });
+    }
+  });
+
 app.post('/api/ia/chat', express.json({ limit: '2mb' }), async (req, res) => {
   try {
     const { message, files = [] } = req.body || {};

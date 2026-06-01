@@ -1396,6 +1396,15 @@ function initSalonResumen() {
   if (salonActualizarBtn) salonActualizarBtn.addEventListener('click', handler);
   salonDesdeInput.addEventListener('change', handler);
   salonHastaInput.addEventListener('change', handler);
+  document.querySelectorAll('.salon-stat-click[data-salon-detalle]').forEach((card) => {
+    const open = () => openSalonDetalleModal(card.dataset.salonDetalle);
+    card.addEventListener('click', open);
+    card.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      open();
+    });
+  });
   loadSalonResumen();
 }
 
@@ -1546,6 +1555,45 @@ function openSalonVendedoraModal(vendedora) {
   }
   salonVendedoraOverlay.classList.add('open');
   loadSalonVendedoraDetalle(vendedora);
+}
+
+function openSalonDetalleModal(tipo) {
+  if (!salonVendedoraOverlay || !tipo) return;
+  const titleMap = {
+    ventas: 'Cantidad de ventas',
+    nuevos: 'Clientes nuevos',
+    recurrentes: 'Clientes recurrentes',
+  };
+  if (salonVendedoraTitle) salonVendedoraTitle.textContent = titleMap[tipo] || 'Detalle salón';
+  salonVentasDetalleCache = [];
+  if (salonVendedoraTable) {
+    salonVendedoraTable.clear();
+    salonVendedoraTable.draw();
+  }
+  salonVendedoraOverlay.classList.add('open');
+  loadSalonDetalle(tipo);
+}
+
+async function loadSalonDetalle(tipo) {
+  if (!salonDesdeInput || !salonHastaInput) return;
+  const desde = salonDesdeInput.value || new Date().toISOString().slice(0, 10);
+  const hasta = salonHastaInput.value || desde;
+  if (salonVendedoraStatus) salonVendedoraStatus.textContent = 'Cargando...';
+  try {
+    const params = new URLSearchParams({ desde, hasta, tipo });
+    const res = await fetchJSON(`/api/salon/detalle?${params.toString()}`);
+    salonVentasDetalleCache = Array.isArray(res.data) ? res.data : [];
+    renderSalonVendedoraTable(salonVentasDetalleCache);
+    if (salonVendedoraStatus) {
+      const unidad = tipo === 'ventas' ? 'ventas' : 'clientes';
+      salonVendedoraStatus.textContent = salonVentasDetalleCache.length
+        ? `${salonVentasDetalleCache.length} ${unidad}`
+        : `Sin ${unidad}.`;
+    }
+  } catch (error) {
+    if (salonVendedoraStatus)
+      salonVendedoraStatus.textContent = error.message || 'Error al cargar detalle.';
+  }
 }
 
 async function loadSalonVendedoraDetalle(vendedora) {
