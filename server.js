@@ -11730,40 +11730,60 @@ app.get('/api/salon/resumen', async (req, res) => {
     const hastaDate = req.query.hasta ? parseISODate(req.query.hasta) : desdeDate;
     const fechaDesde = desdeDate.toISOString().slice(0, 10);
     const fechaHasta = hastaDate.toISOString().slice(0, 10);
+    const salonFilterSql = `NOT EXISTS (
+      SELECT 1
+      FROM controlpedidos cp
+      WHERE cp.nrofactura = f.NroFactura
+        AND cp.ordenWeb IS NOT NULL
+        AND cp.ordenWeb <> 0
+    )`;
 
     const [[row]] = await pool.query(
       `SELECT
          ROUND(SUM(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END), 2) AS total,
          COUNT(*) AS cantidad
        FROM facturah f
-       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
        WHERE DATE(f.fecha) BETWEEN ? AND ?
-         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)`,
+         AND ${salonFilterSql}`,
       [fechaDesde, fechaHasta]
     );
 
     const [[clientesRow]] = await pool.query(
       `SELECT
-         COUNT(DISTINCT CASE
-           WHEN DATE(primera.fecha_primera) BETWEEN ? AND ? THEN f.id_clientes
-         END) AS clientesNuevos,
-         COUNT(DISTINCT CASE
-           WHEN DATE(primera.fecha_primera) < ? THEN f.id_clientes
-         END) AS clientesRecurrentes
-       FROM facturah f
-       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
-       INNER JOIN (
-         SELECT id_clientes, MIN(fecha) AS fecha_primera
-         FROM facturah
-         WHERE id_clientes IS NOT NULL
-           AND id_clientes <> 1
-         GROUP BY id_clientes
-       ) primera ON primera.id_clientes = f.id_clientes
-       WHERE DATE(f.fecha) BETWEEN ? AND ?
-         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
-         AND f.id_clientes IS NOT NULL
-         AND f.id_clientes <> 1`,
+         COUNT(*) AS clientesUnicos,
+         SUM(CASE WHEN ventas_rango > 1 THEN 1 ELSE 0 END) AS clientesConMasDeUnaCompra,
+         SUM(CASE WHEN DATE(fecha_primera) BETWEEN ? AND ? THEN 1 ELSE 0 END) AS clientesNuevos,
+         SUM(CASE WHEN DATE(fecha_primera) < ? THEN 1 ELSE 0 END) AS clientesRecurrentes
+       FROM (
+         SELECT
+           f.id_clientes,
+           COUNT(*) AS ventas_rango,
+           primera.fecha_primera
+         FROM facturah f
+         INNER JOIN (
+           SELECT id_clientes, MIN(fecha) AS fecha_primera
+           FROM facturah
+           WHERE id_clientes IS NOT NULL
+             AND id_clientes <> 1
+           GROUP BY id_clientes
+         ) primera ON primera.id_clientes = f.id_clientes
+         WHERE DATE(f.fecha) BETWEEN ? AND ?
+           AND ${salonFilterSql}
+           AND f.id_clientes IS NOT NULL
+           AND f.id_clientes <> 1
+         GROUP BY f.id_clientes, primera.fecha_primera
+       ) clientes`,
       [fechaDesde, fechaHasta, fechaDesde, fechaDesde, fechaHasta]
+    );
+
+    const [[sinClienteRow]] = await pool.query(
+      `SELECT
+         SUM(CASE WHEN f.id_clientes = 1 THEN 1 ELSE 0 END) AS ventasClienteNinguno,
+         SUM(CASE WHEN f.id_clientes IS NULL THEN 1 ELSE 0 END) AS ventasSinCliente
+       FROM facturah f
+       WHERE DATE(f.fecha) BETWEEN ? AND ?
+         AND ${salonFilterSql}`,
+      [fechaDesde, fechaHasta]
     );
 
     const total = Number(row?.total) || 0;
@@ -11771,6 +11791,10 @@ app.get('/api/salon/resumen', async (req, res) => {
     const ticketPromedio = cantidad > 0 ? total / cantidad : 0;
     const clientesNuevos = Number(clientesRow?.clientesNuevos) || 0;
     const clientesRecurrentes = Number(clientesRow?.clientesRecurrentes) || 0;
+    const clientesUnicos = Number(clientesRow?.clientesUnicos) || 0;
+    const clientesConMasDeUnaCompra = Number(clientesRow?.clientesConMasDeUnaCompra) || 0;
+    const ventasClienteNinguno = Number(sinClienteRow?.ventasClienteNinguno) || 0;
+    const ventasSinCliente = Number(sinClienteRow?.ventasSinCliente) || 0;
     const importeVentaExpr = '(CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.total END)';
     const [rangosRows] = await pool.query(
       `SELECT
@@ -11785,9 +11809,8 @@ app.get('/api/salon/resumen', async (req, res) => {
              ELSE FLOOR((${importeVentaExpr} - 0.01) / 10000)
            END AS bucket
          FROM facturah f
-         LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
          WHERE DATE(f.fecha) BETWEEN ? AND ?
-           AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+           AND ${salonFilterSql}
            AND ${importeVentaExpr} > 0
        ) ventas
        GROUP BY bucket
@@ -11827,6 +11850,10 @@ app.get('/api/salon/resumen', async (req, res) => {
       ticketPromedio,
       clientesNuevos,
       clientesRecurrentes,
+      clientesUnicos,
+      clientesConMasDeUnaCompra,
+      ventasClienteNinguno,
+      ventasSinCliente,
       rangos,
     });
   } catch (error) {
@@ -11905,14 +11932,19 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
 
     const [rows] = await pool.query(
       `SELECT
-         f.vendedora,
+         COALESCE(NULLIF(TRIM(f.vendedora), ''), 'Sin vendedora') AS vendedora,
          COUNT(*) AS cantidad
        FROM facturah f
-       LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
        WHERE DATE(f.fecha) BETWEEN ? AND ?
-         AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
-       GROUP BY f.vendedora
-       ORDER BY cantidad DESC, f.vendedora`,
+         AND NOT EXISTS (
+           SELECT 1
+           FROM controlpedidos cp
+           WHERE cp.nrofactura = f.NroFactura
+             AND cp.ordenWeb IS NOT NULL
+             AND cp.ordenWeb <> 0
+         )
+       GROUP BY COALESCE(NULLIF(TRIM(f.vendedora), ''), 'Sin vendedora')
+       ORDER BY cantidad DESC, vendedora`,
       [fechaDesde, fechaHasta]
     );
 
@@ -11933,31 +11965,37 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
 
       const conditions = [
         'DATE(f.fecha) BETWEEN ? AND ?',
-        '(cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)',
+        `NOT EXISTS (
+          SELECT 1
+          FROM controlpedidos cp
+          WHERE cp.nrofactura = f.NroFactura
+            AND cp.ordenWeb IS NOT NULL
+            AND cp.ordenWeb <> 0
+        )`,
       ];
       const params = [fechaDesde, fechaHasta];
       if (vendedora === 'Sin vendedora') {
-        conditions.push('(f.vendedora IS NULL OR f.vendedora = "")');
+        conditions.push("NULLIF(TRIM(f.vendedora), '') IS NULL");
       } else {
-        conditions.push('f.vendedora = ?');
+        conditions.push('TRIM(f.vendedora) = ?');
         params.push(vendedora);
       }
 
       const [rows] = await pool.query(
         `SELECT
-           CONCAT(cli.nombre, ' ', cli.apellido) AS cliente,
+           COALESCE(NULLIF(TRIM(CONCAT(COALESCE(cli.nombre, ''), ' ', COALESCE(cli.apellido, ''))), ''), 'Sin cliente') AS cliente,
            CASE
-             WHEN f.id_clientes = 1 THEN 'No aplica'
+             WHEN f.id_clientes IS NULL OR f.id_clientes = 1 THEN 'No aplica'
              WHEN DATE(primera.fecha_primera) BETWEEN ? AND ? THEN 'Nuevo'
              WHEN DATE(primera.fecha_primera) < ? THEN 'Recurrente'
-             ELSE 'Nuevo'
+             ELSE 'No aplica'
            END AS tipoCliente,
            f.NroFactura AS factura,
-           f.Total AS total,
+           CASE WHEN f.Descuento IS NOT NULL OR f.Descuento = 0 THEN f.Descuento ELSE f.Total END AS total,
            DATE_FORMAT(f.fecha, '%Y-%m-%d') AS fecha,
            DATE_FORMAT(f.created_at, '%H:%i:%s') AS hora
          FROM facturah f
-         INNER JOIN clientes cli ON cli.id_clientes = f.id_clientes
+         LEFT JOIN clientes cli ON cli.id_clientes = f.id_clientes
          LEFT JOIN (
            SELECT id_clientes, MIN(fecha) AS fecha_primera
            FROM facturah
@@ -11965,7 +12003,6 @@ app.get('/api/pedidos/vendedoras', async (req, res) => {
              AND id_clientes <> 1
            GROUP BY id_clientes
          ) primera ON primera.id_clientes = f.id_clientes
-         LEFT JOIN controlpedidos cp ON cp.nrofactura = f.NroFactura
          WHERE ${conditions.join(' AND ')}
          ORDER BY f.fecha DESC, f.NroFactura DESC`,
         [fechaDesde, fechaHasta, fechaDesde, ...params]

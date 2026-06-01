@@ -1161,6 +1161,7 @@ const salonHastaInput = document.getElementById('salon-hasta');
 const salonActualizarBtn = document.getElementById('salon-actualizar');
 const statSalonTotal = document.getElementById('stat-salon-total');
 const statSalonCantidad = document.getElementById('stat-salon-cantidad');
+const statSalonCantidadNota = document.getElementById('stat-salon-cantidad-nota');
 const statSalonTicket = document.getElementById('stat-salon-ticket');
 const statSalonClientesNuevos = document.getElementById('stat-salon-clientes-nuevos');
 const statSalonClientesRecurrentes = document.getElementById('stat-salon-clientes-recurrentes');
@@ -1418,6 +1419,17 @@ async function loadSalonResumen() {
     }
     if (statSalonTotal) statSalonTotal.textContent = formatMoney(data.total || 0);
     if (statSalonCantidad) statSalonCantidad.textContent = data.cantidad ?? 0;
+    if (statSalonCantidadNota) {
+      const clientesUnicos = Number(data.clientesUnicos) || 0;
+      const clientesRepetidos = Number(data.clientesConMasDeUnaCompra) || 0;
+      const ventasClienteNinguno = Number(data.ventasClienteNinguno) || 0;
+      const ventasSinCliente = Number(data.ventasSinCliente) || 0;
+      const partes = [`${clientesUnicos} clientes únicos`];
+      if (clientesRepetidos) partes.push(`${clientesRepetidos} con más de 1 compra`);
+      if (ventasClienteNinguno) partes.push(`${ventasClienteNinguno} ventas con cliente Ninguno`);
+      if (ventasSinCliente) partes.push(`${ventasSinCliente} ventas sin cliente`);
+      statSalonCantidadNota.textContent = partes.join(' · ');
+    }
     if (statSalonTicket) statSalonTicket.textContent = formatMoney(data.ticketPromedio || 0);
     if (statSalonClientesNuevos) statSalonClientesNuevos.textContent = data.clientesNuevos ?? 0;
     if (statSalonClientesRecurrentes) statSalonClientesRecurrentes.textContent = data.clientesRecurrentes ?? 0;

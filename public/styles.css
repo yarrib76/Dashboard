@@ -1154,6 +1154,13 @@ input[type='month'] {
   color: var(--text);
 }
 
+.stat .stat-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .stat.alert {
   border-color: rgba(248, 113, 113, 0.6);
   background: rgba(248, 113, 113, 0.08);
