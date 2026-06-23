@@ -1784,6 +1784,21 @@ body.theme-light .abm-actions-menu {
   gap: 12px;
 }
 
+.ecommerce-panel-actions {
+  display: inline-flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: center;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ecommerce-panel-actions > button {
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .ecommerce-panel-detail-select {
   min-width: 72px;
   width: 72px;

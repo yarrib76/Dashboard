@@ -2074,7 +2074,10 @@
           <h2>Panel E-Comerce</h2>
           <p class="status">Replicas de articulos entre Tienda Nube y el sistema.</p>
         </div>
-        <div class="actions inline">
+        <div class="actions inline no-wrap ecommerce-panel-actions">
+          <button id="ecommerce-panel-import-full" type="button">Completo</button>
+          <button id="ecommerce-panel-import-visible" type="button">Visible</button>
+          <button id="ecommerce-panel-delete" type="button">Eliminar</button>
           <button id="ecommerce-panel-refresh" type="button">Actualizar</button>
         </div>
       </div>
@@ -2082,6 +2085,7 @@
         <table class="table" id="ecommerce-panel-table">
           <thead>
             <tr>
+              <th><input type="checkbox" id="ecommerce-panel-select-all" /></th>
               <th>Corrida</th>
               <th>Proveedor</th>
               <th>Nombre</th>

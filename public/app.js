@@ -351,6 +351,7 @@ let ecommerceWatermarkTarget = 'result';
 let ecommerceWatermarkLogoUrl = '/aguaviamore.png';
 let ecommercePanelTable = null;
 let ecommercePanelLoaded = false;
+let ecommercePanelSelected = new Set();
 let ecommercePanelDetailTable = null;
 let ecommercePanelDetailContext = null;
 let controlOrdenesRows = [];
@@ -975,6 +976,10 @@ const ecommerceWatermarkOpacity = document.getElementById('ecommerce-watermark-o
 const ecommerceWatermarkSizeValue = document.getElementById('ecommerce-watermark-size-value');
 const ecommerceWatermarkOpacityValue = document.getElementById('ecommerce-watermark-opacity-value');
 const ecommercePanelRefresh = document.getElementById('ecommerce-panel-refresh');
+const ecommercePanelImportFull = document.getElementById('ecommerce-panel-import-full');
+const ecommercePanelImportVisible = document.getElementById('ecommerce-panel-import-visible');
+const ecommercePanelDelete = document.getElementById('ecommerce-panel-delete');
+const ecommercePanelSelectAll = document.getElementById('ecommerce-panel-select-all');
 const ecommercePanelStatus = document.getElementById('ecommerce-panel-status');
 const ecommercePanelTableEl = document.getElementById('ecommerce-panel-table');
 const ecommercePanelDetailTitle = document.getElementById('ecommerce-panel-detail-title');
@@ -6587,6 +6592,36 @@ async function renderEcommerceWatermark() {
   }
 }
 
+function updateEcommercePanelSelectionControls() {
+  if (ecommercePanelDelete) {
+    ecommercePanelDelete.disabled = ecommercePanelSelected.size === 0;
+  }
+  if (!ecommercePanelSelectAll) return;
+  const filteredRows =
+    ecommercePanelTable && typeof ecommercePanelTable.rows === 'function'
+      ? ecommercePanelTable.rows({ search: 'applied' }).data().toArray()
+      : [];
+  const filteredIds = filteredRows.map((row) => String(row.corrida || '')).filter(Boolean);
+  const selectedCount = filteredIds.filter((id) => ecommercePanelSelected.has(id)).length;
+  ecommercePanelSelectAll.checked = filteredIds.length > 0 && selectedCount === filteredIds.length;
+  ecommercePanelSelectAll.indeterminate = selectedCount > 0 && selectedCount < filteredIds.length;
+}
+
+function syncEcommercePanelCheckboxes() {
+  if (!ecommercePanelTableEl) return;
+  ecommercePanelTableEl.querySelectorAll('.ecommerce-panel-row-check').forEach((checkbox) => {
+    checkbox.checked = ecommercePanelSelected.has(String(checkbox.value || ''));
+  });
+  updateEcommercePanelSelectionControls();
+}
+
+function setEcommercePanelBusy(isBusy) {
+  if (ecommercePanelImportFull) ecommercePanelImportFull.disabled = isBusy;
+  if (ecommercePanelImportVisible) ecommercePanelImportVisible.disabled = isBusy;
+  if (ecommercePanelRefresh) ecommercePanelRefresh.disabled = isBusy;
+  if (ecommercePanelDelete) ecommercePanelDelete.disabled = isBusy || ecommercePanelSelected.size === 0;
+}
+
 async function loadEcommercePanel(force = false) {
   if (!ecommercePanelTableEl) return;
   if (ecommercePanelLoaded && !force) return;
@@ -6594,6 +6629,8 @@ async function loadEcommercePanel(force = false) {
     if (ecommercePanelStatus) ecommercePanelStatus.textContent = 'Cargando...';
     const res = await fetchJSON('/api/ecommerce/panel');
     const rows = Array.isArray(res.data) ? res.data : [];
+    const rowIds = new Set(rows.map((row) => String(row.corrida || '')).filter(Boolean));
+    ecommercePanelSelected = new Set([...ecommercePanelSelected].filter((id) => rowIds.has(id)));
     if (ecommercePanelTable) {
       ecommercePanelTable.clear();
       ecommercePanelTable.rows.add(rows);
@@ -6602,6 +6639,13 @@ async function loadEcommercePanel(force = false) {
       ecommercePanelTable = new DataTable('#ecommerce-panel-table', {
         data: rows,
         columns: [
+          {
+            data: 'corrida',
+            orderable: false,
+            searchable: false,
+            render: (data) =>
+              `<input type="checkbox" class="ecommerce-panel-row-check" value="${escapeAttr(data || '')}" />`,
+          },
           { data: 'corrida' },
           { data: 'proveedor' },
           { data: 'nombre' },
@@ -6637,9 +6681,10 @@ async function loadEcommercePanel(force = false) {
         pageLength: 10,
         lengthMenu: [10, 25, 50, 100],
         deferRender: true,
-        order: [[0, 'desc']],
+        order: [[1, 'desc']],
         autoWidth: false,
       });
+      ecommercePanelTable.on('draw', syncEcommercePanelCheckboxes);
     } else {
       const tbody = ecommercePanelTableEl.querySelector('tbody');
       if (tbody) {
@@ -6648,6 +6693,7 @@ async function loadEcommercePanel(force = false) {
             const detailUrl = buildEcommercePanelDetailUrl(row);
             return `
               <tr>
+                <td><input type="checkbox" class="ecommerce-panel-row-check" value="${escapeAttr(row.corrida || '')}" /></td>
                 <td>${row.corrida ?? ''}</td>
                 <td>${row.proveedor || ''}</td>
                 <td>${row.nombre || ''}</td>
@@ -6666,6 +6712,7 @@ async function loadEcommercePanel(force = false) {
       }
     }
     ecommercePanelLoaded = true;
+    syncEcommercePanelCheckboxes();
     if (ecommercePanelStatus) ecommercePanelStatus.textContent = '';
   } catch (error) {
     if (ecommercePanelStatus) ecommercePanelStatus.textContent = error.message || 'Error al cargar panel.';
@@ -6673,6 +6720,128 @@ async function loadEcommercePanel(force = false) {
 }
 
 function initEcommercePanel() {
+  const formatImportProgress = (job, label) => {
+    const pct = Number(job?.percent) || 0;
+    const pages =
+      Number(job?.totalPages) > 0 ? ` | Paginas ${job.processedPages || 0}/${job.totalPages || 0}` : '';
+    const variants = Number(job?.variantes) > 0 ? ` | Variantes ${job.variantes}` : '';
+    return `Creando bajada ${label}: ${Math.round(pct)}% | ${job?.phase || 'Procesando'}${pages}${variants}`;
+  };
+
+  const waitImportJob = async (jobId, label) => {
+    while (jobId) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const result = await fetchJSON(`/api/ecommerce/panel/import/${encodeURIComponent(jobId)}`);
+      const job = result.job || {};
+      if (ecommercePanelStatus) ecommercePanelStatus.textContent = formatImportProgress(job, label);
+      if (job.status === 'done') return job;
+      if (job.status === 'error') throw new Error(job.error || 'No se pudo crear la bajada.');
+    }
+    throw new Error('No se pudo consultar el avance de la bajada.');
+  };
+
+  const runImport = async (tipoBajada) => {
+    const label = tipoBajada === 'visible' ? 'visibles' : 'completa';
+    const confirmed = window.confirm(`Crear una bajada ${label} desde Tienda Nube?`);
+    if (!confirmed) return;
+    try {
+      setEcommercePanelBusy(true);
+      if (ecommercePanelStatus) ecommercePanelStatus.textContent = `Creando bajada ${label}: 0% | Iniciando`;
+      const start = await fetchJSON('/api/ecommerce/panel/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo_bajada: tipoBajada }),
+      });
+      const result = await waitImportJob(start.job?.id, label);
+      ecommercePanelLoaded = false;
+      await loadEcommercePanel(true);
+      if (ecommercePanelStatus) {
+        ecommercePanelStatus.textContent = `Corrida ${result.corrida} creada para ${result.tienda}. Variantes: ${
+          result.variantes || 0
+        }.`;
+      }
+    } catch (error) {
+      if (ecommercePanelStatus) {
+        ecommercePanelStatus.textContent = error.message || 'No se pudo crear la bajada.';
+      }
+    } finally {
+      setEcommercePanelBusy(false);
+    }
+  };
+  const deleteSelected = async () => {
+    const ids = [...ecommercePanelSelected];
+    if (!ids.length) {
+      if (ecommercePanelStatus) ecommercePanelStatus.textContent = 'Selecciona al menos una corrida.';
+      return;
+    }
+    const confirmed = window.confirm(
+      `Eliminar ${ids.length} corrida${ids.length === 1 ? '' : 's'} seleccionada${
+        ids.length === 1 ? '' : 's'
+      } y todos sus articulos asociados?`
+    );
+    if (!confirmed) return;
+    try {
+      setEcommercePanelBusy(true);
+      if (ecommercePanelStatus) ecommercePanelStatus.textContent = 'Eliminando corridas...';
+      const result = await fetchJSON('/api/ecommerce/panel', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ corridas: ids }),
+      });
+      ecommercePanelSelected.clear();
+      if (ecommercePanelSelectAll) {
+        ecommercePanelSelectAll.checked = false;
+        ecommercePanelSelectAll.indeterminate = false;
+      }
+      ecommercePanelLoaded = false;
+      await loadEcommercePanel(true);
+      if (ecommercePanelStatus) {
+        ecommercePanelStatus.textContent = `Eliminadas ${result.corridas || 0} corridas y ${
+          result.items || 0
+        } articulos asociados.`;
+      }
+    } catch (error) {
+      if (ecommercePanelStatus) ecommercePanelStatus.textContent = error.message || 'No se pudo eliminar.';
+    } finally {
+      setEcommercePanelBusy(false);
+    }
+  };
+  if (ecommercePanelImportFull) {
+    ecommercePanelImportFull.addEventListener('click', () => runImport('todo'));
+  }
+  if (ecommercePanelImportVisible) {
+    ecommercePanelImportVisible.addEventListener('click', () => runImport('visible'));
+  }
+  if (ecommercePanelDelete) {
+    ecommercePanelDelete.addEventListener('click', deleteSelected);
+    ecommercePanelDelete.disabled = true;
+  }
+  if (ecommercePanelSelectAll) {
+    ecommercePanelSelectAll.addEventListener('change', () => {
+      const rows =
+        ecommercePanelTable && typeof ecommercePanelTable.rows === 'function'
+          ? ecommercePanelTable.rows({ search: 'applied' }).data().toArray()
+          : [];
+      rows.forEach((row) => {
+        const id = String(row.corrida || '');
+        if (!id) return;
+        if (ecommercePanelSelectAll.checked) ecommercePanelSelected.add(id);
+        else ecommercePanelSelected.delete(id);
+      });
+      syncEcommercePanelCheckboxes();
+    });
+  }
+  if (ecommercePanelTableEl) {
+    ecommercePanelTableEl.addEventListener('change', (event) => {
+      const checkbox = event.target.closest?.('.ecommerce-panel-row-check');
+      if (!checkbox) return;
+      const id = String(checkbox.value || '');
+      if (!id) return;
+      if (checkbox.checked) ecommercePanelSelected.add(id);
+      else ecommercePanelSelected.delete(id);
+      updateEcommercePanelSelectionControls();
+    });
+  }
   if (ecommercePanelRefresh) {
     ecommercePanelRefresh.addEventListener('click', () => {
       ecommercePanelLoaded = false;

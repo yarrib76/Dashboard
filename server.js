@@ -84,9 +84,18 @@ const EMP_PHOTO_STORAGE_DIR = process.env.EMP_PHOTO_DIR || '/app/fotos_empleados
 const EMP_PHOTO_MAX_BYTES = Number(process.env.EMP_PHOTO_MAX_BYTES || 5 * 1024 * 1024);
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
 const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
+const TNUBE_STORE_ID = String(process.env.TNUBE_STORE_ID || '').trim();
+const TNUBE_TOKEN = String(process.env.TNUBE_TOKEN || '').trim();
+const TNUBE_APPNAME = String(process.env.TNUBE_APPNAME || '').trim();
+const TNUBE_STORE_NAME = String(process.env.TNUBE_STORE_NAME || process.env.LOCAL || '').trim();
+const TNUBE_IMPORT_START_YEAR = Math.max(2000, Number(process.env.TNUBE_IMPORT_START_YEAR || 2019) || 2019);
+const TNUBE_PRODUCTS_PER_PAGE = Math.min(200, Math.max(1, Number(process.env.TNUBE_PRODUCTS_PER_PAGE || 200) || 200));
+const TNUBE_REQUEST_RETRIES = Math.max(0, Number(process.env.TNUBE_REQUEST_RETRIES || 2) || 0);
+const TNUBE_INSERT_CHUNK_SIZE = Math.max(50, Number(process.env.TNUBE_INSERT_CHUNK_SIZE || 500) || 500);
 const LOGS_DIR = path.join(__dirname, 'logs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
+const ecommerceImportJobs = new Map();
 
 fs.mkdirSync(EMP_PHOTO_STORAGE_DIR, { recursive: true });
 app.use(EMP_PHOTO_PUBLIC_PREFIX, express.static(EMP_PHOTO_STORAGE_DIR));
@@ -291,72 +300,95 @@ function buildPedidoErrorEntry(req, error) {
   };
 }
 
-function getTnubeConnection(storeId) {
-  const id = String(storeId || '').trim();
-  const connections = {
-    '972788': {
-      accessToken: process.env.TNUBE_TOKEN_972788 || '',
-      appName: process.env.TNUBE_APPNAME_972788 || 'SincroDemo',
-      tienda: 'Nacha',
-    },
-    '938857': {
-      accessToken: process.env.TNUBE_TOKEN_938857 || '',
-      appName: process.env.TNUBE_APPNAME_938857 || 'SincroApps',
-      tienda: 'Samira',
-    },
-    '963000': {
-      accessToken: process.env.TNUBE_TOKEN_963000 || '',
-      appName: process.env.TNUBE_APPNAME_963000 || 'SincoAppsDonatella',
-      tienda: 'Donatella',
-    },
-    '1043936': {
-      accessToken: process.env.TNUBE_TOKEN_1043936 || '',
-      appName: process.env.TNUBE_APPNAME_1043936 || 'SincoAppsViamore',
-      tienda: 'Viamore',
-    },
-    '1379491': {
-      accessToken: process.env.TNUBE_TOKEN_1379491 || '',
-      appName: process.env.TNUBE_APPNAME_1379491 || 'SincroDemo',
-      tienda: 'LabLocales',
-    },
-    '4999055': {
-      accessToken: process.env.TNUBE_TOKEN_4999055 || '',
-      appName: process.env.TNUBE_APPNAME_4999055 || 'SincroDemo',
-      tienda: 'MegaNay',
-    },
-  };
-  const connection = connections[id];
-  if (!connection || !connection.accessToken) {
-    throw new Error('Conexion TiendaNube no configurada para el store_id');
+function getConfiguredTnubeConnection() {
+  if (!TNUBE_STORE_ID || !TNUBE_TOKEN) {
+    throw new Error('Configura TNUBE_STORE_ID y TNUBE_TOKEN en .env');
   }
-  return connection;
+  return {
+    storeId: TNUBE_STORE_ID,
+    accessToken: TNUBE_TOKEN,
+    appName: TNUBE_APPNAME || 'Dashboard',
+    tienda: TNUBE_STORE_NAME || TNUBE_STORE_ID,
+  };
 }
 
-  // Envoltorio simple para llamadas a la API de Tienda Nube (headers + JSON).
-  async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
-    const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
-    const headers = {
-      'Content-Type': 'application/json',
-      Authentication: `bearer ${token}`,
+function getTnubeConnection(storeId) {
+  const id = String(storeId || '').trim();
+  const configured = TNUBE_STORE_ID && TNUBE_TOKEN ? getConfiguredTnubeConnection() : null;
+  if (configured) {
+    if (id && id !== configured.storeId) {
+      throw new Error(`La corrida pertenece al store_id ${id}, pero este servidor esta configurado para ${configured.storeId}`);
+    }
+    return configured;
+  }
+
+  const legacyToken = id ? String(process.env[`TNUBE_TOKEN_${id}`] || '').trim() : '';
+  if (!id || !legacyToken) {
+    throw new Error('Conexion TiendaNube no configurada. Usa TNUBE_STORE_ID, TNUBE_TOKEN y TNUBE_APPNAME en .env');
+  }
+  return {
+    storeId: id,
+    accessToken: legacyToken,
+    appName: String(process.env[`TNUBE_APPNAME_${id}`] || 'Dashboard').trim(),
+    tienda: TNUBE_STORE_NAME || process.env.LOCAL || id,
+  };
+}
+
+function buildTnubeQuery(params) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+  });
+  const value = query.toString();
+  return value ? `?${value}` : '';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Envoltorio simple para llamadas a la API de Tienda Nube (headers + JSON).
+async function tnubeJsonRequest(storeId, token, appName, method, pathUrl, payload) {
+  const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    Authentication: `bearer ${token}`,
     'User-Agent': appName || 'Dashboard',
     Accept: 'application/json',
   };
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: payload ? JSON.stringify(payload) : undefined,
-    });
-    if (!response.ok) {
-      const text = await response.text();
-      const err = new Error(text || `TiendaNube error ${response.status}`);
-      err.status = response.status;
-      err.body = text;
-      err.url = url;
-      throw err;
+  let lastError = null;
+  for (let attempt = 0; attempt <= TNUBE_REQUEST_RETRIES; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        const err = new Error(text || `TiendaNube error ${response.status}`);
+        err.status = response.status;
+        err.body = text;
+        err.url = url;
+        throw err;
+      }
+      const body = response.status === 204 ? null : await response.json().catch(() => null);
+      return { body, headers: response.headers, status: response.status };
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status) || 0;
+      const retryable = !status || status === 429 || status >= 500;
+      if (!retryable || attempt >= TNUBE_REQUEST_RETRIES) break;
+      await sleep(500 * (attempt + 1));
     }
-    if (response.status === 204) return null;
-    return response.json().catch(() => null);
   }
+  throw lastError;
+}
+
+async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
+  const response = await tnubeJsonRequest(storeId, token, appName, method, pathUrl, payload);
+  return response.body;
+}
 
 function redondeoDecimal(precioVenta) {
   let precio = Number(precioVenta) || 0;
@@ -445,6 +477,238 @@ function verificoStock(cantidad, artiCant) {
   return Number(cantidad) >= Number(artiCant) ? 1000 : 0;
 }
 
+async function fetchTnubeProductCount(connection, tipoBajada, year) {
+  const params = {
+    page: 1,
+    per_page: 1,
+    created_at_min: `${year}-01-01`,
+    created_at_max: `${year}-12-31`,
+  };
+  if (tipoBajada === 'visible') params.published = 'true';
+  const response = await tnubeJsonRequest(
+    connection.storeId,
+    connection.accessToken,
+    connection.appName,
+    'GET',
+    `products${buildTnubeQuery(params)}`
+  );
+  return Number(response.headers.get('x-total-count')) || 0;
+}
+
+async function fetchTnubeProductsPage(connection, tipoBajada, year, page) {
+  const params = {
+    page,
+    per_page: TNUBE_PRODUCTS_PER_PAGE,
+    created_at_min: `${year}-01-01`,
+    created_at_max: `${year}-12-31`,
+  };
+  if (tipoBajada === 'visible') params.published = 'true';
+  const response = await tnubeJsonRequest(
+    connection.storeId,
+    connection.accessToken,
+    connection.appName,
+    'GET',
+    `products${buildTnubeQuery(params)}`
+  );
+  return Array.isArray(response.body) ? response.body : [];
+}
+
+function buildTnubeStatusRows(products) {
+  const rows = [];
+  (products || []).forEach((product) => {
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    const imageSrc = Array.isArray(product?.images) && product.images[0]?.src ? String(product.images[0].src) : '';
+    const hasImages = imageSrc || (Array.isArray(product?.images) && product.images.length > 0) ? 1 : 0;
+    variants.forEach((variant) => {
+      rows.push({
+        articulo: variant?.sku == null ? '' : String(variant.sku),
+        productId: variant?.product_id || product?.id || '',
+        articuloId: variant?.id || '',
+        visible: product?.published ? 1 : 0,
+        images: hasImages,
+        imagessrc: imageSrc,
+      });
+    });
+  });
+  return rows;
+}
+
+function createEcommerceImportJob(tipoBajada, userId) {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job = {
+    id,
+    tipoBajada,
+    userId,
+    status: 'running',
+    phase: 'Iniciando',
+    percent: 0,
+    processedPages: 0,
+    totalPages: 0,
+    productos: 0,
+    variantes: 0,
+    corrida: null,
+    tienda: '',
+    storeId: '',
+    message: '',
+    error: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  ecommerceImportJobs.set(id, job);
+  return job;
+}
+
+function updateEcommerceImportJob(job, patch) {
+  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+}
+
+function serializeEcommerceImportJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    phase: job.phase,
+    percent: Math.max(0, Math.min(100, Math.round(Number(job.percent) || 0))),
+    processedPages: job.processedPages,
+    totalPages: job.totalPages,
+    productos: job.productos,
+    variantes: job.variantes,
+    corrida: job.corrida,
+    tienda: job.tienda,
+    storeId: job.storeId,
+    message: job.message,
+    error: job.error,
+  };
+}
+
+async function fetchTnubeImportRows(connection, tipoBajada, onProgress) {
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const rows = [];
+  const years = [];
+  onProgress?.({ phase: 'Calculando paginas', percent: 2 });
+  for (let year = TNUBE_IMPORT_START_YEAR; year <= endYear; year += 1) {
+    const total = await fetchTnubeProductCount(connection, tipoBajada, year);
+    const pages = Math.ceil(total / TNUBE_PRODUCTS_PER_PAGE);
+    years.push({ year, products: total, pages });
+    const products = years.reduce((acc, item) => acc + item.products, 0);
+    const totalPages = years.reduce((acc, item) => acc + item.pages, 0);
+    onProgress?.({ phase: `Calculando paginas ${year}`, productos: products, totalPages, percent: 5 });
+  }
+
+  const totalPages = years.reduce((acc, item) => acc + item.pages, 0);
+  let processedPages = 0;
+  onProgress?.({ phase: 'Descargando productos', totalPages, processedPages, percent: totalPages ? 5 : 80 });
+  for (const item of years) {
+    for (let page = 1; page <= item.pages; page += 1) {
+      const products = await fetchTnubeProductsPage(connection, tipoBajada, item.year, page);
+      rows.push(...buildTnubeStatusRows(products));
+      processedPages += 1;
+      const downloadPercent = totalPages ? 5 + (processedPages / totalPages) * 80 : 80;
+      onProgress?.({
+        phase: `Descargando ${item.year} pagina ${page}/${item.pages}`,
+        processedPages,
+        totalPages,
+        variantes: rows.length,
+        percent: downloadPercent,
+      });
+    }
+  }
+  return { rows, years };
+}
+
+async function insertTnubeStatusRows(conn, idProvecomerce, rows, onProgress) {
+  const fecha = formatDateTimeLocal(new Date());
+  for (let offset = 0; offset < rows.length; offset += TNUBE_INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(offset, offset + TNUBE_INSERT_CHUNK_SIZE);
+    const values = [];
+    const placeholders = chunk
+      .map((row) => {
+        values.push(
+          idProvecomerce,
+          'Pending',
+          fecha,
+          row.articulo,
+          row.productId,
+          row.articuloId,
+          row.visible,
+          row.images,
+          row.imagessrc
+        );
+        return '(?, ?, ?, ?, ?, ?, ?, ?, ?)';
+      })
+      .join(', ');
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.statusecomercesincro
+       (id_provecomerce, status, fecha, articulo, product_id, articulo_id, visible, images, imagessrc)
+       VALUES ${placeholders}`,
+      values
+    );
+    const inserted = Math.min(rows.length, offset + chunk.length);
+    const insertPercent = rows.length ? 85 + (inserted / rows.length) * 14 : 99;
+    onProgress?.({ phase: `Guardando ${inserted}/${rows.length}`, percent: insertPercent });
+  }
+}
+
+async function runEcommerceImportJob(job) {
+  let conn;
+  try {
+    const tnubeConnection = getConfiguredTnubeConnection();
+    updateEcommerceImportJob(job, {
+      tienda: tnubeConnection.tienda,
+      storeId: tnubeConnection.storeId,
+      phase: 'Conectando con Tienda Nube',
+      percent: 1,
+    });
+    const importResult = await fetchTnubeImportRows(tnubeConnection, job.tipoBajada, (progress) => {
+      updateEcommerceImportJob(job, progress);
+    });
+    const fecha = formatDateTimeLocal(new Date());
+
+    updateEcommerceImportJob(job, {
+      phase: 'Creando corrida',
+      productos: importResult.years.reduce((acc, item) => acc + item.products, 0),
+      variantes: importResult.rows.length,
+      percent: 85,
+    });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [proveResult] = await conn.query(
+      `INSERT INTO ${DB_NAME}.provecomerce (proveedor, id_users, fecha, id_cliente, tienda)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['TiendaNube', job.userId || null, fecha, tnubeConnection.storeId, tnubeConnection.tienda]
+    );
+    const idProvecomerce = proveResult.insertId;
+    if (importResult.rows.length) {
+      await insertTnubeStatusRows(conn, idProvecomerce, importResult.rows, (progress) => {
+        updateEcommerceImportJob(job, progress);
+      });
+    }
+    await conn.commit();
+    updateEcommerceImportJob(job, {
+      status: 'done',
+      phase: 'Finalizado',
+      percent: 100,
+      corrida: idProvecomerce,
+      message: `Corrida ${idProvecomerce} creada para ${tnubeConnection.tienda}. Variantes: ${importResult.rows.length}.`,
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    updateEcommerceImportJob(job, {
+      status: 'error',
+      phase: 'Error',
+      error: error.message || 'Error al crear bajada TiendaNube',
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+}
 
 function parseCookies(req) {
   const cookieHeader = req.headers.cookie || '';
@@ -12645,6 +12909,74 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
   }
 });
 
+  // Panel E-Commerce: crea una corrida nueva desde Tienda Nube.
+  app.post('/api/ecommerce/panel/import', requireAuth, async (req, res) => {
+  try {
+    const tipoBajada = String(req.body?.tipo_bajada || '').trim().toLowerCase();
+    if (!['todo', 'visible'].includes(tipoBajada)) {
+      return res.status(400).json({ message: 'tipo_bajada debe ser todo o visible' });
+    }
+
+    getConfiguredTnubeConnection();
+    const job = createEcommerceImportJob(tipoBajada, req.user?.id || null);
+    runEcommerceImportJob(job);
+    return res.json({ ok: true, job: serializeEcommerceImportJob(job) });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al crear bajada TiendaNube', error: error.message });
+  }
+});
+
+  app.get('/api/ecommerce/panel/import/:jobId', requireAuth, async (req, res) => {
+  const job = ecommerceImportJobs.get(String(req.params.jobId || ''));
+  if (!job) {
+    return res.status(404).json({ message: 'Bajada no encontrada' });
+  }
+  return res.json({ job: serializeEcommerceImportJob(job) });
+});
+
+  // Panel E-Commerce: elimina corridas y sus items asociados.
+  app.delete('/api/ecommerce/panel', requireAuth, async (req, res) => {
+  let conn;
+  try {
+    const ids = Array.isArray(req.body?.corridas)
+      ? req.body.corridas.map((id) => Number.parseInt(id, 10)).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+    const uniqueIds = Array.from(new Set(ids));
+    if (!uniqueIds.length) {
+      return res.status(400).json({ message: 'Selecciona al menos una corrida' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const placeholders = uniqueIds.map(() => '?').join(',');
+    const [childResult] = await conn.query(
+      `DELETE FROM ${DB_NAME}.statusecomercesincro WHERE id_provecomerce IN (${placeholders})`,
+      uniqueIds
+    );
+    const [parentResult] = await conn.query(
+      `DELETE FROM ${DB_NAME}.provecomerce WHERE id IN (${placeholders})`,
+      uniqueIds
+    );
+    await conn.commit();
+    return res.json({
+      ok: true,
+      corridas: parentResult.affectedRows || 0,
+      items: childResult.affectedRows || 0,
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    return res.status(500).json({ message: 'Error al eliminar corridas e-commerce', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
   // Panel E-Commerce: resumen (una fila por corrida).
   app.get('/api/ecommerce/panel', requireAuth, async (req, res) => {
   try {
@@ -12656,14 +12988,14 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         ecomerce.id_cliente,
         ecomerce.tienda,
         DATE_FORMAT(ecomerce.fecha, '%Y-%m-%d %H:%i:%s') AS fecha,
-        resumen.total,
-        resumen.ok,
-        resumen.errores,
-        resumen.excluidos,
-        resumen.pendientes
+        COALESCE(resumen.total, 0) AS total,
+        COALESCE(resumen.ok, 0) AS ok,
+        COALESCE(resumen.errores, 0) AS errores,
+        COALESCE(resumen.excluidos, 0) AS excluidos,
+        COALESCE(resumen.pendientes, 0) AS pendientes
       FROM ${DB_NAME}.provecomerce AS ecomerce
       INNER JOIN ${DB_NAME}.users AS usuario ON usuario.id = ecomerce.id_users
-      INNER JOIN (
+      LEFT JOIN (
         SELECT
           id_provecomerce,
           COUNT(*) AS total,
@@ -12874,7 +13206,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 
         if (conOrden && Number(row.images) === 1 && cantidad >= artiCant) {
           await tnubeRequest(
-            storeId,
+            tnubeConnection.storeId,
             tnubeConnection.accessToken,
             tnubeConnection.appName,
             'PUT',
@@ -12886,7 +13218,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         if (Number(articuloLocal.Web) === 1) {
           const precioVenta = await computePrecioVenta(conn, articuloLocal);
           await tnubeRequest(
-            storeId,
+            tnubeConnection.storeId,
             tnubeConnection.accessToken,
             tnubeConnection.appName,
             'PUT',
