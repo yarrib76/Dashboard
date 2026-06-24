@@ -1866,6 +1866,113 @@ body.theme-light .abm-actions-menu {
   white-space: nowrap;
 }
 
+.ecommerce-publicacion-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px 0 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ecommerce-publicacion-form,
+.ecommerce-publicacion-variant-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.ecommerce-publicacion-form label,
+.ecommerce-publicacion-variant-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ecommerce-publicacion-form span,
+.ecommerce-publicacion-variant-form span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ecommerce-publicacion-form input,
+.ecommerce-publicacion-variant-form input,
+.ecommerce-publicacion-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+body.theme-light .ecommerce-publicacion-form input,
+body.theme-light .ecommerce-publicacion-variant-form input,
+body.theme-light .ecommerce-publicacion-form select {
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.ecommerce-publicacion-search-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ecommerce-publicacion-search-field button {
+  width: 38px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ecommerce-publicacion-variant-form button {
+  width: auto;
+}
+
+.ecommerce-publicacion-filter-select {
+  min-width: 160px;
+  width: 160px;
+  text-align: left;
+  text-align-last: left;
+}
+
+.ecommerce-pub-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ecommerce-pub-detail-grid > div {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 0;
+}
+
+.ecommerce-pub-detail-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.ecommerce-pub-detail-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
 
 .range-value {
   display: inline-block;

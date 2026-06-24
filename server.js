@@ -93,6 +93,7 @@ const TNUBE_PRODUCTS_PER_PAGE = Math.min(200, Math.max(1, Number(process.env.TNU
 const TNUBE_REQUEST_RETRIES = Math.max(0, Number(process.env.TNUBE_REQUEST_RETRIES || 2) || 0);
 const TNUBE_INSERT_CHUNK_SIZE = Math.max(50, Number(process.env.TNUBE_INSERT_CHUNK_SIZE || 500) || 500);
 const LOGS_DIR = path.join(__dirname, 'logs');
+const ECOMMERCE_JOBS_DIR = path.join(LOGS_DIR, 'ecommerce-jobs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 const ecommerceImportJobs = new Map();
@@ -557,11 +558,13 @@ function createEcommerceImportJob(tipoBajada, userId) {
     updatedAt: now,
   };
   ecommerceImportJobs.set(id, job);
+  persistEcommerceJob(job);
   return job;
 }
 
 function updateEcommerceImportJob(job, patch) {
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+  persistEcommerceJob(job);
 }
 
 function serializeEcommerceImportJob(job) {
@@ -733,11 +736,13 @@ function createEcommerceSyncJob(params, userId) {
     updatedAt: now,
   };
   ecommerceSyncJobs.set(id, job);
+  persistEcommerceJob(job);
   return job;
 }
 
 function updateEcommerceSyncJob(job, patch) {
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+  persistEcommerceJob(job);
 }
 
 function serializeEcommerceSyncJob(job) {
@@ -755,6 +760,51 @@ function serializeEcommerceSyncJob(job) {
     message: job.message,
     errorMessage: job.errorMessage,
   };
+}
+
+function getEcommerceJobPath(jobId) {
+  const safeId = String(jobId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  return safeId ? path.join(ECOMMERCE_JOBS_DIR, `${safeId}.json`) : '';
+}
+
+function persistEcommerceJob(job) {
+  try {
+    if (!fs.existsSync(ECOMMERCE_JOBS_DIR)) fs.mkdirSync(ECOMMERCE_JOBS_DIR, { recursive: true });
+    const filePath = getEcommerceJobPath(job?.id);
+    if (!filePath) return;
+    fs.writeFileSync(filePath, JSON.stringify(job), 'utf8');
+  } catch (_err) {
+    /* ignore progress persistence errors */
+  }
+}
+
+function readPersistedEcommerceJob(jobId) {
+  try {
+    const filePath = getEcommerceJobPath(jobId);
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function signEcommerceJobToken(jobId, extra = {}) {
+  const body = Buffer.from(JSON.stringify({ jobId, ...extra, iat: Date.now() })).toString('base64url');
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  return `${body}.${sig}`;
+}
+
+function verifyEcommerceJobToken(jobId, token) {
+  const [body, sig] = String(token || '').split('.');
+  if (!body || !sig) return false;
+  const expected = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+  if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    return String(payload.jobId || '') === String(jobId || '') ? payload : false;
+  } catch (_err) {
+    return false;
+  }
 }
 
 async function getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant) {
@@ -952,6 +1002,230 @@ async function runEcommerceSyncJob(job) {
   }
 }
 
+function getTnubeLocalizedText(value) {
+  const text = String(value || '').trim();
+  return { es: text };
+}
+
+function getTnubeProductId(product) {
+  if (Array.isArray(product)) return getTnubeProductId(product[0]);
+  return product?.id || product?.product_id || null;
+}
+
+function getTnubeVariantRows(product) {
+  if (Array.isArray(product)) return getTnubeVariantRows(product[0]);
+  return Array.isArray(product?.variants) ? product.variants : [];
+}
+
+function normalizeSku(value) {
+  return String(value || '').trim();
+}
+
+function mapPublicacionRow(row) {
+  return {
+    id: row.id,
+    storeId: row.store_id || '',
+    tienda: row.tienda || '',
+    articuloPrincipal: row.articulo_principal || '',
+    nombre: row.nombre || '',
+    descripcion: row.descripcion || '',
+    marca: row.marca || '',
+    categorias: row.categorias || '',
+    categoriaLabel: row.categoria_label || '',
+    tags: row.tags || '',
+    productId: row.product_id || '',
+    handle: row.handle || '',
+    estado: row.estado || '',
+    errorMensaje: row.error_mensaje || '',
+    creadoPor: row.creado_por || null,
+    creadoEn: row.creado_en || '',
+    actualizadoEn: row.actualizado_en || '',
+    sincronizadoEn: row.sincronizado_en || '',
+    variantes: Number(row.variantes) || 0,
+    variantesOk: Number(row.variantes_ok) || 0,
+    variantesError: Number(row.variantes_error) || 0,
+    variantesPendientes: Number(row.variantes_pendientes) || 0,
+  };
+}
+
+function mapPublicacionVarianteRow(row) {
+  return {
+    id: row.id,
+    publicacionId: row.publicacion_id,
+    articulo: row.articulo || '',
+    sku: row.sku || '',
+    detalle: row.detalle || '',
+    variantId: row.variant_id || '',
+    productId: row.product_id || '',
+    atributo1Nombre: row.atributo_1_nombre || '',
+    atributo1Valor: row.atributo_1_valor || '',
+    atributo2Nombre: row.atributo_2_nombre || '',
+    atributo2Valor: row.atributo_2_valor || '',
+    atributo3Nombre: row.atributo_3_nombre || '',
+    atributo3Valor: row.atributo_3_valor || '',
+    precio: row.precio == null ? null : Number(row.precio),
+    precioPromocional: row.precio_promocional == null ? null : Number(row.precio_promocional),
+    stock: row.stock == null ? null : Number(row.stock),
+    peso: row.peso == null ? null : Number(row.peso),
+    codigoBarras: row.codigo_barras || '',
+    estado: row.estado || '',
+    errorMensaje: row.error_mensaje || '',
+    sincronizadoEn: row.sincronizado_en || '',
+  };
+}
+
+async function insertPublicacionEvento(conn, publicacionId, varianteId, tipo, estadoAnterior, estadoNuevo, mensaje, detalle, userId) {
+  await conn.query(
+    `INSERT INTO ${DB_NAME}.tiendanube_publicacion_eventos
+       (publicacion_id, variante_id, tipo, estado_anterior, estado_nuevo, mensaje, detalle_json, creado_por)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      publicacionId,
+      varianteId || null,
+      tipo,
+      estadoAnterior || null,
+      estadoNuevo || null,
+      mensaje || null,
+      detalle ? JSON.stringify(detalle) : null,
+      userId || null,
+    ]
+  );
+}
+
+function buildTnubeVariantPayload(variante) {
+  const values = [];
+  [
+    [variante.atributo_1_nombre, variante.atributo_1_valor],
+    [variante.atributo_2_nombre, variante.atributo_2_valor],
+    [variante.atributo_3_nombre, variante.atributo_3_valor],
+  ].forEach(([, value]) => {
+    const clean = String(value || '').trim();
+    if (clean) values.push(getTnubeLocalizedText(clean));
+  });
+  if (!values.length) values.push(getTnubeLocalizedText(variante.detalle || variante.articulo));
+
+  const payload = {
+    sku: normalizeSku(variante.sku || variante.articulo),
+    price: variante.precio == null ? 0 : Number(variante.precio),
+    stock_management: true,
+    stock: variante.stock == null ? 0 : Number(variante.stock),
+    values,
+  };
+  if (variante.precio_promocional != null) payload.promotional_price = Number(variante.precio_promocional);
+  if (variante.peso != null) payload.weight = Number(variante.peso);
+  if (variante.codigo_barras) payload.barcode = String(variante.codigo_barras);
+  return payload;
+}
+
+function buildTnubeProductPayload(publicacion, variantes) {
+  const attrNames = [];
+  variantes.forEach((variante) => {
+    [
+      variante.atributo_1_nombre,
+      variante.atributo_2_nombre,
+      variante.atributo_3_nombre,
+    ].forEach((name) => {
+      const clean = String(name || '').trim();
+      if (clean && !attrNames.includes(clean)) attrNames.push(clean);
+    });
+  });
+  if (!attrNames.length) attrNames.push('Articulo');
+
+  const payload = {
+    name: getTnubeLocalizedText(publicacion.nombre),
+    description: getTnubeLocalizedText(publicacion.descripcion || publicacion.nombre),
+    published: false,
+    free_shipping: false,
+    attributes: attrNames.map(getTnubeLocalizedText),
+    variants: variantes.map(buildTnubeVariantPayload),
+  };
+  if (publicacion.tags) payload.tags = String(publicacion.tags);
+  if (publicacion.marca) payload.brand = String(publicacion.marca);
+  const categoryIds = String(publicacion.categorias || '')
+    .split(',')
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  if (categoryIds.length) payload.categories = categoryIds;
+  return payload;
+}
+
+async function findTnubeProductBySku(connection, sku) {
+  const cleanSku = normalizeSku(sku);
+  if (!cleanSku) return null;
+  try {
+    return await tnubeRequest(
+      connection.storeId,
+      connection.accessToken,
+      connection.appName,
+      'GET',
+      `products/sku/${encodeURIComponent(cleanSku)}`
+    );
+  } catch (error) {
+    if (Number(error?.status) === 404) return null;
+    throw error;
+  }
+}
+
+async function fetchTnubeProduct(connection, productId) {
+  return tnubeRequest(
+    connection.storeId,
+    connection.accessToken,
+    connection.appName,
+    'GET',
+    `products/${encodeURIComponent(productId)}`
+  );
+}
+
+function getTnubeCategoryName(category) {
+  const name = category?.name || {};
+  if (typeof name === 'string') return name;
+  return name.es || name.pt || name.en || Object.values(name)[0] || '';
+}
+
+function mapTnubeCategories(categories) {
+  const byId = new Map((categories || []).map((category) => [Number(category.id), category]));
+  const buildPath = (category) => {
+    const parts = [];
+    let current = category;
+    const seen = new Set();
+    while (current && !seen.has(Number(current.id))) {
+      seen.add(Number(current.id));
+      const name = getTnubeCategoryName(current);
+      if (name) parts.unshift(name);
+      current = current.parent ? byId.get(Number(current.parent)) : null;
+    }
+    return parts.join(' > ') || String(category?.id || '');
+  };
+  return (categories || [])
+    .map((category) => ({
+      id: Number(category.id) || 0,
+      name: getTnubeCategoryName(category),
+      label: buildPath(category),
+      parent: category.parent || null,
+      visibility: category.visibility || '',
+    }))
+    .filter((category) => category.id)
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+
+async function fetchTnubeCategories(connection) {
+  const rows = [];
+  const perPage = 200;
+  for (let page = 1; page <= 50; page += 1) {
+    const response = await tnubeJsonRequest(
+      connection.storeId,
+      connection.accessToken,
+      connection.appName,
+      'GET',
+      `categories${buildTnubeQuery({ fields: 'id,name,parent,visibility', per_page: perPage, page })}`
+    );
+    const pageRows = Array.isArray(response.body) ? response.body : [];
+    rows.push(...pageRows);
+    if (pageRows.length < perPage) break;
+  }
+  return mapTnubeCategories(rows);
+}
+
 function parseCookies(req) {
   const cookieHeader = req.headers.cookie || '';
   return cookieHeader.split(';').reduce((acc, item) => {
@@ -1128,6 +1402,7 @@ const ROLE_PERMISSIONS = [
   'ecommerce',
   'ecommerce-imagenweb',
   'ecommerce-panel',
+  'ecommerce-publicaciones',
   'cajas',
   'cajas-cierre',
   'cajas-nueva-factura',
@@ -1145,9 +1420,23 @@ const DASHBOARD_REPORT_PERMISSIONS = [
   'dashboard-comparativo',
 ];
 
+const ECOMMERCE_SUB_PERMISSIONS = [
+  'ecommerce-imagenweb',
+  'ecommerce-panel',
+  'ecommerce-publicaciones',
+];
+
 function normalizeDashboardPermissions(permissions = {}, hasDashboardSubPerms = true) {
   if (hasDashboardSubPerms || permissions.dashboard !== true) return permissions;
   DASHBOARD_REPORT_PERMISSIONS.forEach((permission) => {
+    permissions[permission] = true;
+  });
+  return permissions;
+}
+
+function normalizeEcommercePermissions(permissions = {}, hasEcommerceSubPerms = true) {
+  if (hasEcommerceSubPerms || permissions.ecommerce !== true) return permissions;
+  ECOMMERCE_SUB_PERMISSIONS.forEach((permission) => {
     permissions[permission] = true;
   });
   return permissions;
@@ -1169,7 +1458,12 @@ async function getPermissionsForUser(userId) {
   const hasDashboardSubPerms = DASHBOARD_REPORT_PERMISSIONS.some((permission) =>
     Object.prototype.hasOwnProperty.call(permissions, permission)
   );
-  return normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+  const hasEcommerceSubPerms = ECOMMERCE_SUB_PERMISSIONS.some((permission) =>
+    Object.prototype.hasOwnProperty.call(permissions, permission)
+  );
+  normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+  normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
+  return permissions;
 }
 
 function requirePermission(permission) {
@@ -4637,6 +4931,12 @@ app.use('/api', (req, res, next) => {
   ) {
     return next();
   }
+  const syncJobMatch = req.path.match(/^\/tiendanubesincroArticulos\/job\/([^/]+)$/);
+  const importJobMatch = req.path.match(/^\/ecommerce\/panel\/import\/([^/]+)$/);
+  const jobMatch = syncJobMatch || importJobMatch;
+  if (req.method === 'GET' && jobMatch && verifyEcommerceJobToken(jobMatch[1], req.query.job_token)) {
+    return next();
+  }
   if (req.path.startsWith('/ecommerce') || req.path.startsWith('/tiendanubesincroArticulos')) {
     return requireAuthKeepAlive(req, res, next);
   }
@@ -4901,6 +5201,10 @@ app.get('/api/me', (req, res) => {
         Object.prototype.hasOwnProperty.call(permissions, permission)
       );
       normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+      const hasEcommerceSubPerms = ECOMMERCE_SUB_PERMISSIONS.some((permission) =>
+        Object.prototype.hasOwnProperty.call(permissions, permission)
+      );
+      normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
       const hasFidelizacionSubPerms =
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-panel') ||
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-mis') ||
@@ -13167,6 +13471,407 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 });
 
   // Panel E-Commerce: crea una corrida nueva desde Tienda Nube.
+  app.get('/api/ecommerce/publicaciones/articulos', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const termRaw = String(req.query.q || '').trim();
+      const loadAll = String(req.query.all || '') === '1';
+      const requestedLimit = Number(req.query.limit) || 30;
+      const limit = Math.max(10, requestedLimit);
+      const params = [];
+      const where = [];
+      if (termRaw) {
+        const term = `%${termRaw}%`;
+        where.push('(art.Articulo LIKE ? OR art.Detalle LIKE ? OR art.ProveedorSKU LIKE ?)');
+        params.push(term, term, term);
+      }
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const [rows] = await pool.query(
+        `SELECT
+           art.Articulo AS articulo,
+           art.Detalle AS detalle,
+           COALESCE(art.Cantidad, 0) AS stock,
+           art.Proveedor AS proveedor,
+           art.ProveedorSKU AS proveedorSku,
+           art.Web AS web,
+           repo.PrecioVenta AS precio
+         FROM ${DB_NAME}.articulos AS art
+         LEFT JOIN ${DB_NAME}.reportearticulo AS repo ON repo.Articulo = art.Articulo
+         ${whereSql}
+         ORDER BY art.Articulo
+         ${loadAll ? '' : 'LIMIT ?'}`,
+        loadAll ? params : [...params, limit]
+      );
+      res.json({ data: rows || [] });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al buscar articulos', error: error.message });
+    }
+  });
+
+  app.get('/api/ecommerce/publicaciones/categorias', requirePermission('ecommerce-publicaciones'), async (_req, res) => {
+    try {
+      const tnubeConnection = getConfiguredTnubeConnection();
+      const categories = await fetchTnubeCategories(tnubeConnection);
+      res.json({ data: categories });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar categorias de Tienda Nube', error: error.message });
+    }
+  });
+
+  app.get('/api/ecommerce/publicaciones', requirePermission('ecommerce-publicaciones'), async (_req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `SELECT
+           pub.*,
+           COUNT(varia.id) AS variantes,
+           SUM(CASE WHEN varia.estado IN ('creada', 'existente') THEN 1 ELSE 0 END) AS variantes_ok,
+           SUM(CASE WHEN varia.estado = 'error' THEN 1 ELSE 0 END) AS variantes_error,
+           SUM(CASE WHEN varia.estado IN ('borrador', 'pendiente', 'sincronizando') THEN 1 ELSE 0 END) AS variantes_pendientes
+         FROM ${DB_NAME}.tiendanube_publicaciones AS pub
+         LEFT JOIN ${DB_NAME}.tiendanube_publicacion_variantes AS varia ON varia.publicacion_id = pub.id
+         GROUP BY pub.id
+         ORDER BY pub.actualizado_en DESC, pub.id DESC`
+      );
+      res.json({ data: (rows || []).map(mapPublicacionRow) });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar publicaciones', error: error.message });
+    }
+  });
+
+  app.get('/api/ecommerce/publicaciones/:id', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const [[publicacion]] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ? LIMIT 1`,
+        [id]
+      );
+      if (!publicacion) return res.status(404).json({ message: 'Publicacion no encontrada' });
+      const [variantes] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ? ORDER BY id`,
+        [id]
+      );
+      res.json({ data: mapPublicacionRow(publicacion), variantes: (variantes || []).map(mapPublicacionVarianteRow) });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar publicacion', error: error.message });
+    }
+  });
+
+  app.delete('/api/ecommerce/publicaciones/:id', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const [result] = await pool.query(
+        `DELETE FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ?`,
+        [id]
+      );
+      if (!result.affectedRows) return res.status(404).json({ message: 'Publicacion no encontrada' });
+      res.json({ ok: true, deleted: result.affectedRows });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al quitar publicacion', error: error.message });
+    }
+  });
+
+  app.post('/api/ecommerce/publicaciones', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    let conn;
+    try {
+      const body = req.body || {};
+      const articuloPrincipal = normalizeSku(body.articuloPrincipal);
+      const variantes = Array.isArray(body.variantes) ? body.variantes : [];
+      if (!articuloPrincipal) return res.status(400).json({ message: 'articuloPrincipal requerido' });
+      if (!variantes.length) return res.status(400).json({ message: 'Agrega al menos una variante' });
+      const tnubeConnection = getConfiguredTnubeConnection();
+      const nombre = String(body.nombre || '').trim() || articuloPrincipal;
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+      const [result] = await conn.query(
+        `INSERT INTO ${DB_NAME}.tiendanube_publicaciones
+           (store_id, tienda, articulo_principal, nombre, descripcion, marca, categorias, tags, estado, creado_por)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'borrador', ?)`,
+        [
+          tnubeConnection.storeId,
+          tnubeConnection.tienda,
+          articuloPrincipal,
+          nombre,
+          String(body.descripcion || '').trim() || null,
+          String(body.marca || '').trim() || null,
+          String(body.categorias || '').trim() || null,
+          String(body.tags || '').trim() || null,
+          req.user?.id || null,
+        ]
+      );
+      const publicacionId = result.insertId;
+      for (const raw of variantes) {
+        const articulo = normalizeSku(raw.articulo);
+        if (!articulo) continue;
+        await conn.query(
+          `INSERT INTO ${DB_NAME}.tiendanube_publicacion_variantes
+             (publicacion_id, articulo, sku, detalle, atributo_1_nombre, atributo_1_valor,
+              atributo_2_nombre, atributo_2_valor, atributo_3_nombre, atributo_3_valor,
+              precio, precio_promocional, stock, peso, codigo_barras, estado)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'borrador')`,
+          [
+            publicacionId,
+            articulo,
+            normalizeSku(raw.sku || articulo),
+            String(raw.detalle || '').trim() || null,
+            String(raw.atributo1Nombre || '').trim() || null,
+            String(raw.atributo1Valor || '').trim() || null,
+            String(raw.atributo2Nombre || '').trim() || null,
+            String(raw.atributo2Valor || '').trim() || null,
+            String(raw.atributo3Nombre || '').trim() || null,
+            String(raw.atributo3Valor || '').trim() || null,
+            raw.precio === '' || raw.precio == null ? null : Number(raw.precio),
+            raw.precioPromocional === '' || raw.precioPromocional == null ? null : Number(raw.precioPromocional),
+            raw.stock === '' || raw.stock == null ? null : Number(raw.stock),
+            raw.peso === '' || raw.peso == null ? null : Number(raw.peso),
+            String(raw.codigoBarras || '').trim() || null,
+          ]
+        );
+      }
+      await insertPublicacionEvento(
+        conn,
+        publicacionId,
+        null,
+        'crear_borrador',
+        null,
+        'borrador',
+        'Publicacion creada localmente',
+        null,
+        req.user?.id
+      );
+      await conn.commit();
+      res.status(201).json({ ok: true, id: publicacionId });
+    } catch (error) {
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      const duplicate = error?.code === 'ER_DUP_ENTRY';
+      res.status(duplicate ? 409 : 500).json({
+        message: duplicate ? 'El articulo ya tiene una publicacion para esta tienda' : 'Error al crear publicacion',
+        error: error.message,
+      });
+    } finally {
+      if (conn) conn.release();
+    }
+  });
+
+  app.post('/api/ecommerce/publicaciones/:id/sync', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    let conn;
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const tnubeConnection = getConfiguredTnubeConnection();
+
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+      const [[publicacion]] = await conn.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ? FOR UPDATE`,
+        [id]
+      );
+      if (!publicacion) {
+        await conn.rollback();
+        return res.status(404).json({ message: 'Publicacion no encontrada' });
+      }
+      const [variantes] = await conn.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ? ORDER BY id FOR UPDATE`,
+        [id]
+      );
+      if (!variantes.length) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'La publicacion no tiene variantes' });
+      }
+      await conn.query(
+        `UPDATE ${DB_NAME}.tiendanube_publicaciones SET estado = 'sincronizando', error_mensaje = NULL WHERE id = ?`,
+        [id]
+      );
+      await conn.query(
+        `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+         SET estado = 'sincronizando', error_mensaje = NULL
+         WHERE publicacion_id = ? AND estado NOT IN ('creada', 'existente')`,
+        [id]
+      );
+      await conn.commit();
+      conn.release();
+      conn = null;
+
+      let product = null;
+      let productId = publicacion.product_id || null;
+      if (productId) {
+        product = await fetchTnubeProduct(tnubeConnection, productId);
+      } else {
+        product = await findTnubeProductBySku(tnubeConnection, publicacion.articulo_principal);
+        productId = getTnubeProductId(product);
+        if (productId) {
+          product = await fetchTnubeProduct(tnubeConnection, productId);
+        }
+      }
+
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+      let productState = 'existente';
+      if (!productId) {
+        const payload = buildTnubeProductPayload(publicacion, variantes);
+        product = await tnubeRequest(
+          tnubeConnection.storeId,
+          tnubeConnection.accessToken,
+          tnubeConnection.appName,
+          'POST',
+          'products',
+          payload
+        );
+        productId = getTnubeProductId(product);
+        if (!productId) throw new Error('Tienda Nube no devolvio product_id');
+        if (productId) {
+          product = await fetchTnubeProduct(tnubeConnection, productId);
+        }
+        productState = 'creado';
+        await conn.query(
+          `UPDATE ${DB_NAME}.tiendanube_publicaciones
+           SET product_id = ?, estado = 'creado', payload_json = ?, sincronizado_en = NOW()
+           WHERE id = ?`,
+          [productId, JSON.stringify(payload), id]
+        );
+      } else {
+        product = product || (await fetchTnubeProduct(tnubeConnection, productId));
+        await conn.query(
+          `UPDATE ${DB_NAME}.tiendanube_publicaciones
+           SET product_id = ?, estado = 'existente', sincronizado_en = NOW()
+           WHERE id = ?`,
+          [productId, id]
+        );
+      }
+
+      const remoteVariants = getTnubeVariantRows(product);
+      const createdProductVariants = new Map(
+        remoteVariants.map((variant) => [normalizeSku(variant?.sku).toUpperCase(), variant]).filter(([sku]) => sku)
+      );
+      let okCount = 0;
+      let errorCount = 0;
+
+      for (const variante of variantes) {
+        const sku = normalizeSku(variante.sku || variante.articulo);
+        const remote = createdProductVariants.get(sku.toUpperCase());
+        try {
+          if (remote?.id) {
+            await conn.query(
+              `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+               SET product_id = ?, variant_id = ?, estado = ?, sincronizado_en = NOW(), error_mensaje = NULL
+               WHERE id = ?`,
+              [productId, remote.id, productState === 'creado' ? 'creada' : 'existente', variante.id]
+            );
+            await insertPublicacionEvento(
+              conn,
+              id,
+              variante.id,
+              productState === 'creado' ? 'variante_creada' : 'variante_existente',
+              variante.estado,
+              productState === 'creado' ? 'creada' : 'existente',
+              `${productState === 'creado' ? 'Variante creada' : 'Variante existente'} en Tienda Nube: ${sku}`,
+              { productId, variantId: remote.id },
+              req.user?.id
+            );
+            okCount += 1;
+            continue;
+          }
+
+          const payload = buildTnubeVariantPayload(variante);
+          const created = await tnubeRequest(
+            tnubeConnection.storeId,
+            tnubeConnection.accessToken,
+            tnubeConnection.appName,
+            'POST',
+            `products/${encodeURIComponent(productId)}/variants`,
+            payload
+          );
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET product_id = ?, variant_id = ?, estado = 'creada', payload_json = ?, sincronizado_en = NOW(), error_mensaje = NULL
+             WHERE id = ?`,
+            [productId, created?.id || null, JSON.stringify(payload), variante.id]
+          );
+          await insertPublicacionEvento(
+            conn,
+            id,
+            variante.id,
+            'variante_creada',
+            variante.estado,
+            'creada',
+            `Variante creada en Tienda Nube: ${sku}`,
+            { productId, variantId: created?.id || null },
+            req.user?.id
+          );
+          okCount += 1;
+        } catch (error) {
+          errorCount += 1;
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET estado = 'error', error_mensaje = ?
+             WHERE id = ?`,
+            [error.message || 'ErrorAPI', variante.id]
+          );
+          await insertPublicacionEvento(
+            conn,
+            id,
+            variante.id,
+            'error_variante',
+            variante.estado,
+            'error',
+            error.message || 'ErrorAPI',
+            { productId, sku },
+            req.user?.id
+          );
+        }
+      }
+
+      const finalState = errorCount ? (okCount ? 'parcial' : 'error') : productState;
+      await conn.query(
+        `UPDATE ${DB_NAME}.tiendanube_publicaciones
+         SET estado = ?, error_mensaje = ?, sincronizado_en = NOW()
+         WHERE id = ?`,
+        [finalState, errorCount ? `Variantes con error: ${errorCount}` : null, id]
+      );
+      await insertPublicacionEvento(
+        conn,
+        id,
+        null,
+        'sincronizacion',
+        publicacion.estado,
+        finalState,
+        `Sincronizacion finalizada. OK: ${okCount}. Error: ${errorCount}.`,
+        { productId, okCount, errorCount },
+        req.user?.id
+      );
+      await conn.commit();
+      res.json({ ok: true, productId, estado: finalState, okCount, errorCount });
+    } catch (error) {
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      try {
+        const id = Number(req.params.id);
+        if (Number.isFinite(id)) {
+          await pool.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicaciones SET estado = 'error', error_mensaje = ? WHERE id = ?`,
+            [error.message || 'Error en sincronizacion', id]
+          );
+        }
+      } catch (_updateErr) {
+        /* ignore */
+      }
+      res.status(500).json({ message: 'Error al sincronizar publicacion', error: error.message });
+    } finally {
+      if (conn) conn.release();
+    }
+  });
+
   app.post('/api/ecommerce/panel/import', requireAuth, async (req, res) => {
   try {
     const tipoBajada = String(req.body?.tipo_bajada || '').trim().toLowerCase();
@@ -13177,14 +13882,18 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     getConfiguredTnubeConnection();
     const job = createEcommerceImportJob(tipoBajada, req.user?.id || null);
     runEcommerceImportJob(job);
-    return res.json({ ok: true, job: serializeEcommerceImportJob(job) });
+    return res.json({
+      ok: true,
+      job: serializeEcommerceImportJob(job),
+      jobToken: signEcommerceJobToken(job.id, { type: 'import' }),
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Error al crear bajada TiendaNube', error: error.message });
   }
 });
 
-  app.get('/api/ecommerce/panel/import/:jobId', requireAuth, async (req, res) => {
-  const job = ecommerceImportJobs.get(String(req.params.jobId || ''));
+  app.get('/api/ecommerce/panel/import/:jobId', async (req, res) => {
+  const job = ecommerceImportJobs.get(String(req.params.jobId || '')) || readPersistedEcommerceJob(req.params.jobId);
   if (!job) {
     return res.status(404).json({ message: 'Bajada no encontrada' });
   }
@@ -13351,14 +14060,18 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     getTnubeConnection(storeId);
     const job = createEcommerceSyncJob({ idCorrida, storeId, conOrden, ordenCant, artiCant }, req.user?.id || null);
     runEcommerceSyncJob(job);
-    return res.json({ ok: true, job: serializeEcommerceSyncJob(job) });
+    return res.json({
+      ok: true,
+      job: serializeEcommerceSyncJob(job),
+      jobToken: signEcommerceJobToken(job.id, { type: 'sync', idCorrida }),
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Error al iniciar sincro TiendaNube', error: error.message });
   }
 });
 
-  app.get('/api/tiendanubesincroArticulos/job/:jobId', requireAuth, async (req, res) => {
-  const job = ecommerceSyncJobs.get(String(req.params.jobId || ''));
+  app.get('/api/tiendanubesincroArticulos/job/:jobId', async (req, res) => {
+  const job = ecommerceSyncJobs.get(String(req.params.jobId || '')) || readPersistedEcommerceJob(req.params.jobId);
   if (!job) {
     return res.status(404).json({ message: 'Sincronizacion no encontrada' });
   }

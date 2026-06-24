@@ -354,6 +354,15 @@ let ecommercePanelLoaded = false;
 let ecommercePanelSelected = new Set();
 let ecommercePanelDetailTable = null;
 let ecommercePanelDetailContext = null;
+let ecommercePublicacionesLoaded = false;
+let ecommercePublicacionesTable = null;
+let ecommercePublicacionPickTable = null;
+let ecommercePublicacionPickTarget = 'principal';
+let ecommercePublicacionArticuloCache = [];
+let ecommercePublicacionRowsCache = [];
+let ecommercePublicacionCategoriaRows = [];
+let ecommercePublicacionCategoriasLoaded = false;
+let ecommercePublicacionVariantes = [];
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -455,6 +464,7 @@ const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
 const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
 const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
+const viewEcommercePublicaciones = document.getElementById('view-ecommerce-publicaciones');
 const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCajasNuevaFactura = document.getElementById('view-cajas-nueva-factura');
@@ -1001,6 +1011,40 @@ const ecommerceSyncOk = document.getElementById('ecommerce-sync-ok');
 const ecommerceSyncError = document.getElementById('ecommerce-sync-error');
 const ecommerceSyncNoReq = document.getElementById('ecommerce-sync-noreq');
 const ecommerceSyncErrorMessage = document.getElementById('ecommerce-sync-error-message');
+const ecommercePubRefresh = document.getElementById('ecommerce-pub-refresh');
+const ecommercePubSyncAll = document.getElementById('ecommerce-pub-sync-all');
+const ecommercePubEstadoFilter = document.getElementById('ecommerce-pub-estado-filter');
+const ecommercePubArticuloSearch = document.getElementById('ecommerce-pub-articulo-search');
+const ecommercePubArticuloOpen = document.getElementById('ecommerce-pub-articulo-open');
+const ecommercePubArticulosList = document.getElementById('ecommerce-pub-articulos-list');
+const ecommercePubNombre = document.getElementById('ecommerce-pub-nombre');
+const ecommercePubDescripcion = document.getElementById('ecommerce-pub-descripcion');
+const ecommercePubMarca = document.getElementById('ecommerce-pub-marca');
+const ecommercePubTags = document.getElementById('ecommerce-pub-tags');
+const ecommercePubCategoria = document.getElementById('ecommerce-pub-categoria');
+const ecommercePubVarianteSearch = document.getElementById('ecommerce-pub-variante-search');
+const ecommercePubVarianteOpen = document.getElementById('ecommerce-pub-variante-open');
+const ecommercePubVariantesList = document.getElementById('ecommerce-pub-variantes-list');
+const ecommercePubAttrName = document.getElementById('ecommerce-pub-attr-name');
+const ecommercePubAttrValue = document.getElementById('ecommerce-pub-attr-value');
+const ecommercePubAddVariante = document.getElementById('ecommerce-pub-add-variante');
+const ecommercePubVariantsTable = document.getElementById('ecommerce-pub-variants-table');
+const ecommercePubSave = document.getElementById('ecommerce-pub-save');
+const ecommercePubClear = document.getElementById('ecommerce-pub-clear');
+const ecommercePubFormStatus = document.getElementById('ecommerce-pub-form-status');
+const ecommercePubTableEl = document.getElementById('ecommerce-pub-table');
+const ecommercePubStatus = document.getElementById('ecommerce-pub-status');
+const ecommercePubPickOverlay = document.getElementById('ecommerce-pub-pick-overlay');
+const ecommercePubPickTitle = document.getElementById('ecommerce-pub-pick-title');
+const ecommercePubPickClose = document.getElementById('ecommerce-pub-pick-close');
+const ecommercePubPickTableEl = document.getElementById('ecommerce-pub-pick-table');
+const ecommercePubPickStatus = document.getElementById('ecommerce-pub-pick-status');
+const ecommercePubDetailOverlay = document.getElementById('ecommerce-pub-detail-overlay');
+const ecommercePubDetailTitle = document.getElementById('ecommerce-pub-detail-title');
+const ecommercePubDetailClose = document.getElementById('ecommerce-pub-detail-close');
+const ecommercePubDetailMeta = document.getElementById('ecommerce-pub-detail-meta');
+const ecommercePubDetailTableEl = document.getElementById('ecommerce-pub-detail-table');
+const ecommercePubDetailStatus = document.getElementById('ecommerce-pub-detail-status');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -6722,18 +6766,25 @@ async function loadEcommercePanel(force = false) {
 }
 
 function initEcommercePanel() {
+  const formatProgressPercent = (value) => {
+    const pct = Number(value) || 0;
+    if (pct > 0 && pct < 10) return pct.toFixed(1);
+    return String(Math.round(pct));
+  };
+
   const formatImportProgress = (job, label) => {
     const pct = Number(job?.percent) || 0;
     const pages =
       Number(job?.totalPages) > 0 ? ` | Paginas ${job.processedPages || 0}/${job.totalPages || 0}` : '';
     const variants = Number(job?.variantes) > 0 ? ` | Variantes ${job.variantes}` : '';
-    return `Creando bajada ${label}: ${Math.round(pct)}% | ${job?.phase || 'Procesando'}${pages}${variants}`;
+    return `Creando bajada ${label}: ${formatProgressPercent(pct)}% | ${job?.phase || 'Procesando'}${pages}${variants}`;
   };
 
-  const waitImportJob = async (jobId, label) => {
+  const waitImportJob = async (jobId, jobToken, label) => {
     while (jobId) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      const result = await fetchJSON(`/api/ecommerce/panel/import/${encodeURIComponent(jobId)}`);
+      const query = jobToken ? `?job_token=${encodeURIComponent(jobToken)}` : '';
+      const result = await fetchJSON(`/api/ecommerce/panel/import/${encodeURIComponent(jobId)}${query}`);
       const job = result.job || {};
       if (ecommercePanelStatus) ecommercePanelStatus.textContent = formatImportProgress(job, label);
       if (job.status === 'done') return job;
@@ -6754,7 +6805,7 @@ function initEcommercePanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tipo_bajada: tipoBajada }),
       });
-      const result = await waitImportJob(start.job?.id, label);
+      const result = await waitImportJob(start.job?.id, start.jobToken, label);
       ecommercePanelLoaded = false;
       await loadEcommercePanel(true);
       if (ecommercePanelStatus) {
@@ -6854,18 +6905,25 @@ function initEcommercePanel() {
 
 // Panel detalle: sincroniza en Tienda Nube y muestra modal de progreso/resultado.
 function initEcommercePanelDetail() {
+  const formatProgressPercent = (value) => {
+    const pct = Number(value) || 0;
+    if (pct > 0 && pct < 10) return pct.toFixed(1);
+    return String(Math.round(pct));
+  };
+
   const formatSyncProgress = (job) => {
     const pct = Number(job?.percent) || 0;
     const count = Number(job?.total) > 0 ? ` | ${job.processed || 0}/${job.total}` : '';
     const counters = ` | OK ${job?.ok || 0} | Error ${job?.error || 0} | Sin cambios ${job?.noRequiere || 0}`;
     const articulo = job?.currentArticulo ? ` | ${job.currentArticulo}` : '';
-    return `Sincronizando: ${Math.round(pct)}% | ${job?.phase || 'Procesando'}${count}${counters}${articulo}`;
+    return `Sincronizando: ${formatProgressPercent(pct)}% | ${job?.phase || 'Procesando'}${count}${counters}${articulo}`;
   };
 
-  const waitSyncJob = async (jobId) => {
+  const waitSyncJob = async (jobId, jobToken) => {
     while (jobId) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      const result = await fetchJSON(`/api/tiendanubesincroArticulos/job/${encodeURIComponent(jobId)}`);
+      const query = jobToken ? `?job_token=${encodeURIComponent(jobToken)}` : '';
+      const result = await fetchJSON(`/api/tiendanubesincroArticulos/job/${encodeURIComponent(jobId)}${query}`);
       const job = result.job || {};
       if (ecommerceSyncProgress) ecommerceSyncProgress.textContent = formatSyncProgress(job);
       if (job.status === 'done') return job;
@@ -6906,7 +6964,7 @@ function initEcommercePanelDetail() {
             artiCant: String(artiCant),
           }),
         });
-        const result = await waitSyncJob(start.job?.id);
+        const result = await waitSyncJob(start.job?.id, start.jobToken);
         closeOverlay(ecommerceSyncLoading);
         if (ecommerceSyncOk) ecommerceSyncOk.textContent = `Procesados OK: ${result.ok || 0}`;
         if (ecommerceSyncError) ecommerceSyncError.textContent = `Procesados Con Error: ${result.error || 0}`;
@@ -7012,6 +7070,617 @@ async function loadEcommercePanelDetail(params) {
     if (ecommercePanelDetailStatus) {
       ecommercePanelDetailStatus.textContent = error.message || 'Error al cargar detalle.';
     }
+  }
+}
+
+function getArticuloFromInput(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.split(' | ')[0].trim();
+}
+
+function findCachedEcommerceArticulo(articulo) {
+  const key = String(articulo || '').trim().toUpperCase();
+  return ecommercePublicacionArticuloCache.find((row) => String(row.articulo || '').toUpperCase() === key) || null;
+}
+
+function renderEcommercePubDatalist(listEl, rows) {
+  if (!listEl) return;
+  listEl.innerHTML = (rows || [])
+    .map((row) => {
+      const label = `${row.articulo || ''} | ${row.detalle || ''}`.trim();
+      return `<option value="${escapeAttr(label)}"></option>`;
+    })
+    .join('');
+}
+
+function formatEcommercePubArticuloOption(row) {
+  return `${row.articulo || ''} | ${row.detalle || ''}`.trim();
+}
+
+async function searchEcommercePubArticulos(term) {
+  const res = await fetchJSON(`/api/ecommerce/publicaciones/articulos?q=${encodeURIComponent(term || '')}`);
+  ecommercePublicacionArticuloCache = Array.isArray(res.data) ? res.data : [];
+  renderEcommercePubDatalist(ecommercePubArticulosList, ecommercePublicacionArticuloCache);
+  renderEcommercePubDatalist(ecommercePubVariantesList, ecommercePublicacionArticuloCache);
+  return ecommercePublicacionArticuloCache;
+}
+
+function setEcommercePrincipalArticulo(row) {
+  if (!row) return;
+  const value = formatEcommercePubArticuloOption(row);
+  if (ecommercePubArticuloSearch) ecommercePubArticuloSearch.value = value;
+  if (ecommercePubDescripcion) ecommercePubDescripcion.value = row.detalle || '';
+}
+
+function setEcommerceVarianteArticulo(row) {
+  if (!row) return;
+  if (ecommercePubVarianteSearch) ecommercePubVarianteSearch.value = formatEcommercePubArticuloOption(row);
+  if (ecommercePubAttrValue && !ecommercePubAttrValue.value) ecommercePubAttrValue.value = row.detalle || row.articulo || '';
+}
+
+async function loadEcommercePubCategorias() {
+  if (!ecommercePubCategoria || ecommercePublicacionCategoriasLoaded) return;
+  try {
+    const res = await fetchJSON('/api/ecommerce/publicaciones/categorias');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    ecommercePublicacionCategoriaRows = rows;
+    ecommercePubCategoria.innerHTML =
+      '<option value="">Sin categoria</option>' +
+      rows
+        .map((row) => `<option value="${escapeAttr(row.id)}">${escapeAttr(row.label || row.name || row.id)}</option>`)
+        .join('');
+    ecommercePublicacionCategoriasLoaded = true;
+  } catch (error) {
+    if (ecommercePubFormStatus) {
+      ecommercePubFormStatus.textContent = error.message || 'No se pudieron cargar categorias.';
+    }
+  }
+}
+
+function getEcommercePubCategoriaLabel(value) {
+  const id = String(value || '').trim();
+  if (!id) return 'Sin categoria';
+  const row = ecommercePublicacionCategoriaRows.find((item) => String(item.id) === id);
+  return row?.label || row?.name || id;
+}
+
+function getEcommercePubPickSearchInput() {
+  const scope =
+    ecommercePubPickOverlay ||
+    ecommercePubPickTableEl?.closest('.dt-container, .dataTables_wrapper') ||
+    ecommercePubPickTableEl?.parentElement;
+  return scope?.querySelector('input[type="search"]') || null;
+}
+
+function focusEcommercePubPickSearch() {
+  const searchInput = getEcommercePubPickSearchInput();
+  if (!searchInput) return false;
+  searchInput.focus();
+  if (!searchInput.value) searchInput.select();
+  return true;
+}
+
+async function loadEcommercePubPickTable() {
+  if (!ecommercePubPickTableEl) return;
+  try {
+    if (ecommercePubPickStatus) ecommercePubPickStatus.textContent = 'Cargando articulos...';
+    const res = await fetchJSON('/api/ecommerce/publicaciones/articulos?all=1');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    ecommercePublicacionArticuloCache = rows;
+    renderEcommercePubDatalist(ecommercePubArticulosList, rows);
+    renderEcommercePubDatalist(ecommercePubVariantesList, rows);
+    if (ecommercePublicacionPickTable) {
+      ecommercePublicacionPickTable.clear();
+      ecommercePublicacionPickTable.rows.add(rows);
+      ecommercePublicacionPickTable.draw();
+      requestAnimationFrame(() => focusEcommercePubPickSearch());
+    } else if (window.DataTable) {
+      ecommercePublicacionPickTable = new DataTable('#ecommerce-pub-pick-table', {
+        data: rows,
+        columns: [
+          { data: 'articulo' },
+          { data: 'detalle' },
+          { data: 'articulo' },
+          { data: 'stock' },
+          { data: 'precio', render: (value) => formatMoney(value || 0) },
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) =>
+              `<button type="button" class="abm-link-btn ecommerce-pub-pick-use" data-articulo="${escapeAttr(
+                row.articulo
+              )}">Usar</button>`,
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[0, 'asc']],
+        autoWidth: false,
+      });
+      ecommercePublicacionPickTable.on('draw', () => focusEcommercePubPickSearch());
+    } else {
+      const tbody = ecommercePubPickTableEl.querySelector('tbody');
+      if (tbody) {
+        tbody.innerHTML = rows
+          .map(
+            (row) => `
+              <tr>
+                <td>${escapeAttr(row.articulo)}</td>
+                <td>${escapeAttr(row.detalle)}</td>
+                <td>${escapeAttr(row.articulo)}</td>
+                <td>${escapeAttr(row.stock)}</td>
+                <td>${formatMoney(row.precio || 0)}</td>
+                <td><button type="button" class="abm-link-btn ecommerce-pub-pick-use" data-articulo="${escapeAttr(
+                  row.articulo
+                )}">Usar</button></td>
+              </tr>
+            `
+          )
+          .join('');
+      }
+    }
+    if (ecommercePubPickStatus) {
+      ecommercePubPickStatus.textContent = rows.length ? `Total articulos: ${rows.length}` : 'Sin resultados';
+    }
+  } catch (error) {
+    if (ecommercePubPickStatus) ecommercePubPickStatus.textContent = error.message || 'No se pudieron cargar articulos.';
+  }
+}
+
+async function openEcommercePubPick(target) {
+  if (!ecommercePubPickOverlay) return;
+  ecommercePublicacionPickTarget = target === 'variante' ? 'variante' : 'principal';
+  if (ecommercePubPickTitle) {
+    ecommercePubPickTitle.textContent =
+      ecommercePublicacionPickTarget === 'variante' ? 'Seleccionar Variante' : 'Seleccionar Articulo Principal';
+  }
+  openOverlay(ecommercePubPickOverlay);
+  await loadEcommercePubPickTable();
+  if (ecommercePublicacionPickTable) {
+    ecommercePublicacionPickTable.search('').draw();
+  }
+  requestAnimationFrame(() => focusEcommercePubPickSearch());
+  setTimeout(focusEcommercePubPickSearch, 150);
+}
+
+function closeEcommercePubPick() {
+  closeOverlay(ecommercePubPickOverlay);
+}
+
+function selectEcommercePubPickArticulo(articulo) {
+  const row = findCachedEcommerceArticulo(articulo);
+  if (!row) return;
+  if (ecommercePublicacionPickTarget === 'variante') {
+    setEcommerceVarianteArticulo(row);
+  } else {
+    setEcommercePrincipalArticulo(row);
+  }
+  closeEcommercePubPick();
+}
+
+function renderEcommercePubVariants() {
+  const tbody = ecommercePubVariantsTable?.querySelector('tbody');
+  if (!tbody) return;
+  tbody.innerHTML = ecommercePublicacionVariantes
+    .map(
+      (row, index) => `
+        <tr>
+          <td>${escapeAttr(row.articulo)}</td>
+          <td>${escapeAttr(row.detalle)}</td>
+          <td>${escapeAttr(row.sku)}</td>
+          <td>${escapeAttr(row.atributo1Nombre)}</td>
+          <td>${escapeAttr(row.atributo1Valor)}</td>
+          <td>${formatMoney(row.precio || 0)}</td>
+          <td>${escapeAttr(row.stock ?? '')}</td>
+          <td><button type="button" class="abm-link-btn ecommerce-pub-remove-variante" data-index="${index}">Quitar</button></td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
+function clearEcommercePubForm() {
+  if (ecommercePubArticuloSearch) ecommercePubArticuloSearch.value = '';
+  if (ecommercePubNombre) ecommercePubNombre.value = '';
+  if (ecommercePubDescripcion) ecommercePubDescripcion.value = '';
+  if (ecommercePubMarca) ecommercePubMarca.value = '';
+  if (ecommercePubTags) ecommercePubTags.value = '';
+  if (ecommercePubCategoria) ecommercePubCategoria.value = '';
+  if (ecommercePubVarianteSearch) ecommercePubVarianteSearch.value = '';
+  if (ecommercePubAttrName) ecommercePubAttrName.value = 'Color';
+  if (ecommercePubAttrValue) ecommercePubAttrValue.value = '';
+  ecommercePublicacionVariantes = [];
+  renderEcommercePubVariants();
+  if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = '';
+}
+
+function addEcommercePubVariantFromInput() {
+  const articulo = getArticuloFromInput(ecommercePubVarianteSearch?.value);
+  if (!articulo) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Selecciona una variante.';
+    return;
+  }
+  if (ecommercePublicacionVariantes.some((row) => row.articulo === articulo)) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'La variante ya fue agregada.';
+    return;
+  }
+  const cached = findCachedEcommerceArticulo(articulo);
+  ecommercePublicacionVariantes.push({
+    articulo,
+    sku: articulo,
+    detalle: cached?.detalle || '',
+    atributo1Nombre: String(ecommercePubAttrName?.value || 'Color').trim() || 'Color',
+    atributo1Valor: String(ecommercePubAttrValue?.value || cached?.detalle || articulo).trim(),
+    precio: cached?.precio == null ? 0 : Number(cached.precio),
+    stock: cached?.stock == null ? 0 : Number(cached.stock),
+  });
+  if (ecommercePubVarianteSearch) ecommercePubVarianteSearch.value = '';
+  if (ecommercePubAttrValue) ecommercePubAttrValue.value = '';
+  if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = '';
+  renderEcommercePubVariants();
+}
+
+async function saveEcommercePublicacion() {
+  const articuloPrincipal = getArticuloFromInput(ecommercePubArticuloSearch?.value);
+  if (!articuloPrincipal) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Selecciona el articulo principal.';
+    return;
+  }
+  if (!ecommercePublicacionVariantes.length) {
+    const cached = findCachedEcommerceArticulo(articuloPrincipal);
+    ecommercePublicacionVariantes.push({
+      articulo: articuloPrincipal,
+      sku: articuloPrincipal,
+      detalle: cached?.detalle || '',
+      atributo1Nombre: 'Articulo',
+      atributo1Valor: cached?.detalle || articuloPrincipal,
+      precio: cached?.precio == null ? 0 : Number(cached.precio),
+      stock: cached?.stock == null ? 0 : Number(cached.stock),
+    });
+    renderEcommercePubVariants();
+  }
+  const principal = findCachedEcommerceArticulo(articuloPrincipal);
+  const payload = {
+    articuloPrincipal,
+    nombre: ecommercePubNombre?.value || '',
+    descripcion: ecommercePubDescripcion?.value || principal?.detalle || '',
+    marca: ecommercePubMarca?.value || '',
+    tags: ecommercePubTags?.value || '',
+    categorias: ecommercePubCategoria?.value || '',
+    variantes: ecommercePublicacionVariantes,
+  };
+  try {
+    if (ecommercePubSave) ecommercePubSave.disabled = true;
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Guardando publicacion...';
+    const res = await fetchJSON('/api/ecommerce/publicaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = `Publicacion #${res.id} guardada.`;
+    clearEcommercePubForm();
+    await loadEcommercePublicaciones(true);
+  } catch (error) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = error.message || 'No se pudo guardar.';
+  } finally {
+    if (ecommercePubSave) ecommercePubSave.disabled = false;
+  }
+}
+
+function renderEcommercePublicacionesFallback(rows) {
+  const tbody = ecommercePubTableEl?.querySelector('tbody');
+  if (!tbody) return;
+  tbody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeAttr(row.id)}</td>
+          <td>${escapeAttr(row.articuloPrincipal)}</td>
+          <td>${escapeAttr(row.nombre)}</td>
+          <td>${escapeAttr(row.estado)}</td>
+          <td>${escapeAttr(row.variantes)} / OK ${escapeAttr(row.variantesOk)}</td>
+          <td>${escapeAttr(row.productId)}</td>
+          <td>${escapeAttr(formatDateTime(row.actualizadoEn || ''))}</td>
+          <td>
+            <button type="button" class="abm-link-btn ecommerce-pub-detail" data-id="${escapeAttr(row.id)}">Ver</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-sync" data-id="${escapeAttr(row.id)}">Sincro</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-delete" data-id="${escapeAttr(row.id)}">Quitar</button>
+          </td>
+        </tr>
+      `
+    )
+    .join('');
+}
+
+function filterEcommercePublicacionesRows(rows) {
+  const mode = String(ecommercePubEstadoFilter?.value || 'borrador').toLowerCase();
+  return (rows || []).filter((row) => {
+    const estado = String(row.estado || '').toLowerCase();
+    if (mode === 'todos') return true;
+    if (mode === 'sincronizados') return estado === 'creado' || estado === 'existente';
+    if (mode === 'errores') return estado === 'error' || estado === 'parcial';
+    return estado === 'borrador' || estado === 'pendiente';
+  });
+}
+
+function renderEcommercePublicacionesRows(rows) {
+  const filteredRows = filterEcommercePublicacionesRows(rows);
+  if (ecommercePublicacionesTable) {
+    ecommercePublicacionesTable.clear();
+    ecommercePublicacionesTable.rows.add(filteredRows);
+    ecommercePublicacionesTable.draw();
+  } else if (window.DataTable) {
+    ecommercePublicacionesTable = new DataTable('#ecommerce-pub-table', {
+      data: filteredRows,
+      columns: [
+        { data: 'id' },
+        { data: 'articuloPrincipal' },
+        { data: 'nombre' },
+        { data: 'estado' },
+        {
+          data: null,
+          render: (row) => `${row.variantes || 0} / OK ${row.variantesOk || 0} / Error ${row.variantesError || 0}`,
+        },
+        { data: 'productId' },
+        { data: 'actualizadoEn', render: (value) => formatDateTime(value || '') },
+        {
+          data: 'id',
+          orderable: false,
+          render: (id, _type, row) =>
+            `<button type="button" class="abm-link-btn ecommerce-pub-detail" data-id="${escapeAttr(id)}">Ver</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-sync" data-id="${escapeAttr(id)}">${
+              row.estado === 'sincronizando' ? 'Procesando' : 'Sincro'
+            }</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-delete" data-id="${escapeAttr(id)}">Quitar</button>`,
+        },
+      ],
+      pageLength: 10,
+      lengthMenu: [10, 25, 50, 100],
+      order: [[6, 'desc']],
+      autoWidth: false,
+    });
+  } else {
+    renderEcommercePublicacionesFallback(filteredRows);
+  }
+  return filteredRows;
+}
+
+async function loadEcommercePublicaciones(force = false) {
+  if (!ecommercePubTableEl) return;
+  if (ecommercePublicacionesLoaded && !force) return;
+  try {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = 'Cargando publicaciones...';
+    const res = await fetchJSON('/api/ecommerce/publicaciones');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    ecommercePublicacionRowsCache = rows;
+    const filteredRows = renderEcommercePublicacionesRows(rows);
+    ecommercePublicacionesLoaded = true;
+    if (ecommercePubStatus) {
+      ecommercePubStatus.textContent = rows.length
+        ? `Mostrando ${filteredRows.length} de ${rows.length} publicaciones.`
+        : '';
+    }
+  } catch (error) {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'No se pudieron cargar publicaciones.';
+  }
+}
+
+async function openEcommercePublicacionDetail(id) {
+  if (!id || !ecommercePubDetailOverlay) return;
+  try {
+    if (ecommercePubDetailStatus) ecommercePubDetailStatus.textContent = 'Cargando detalle...';
+    openOverlay(ecommercePubDetailOverlay);
+    const res = await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}`);
+    const pub = res.data || {};
+    const variantes = Array.isArray(res.variantes) ? res.variantes : [];
+    if (ecommercePubDetailTitle) {
+      ecommercePubDetailTitle.textContent = `Publicacion #${pub.id || id}`;
+    }
+    const categoriaLabel = pub.categoriaLabel || getEcommercePubCategoriaLabel(pub.categorias);
+    if (ecommercePubDetailMeta) {
+      ecommercePubDetailMeta.innerHTML = `
+        <div><span>Articulo</span><strong>${escapeAttr(pub.articuloPrincipal || '')}</strong></div>
+        <div><span>Nombre tienda</span><strong>${escapeAttr(pub.nombre || '-')}</strong></div>
+        <div><span>Descripcion</span><strong>${escapeAttr(pub.descripcion || '-')}</strong></div>
+        <div><span>Categoria</span><strong>${escapeAttr(categoriaLabel)}</strong></div>
+        <div><span>Estado</span><strong>${escapeAttr(pub.estado || '')}</strong></div>
+        <div><span>Product ID</span><strong>${escapeAttr(pub.productId || '-')}</strong></div>
+      `;
+    }
+    const tbody = ecommercePubDetailTableEl?.querySelector('tbody');
+    if (tbody) {
+      tbody.innerHTML = variantes
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeAttr(row.articulo)}</td>
+              <td>${escapeAttr(row.sku)}</td>
+              <td>${escapeAttr(row.detalle)}</td>
+              <td>${escapeAttr(row.atributo1Nombre)}</td>
+              <td>${escapeAttr(row.atributo1Valor)}</td>
+              <td>${formatMoney(row.precio || 0)}</td>
+              <td>${escapeAttr(row.stock ?? '')}</td>
+              <td>${escapeAttr(row.estado)}</td>
+              <td>${escapeAttr(row.variantId || '-')}</td>
+            </tr>
+          `
+        )
+        .join('');
+    }
+    if (ecommercePubDetailStatus) ecommercePubDetailStatus.textContent = '';
+  } catch (error) {
+    if (ecommercePubDetailStatus) ecommercePubDetailStatus.textContent = error.message || 'No se pudo cargar detalle.';
+  }
+}
+
+function closeEcommercePublicacionDetail() {
+  closeOverlay(ecommercePubDetailOverlay);
+}
+
+async function syncEcommercePublicacion(id) {
+  if (!id) return;
+  try {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = `Sincronizando publicacion #${id}...`;
+    await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    ecommercePublicacionesLoaded = false;
+    await loadEcommercePublicaciones(true);
+    if (ecommercePubStatus) ecommercePubStatus.textContent = `Publicacion #${id} sincronizada.`;
+  } catch (error) {
+    ecommercePublicacionesLoaded = false;
+    await loadEcommercePublicaciones(true);
+    if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'No se pudo sincronizar.';
+  }
+}
+
+async function deleteEcommercePublicacion(id) {
+  if (!id) return;
+  try {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = `Quitando publicacion #${id}...`;
+    await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    ecommercePublicacionesLoaded = false;
+    await loadEcommercePublicaciones(true);
+    if (ecommercePubStatus) ecommercePubStatus.textContent = `Publicacion #${id} quitada de la grilla.`;
+  } catch (error) {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'No se pudo quitar.';
+  }
+}
+
+async function syncAllEcommercePublicaciones() {
+  const rows =
+    ecommercePublicacionesTable && typeof ecommercePublicacionesTable.rows === 'function'
+      ? ecommercePublicacionesTable.rows({ search: 'applied' }).data().toArray()
+      : ecommercePublicacionRowsCache;
+  const pending = rows.filter((row) => !['creado', 'existente'].includes(String(row.estado || '').toLowerCase()));
+  if (!pending.length) {
+    if (ecommercePubStatus) ecommercePubStatus.textContent = 'No hay publicaciones pendientes para sincronizar.';
+    return;
+  }
+  if (ecommercePubSyncAll) ecommercePubSyncAll.disabled = true;
+  try {
+    for (let index = 0; index < pending.length; index += 1) {
+      const row = pending[index];
+      if (ecommercePubStatus) {
+        ecommercePubStatus.textContent = `Sincronizando ${index + 1}/${pending.length}: ${row.articuloPrincipal || row.id}`;
+      }
+      await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(row.id)}/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      ecommercePublicacionesLoaded = false;
+      await loadEcommercePublicaciones(true);
+    }
+    if (ecommercePubStatus) ecommercePubStatus.textContent = `Sincronizacion finalizada: ${pending.length} publicaciones.`;
+  } catch (error) {
+    ecommercePublicacionesLoaded = false;
+    await loadEcommercePublicaciones(true);
+    if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'Se detuvo la sincronizacion.';
+  } finally {
+    if (ecommercePubSyncAll) ecommercePubSyncAll.disabled = false;
+  }
+}
+
+
+function initEcommercePublicaciones() {
+  if (!ecommercePubTableEl) return;
+  let searchTimer = null;
+  const queueSearch = (value) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchEcommercePubArticulos(value).catch(() => {});
+    }, 250);
+  };
+  if (ecommercePubArticuloSearch) {
+    ecommercePubArticuloSearch.addEventListener('input', () => {
+      queueSearch(ecommercePubArticuloSearch.value);
+      const articulo = getArticuloFromInput(ecommercePubArticuloSearch.value);
+      const cached = findCachedEcommerceArticulo(articulo);
+      if (cached && ecommercePubDescripcion) ecommercePubDescripcion.value = cached.detalle || '';
+    });
+  }
+  if (ecommercePubArticuloOpen) ecommercePubArticuloOpen.addEventListener('click', () => openEcommercePubPick('principal'));
+  if (ecommercePubVarianteSearch) {
+    ecommercePubVarianteSearch.addEventListener('input', () => {
+      queueSearch(ecommercePubVarianteSearch.value);
+      const articulo = getArticuloFromInput(ecommercePubVarianteSearch.value);
+      const cached = findCachedEcommerceArticulo(articulo);
+      if (cached && ecommercePubAttrValue && !ecommercePubAttrValue.value) ecommercePubAttrValue.value = cached.detalle || '';
+    });
+  }
+  if (ecommercePubVarianteOpen) ecommercePubVarianteOpen.addEventListener('click', () => openEcommercePubPick('variante'));
+  if (ecommercePubAddVariante) ecommercePubAddVariante.addEventListener('click', addEcommercePubVariantFromInput);
+  if (ecommercePubSave) ecommercePubSave.addEventListener('click', saveEcommercePublicacion);
+  if (ecommercePubClear) ecommercePubClear.addEventListener('click', clearEcommercePubForm);
+  if (ecommercePubRefresh) {
+    ecommercePubRefresh.addEventListener('click', () => {
+      ecommercePublicacionesLoaded = false;
+      loadEcommercePublicaciones(true);
+    });
+  }
+  if (ecommercePubSyncAll) ecommercePubSyncAll.addEventListener('click', syncAllEcommercePublicaciones);
+  if (ecommercePubEstadoFilter) {
+    ecommercePubEstadoFilter.addEventListener('change', () => {
+      const filteredRows = renderEcommercePublicacionesRows(ecommercePublicacionRowsCache);
+      if (ecommercePubStatus) {
+        ecommercePubStatus.textContent = ecommercePublicacionRowsCache.length
+          ? `Mostrando ${filteredRows.length} de ${ecommercePublicacionRowsCache.length} publicaciones.`
+          : '';
+      }
+    });
+  }
+  if (ecommercePubVariantsTable) {
+    ecommercePubVariantsTable.addEventListener('click', (event) => {
+      const btn = event.target.closest('.ecommerce-pub-remove-variante');
+      if (!btn) return;
+      const index = Number(btn.dataset.index);
+      if (Number.isFinite(index)) {
+        ecommercePublicacionVariantes.splice(index, 1);
+        renderEcommercePubVariants();
+      }
+    });
+  }
+  if (ecommercePubTableEl) {
+    ecommercePubTableEl.addEventListener('click', (event) => {
+      const detailBtn = event.target.closest('.ecommerce-pub-detail');
+      if (detailBtn) {
+        openEcommercePublicacionDetail(detailBtn.dataset.id);
+        return;
+      }
+      const deleteBtn = event.target.closest('.ecommerce-pub-delete');
+      if (deleteBtn) {
+        deleteEcommercePublicacion(deleteBtn.dataset.id);
+        return;
+      }
+      const btn = event.target.closest('.ecommerce-pub-sync');
+      if (!btn) return;
+      syncEcommercePublicacion(btn.dataset.id);
+    });
+  }
+  if (ecommercePubPickClose) ecommercePubPickClose.addEventListener('click', closeEcommercePubPick);
+  if (ecommercePubPickOverlay) {
+    ecommercePubPickOverlay.addEventListener('click', (event) => {
+      if (event.target === ecommercePubPickOverlay) closeEcommercePubPick();
+    });
+  }
+  if (ecommercePubPickTableEl) {
+    ecommercePubPickTableEl.addEventListener('click', (event) => {
+      const btn = event.target.closest('.ecommerce-pub-pick-use');
+      if (!btn) return;
+      selectEcommercePubPickArticulo(btn.dataset.articulo);
+    });
+  }
+  if (ecommercePubDetailClose) ecommercePubDetailClose.addEventListener('click', closeEcommercePublicacionDetail);
+  if (ecommercePubDetailOverlay) {
+    ecommercePubDetailOverlay.addEventListener('click', (event) => {
+      if (event.target === ecommercePubDetailOverlay) closeEcommercePublicacionDetail();
+    });
   }
 }
 
@@ -13760,6 +14429,7 @@ function resolvePermissionKey(target) {
   if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
   if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
+  if (target === 'ecommerce-publicaciones') return 'ecommerce-publicaciones';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
@@ -13879,6 +14549,7 @@ function getFirstAllowedView(perms = {}) {
       'control-ordenes',
       'ecommerce-imagenweb',
       'ecommerce-panel',
+      'ecommerce-publicaciones',
       'cajas',
       'cajas-cierre',
       'cajas-nueva-factura',
@@ -13939,7 +14610,8 @@ async function loadCurrentUser() {
     normalizeDashboardPermissions(currentPermissions, data?.permissions || {});
     const hasEcommerceSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
-      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel');
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-publicaciones');
     const hasFidelizacionSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-panel') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-mis') ||
@@ -14595,7 +15267,7 @@ function isEcommerceViewActive() {
   const path = String(window.location.pathname || '').toLowerCase();
   const viewParam = new URLSearchParams(window.location.search || '').get('view') || '';
   return (
-    ['ecommerce-panel', 'ecommerce-panel-detail', 'ecommerce-imagenweb'].includes(currentView) ||
+    ['ecommerce-panel', 'ecommerce-panel-detail', 'ecommerce-imagenweb', 'ecommerce-publicaciones'].includes(currentView) ||
     path.startsWith('/consultadetalladaecomerce') ||
     String(viewParam).startsWith('ecommerce-')
   );
@@ -15532,6 +16204,7 @@ const permissionGroups = [
       { key: 'ecommerce', label: 'E-Comerce' },
       { key: 'ecommerce-imagenweb', label: 'ImagenWeb' },
       { key: 'ecommerce-panel', label: 'Panel' },
+      { key: 'ecommerce-publicaciones', label: 'Publicaciones' },
     ],
   },
   {
@@ -15582,9 +16255,10 @@ function normalizeDashboardPermissions(perms = {}, rawPerms = {}) {
 function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
   if (!perms.ecommerce) return perms;
   if (hasSubPerms) return perms;
-  if (!perms['ecommerce-imagenweb'] && !perms['ecommerce-panel']) {
+  if (!perms['ecommerce-imagenweb'] && !perms['ecommerce-panel'] && !perms['ecommerce-publicaciones']) {
     perms['ecommerce-imagenweb'] = true;
     perms['ecommerce-panel'] = true;
+    perms['ecommerce-publicaciones'] = true;
   }
   return perms;
 }
@@ -15646,7 +16320,11 @@ async function loadRolePermissions(roleId) {
     rawPerms[row.permiso] = !!row.habilitado;
     if (row.permiso in perms) {
       perms[row.permiso] = !!row.habilitado;
-      if (row.permiso === 'ecommerce-imagenweb' || row.permiso === 'ecommerce-panel') {
+      if (
+        row.permiso === 'ecommerce-imagenweb' ||
+        row.permiso === 'ecommerce-panel' ||
+        row.permiso === 'ecommerce-publicaciones'
+      ) {
         hasEcommerceSubPerms = true;
       }
       if (
@@ -15706,7 +16384,7 @@ function renderPermissions() {
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
     mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
-    ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel'],
+    ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones'],
   };
   const submenuKeys = new Set(Object.values(submenuMap).flat());
 
@@ -19366,6 +20044,7 @@ function switchView(target) {
       viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
+      viewEcommercePublicaciones,
       viewCajas,
       viewCajasCierre,
       viewCajasNuevaFactura,
@@ -19410,6 +20089,7 @@ function switchView(target) {
       viewEcommerceImagenweb,
       viewEcommercePanel,
       viewEcommercePanelDetail,
+      viewEcommercePublicaciones,
       viewCajas,
       viewCajasCierre,
       viewCajasNuevaFactura,
@@ -19506,6 +20186,10 @@ function switchView(target) {
     loadEcommercePanel();
   } else if (target === 'ecommerce-panel-detail') {
     viewEcommercePanelDetail.classList.remove('hidden');
+  } else if (target === 'ecommerce-publicaciones') {
+    viewEcommercePublicaciones.classList.remove('hidden');
+    loadEcommercePubCategorias();
+    loadEcommercePublicaciones();
   } else if (target === 'cajas') {
     viewCajas.classList.remove('hidden');
   } else if (target === 'cajas-cierre') {
@@ -19594,6 +20278,7 @@ initControlOrdenes();
 initEcommerceImagenweb();
 initEcommercePanel();
 initEcommercePanelDetail();
+initEcommercePublicaciones();
 initCajasCierre();
 initPedidoNuevo();
 initFacturaNueva();
