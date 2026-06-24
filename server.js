@@ -96,6 +96,7 @@ const LOGS_DIR = path.join(__dirname, 'logs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 const ecommerceImportJobs = new Map();
+const ecommerceSyncJobs = new Map();
 
 fs.mkdirSync(EMP_PHOTO_STORAGE_DIR, { recursive: true });
 app.use(EMP_PHOTO_PUBLIC_PREFIX, express.static(EMP_PHOTO_STORAGE_DIR));
@@ -710,6 +711,247 @@ async function runEcommerceImportJob(job) {
   }
 }
 
+function createEcommerceSyncJob(params, userId) {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const job = {
+    id,
+    userId,
+    params,
+    status: 'running',
+    phase: 'Iniciando',
+    percent: 0,
+    processed: 0,
+    total: 0,
+    ok: 0,
+    error: 0,
+    noRequiere: 0,
+    currentArticulo: '',
+    message: '',
+    errorMessage: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  ecommerceSyncJobs.set(id, job);
+  return job;
+}
+
+function updateEcommerceSyncJob(job, patch) {
+  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+}
+
+function serializeEcommerceSyncJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    phase: job.phase,
+    percent: Math.max(0, Math.min(100, Math.round(Number(job.percent) || 0))),
+    processed: job.processed,
+    total: job.total,
+    ok: job.ok,
+    error: job.error,
+    noRequiere: job.noRequiere,
+    currentArticulo: job.currentArticulo,
+    message: job.message,
+    errorMessage: job.errorMessage,
+  };
+}
+
+async function getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant) {
+  const statusOk = 'OK';
+  if (conOrden) {
+    const sql = `
+      SELECT
+        OrdenCompras.OrdenCompra,
+        StatusEComerce.id AS e_id,
+        StatusEComerce.id_provecomerce,
+        OrdenCompras.articulo,
+        StatusEComerce.product_id,
+        StatusEComerce.articulo_id,
+        StatusEComerce.visible,
+        StatusEComerce.images
+      FROM ${DB_NAME}.compras AS OrdenCompras
+      INNER JOIN ${DB_NAME}.statusecomercesincro AS StatusEComerce
+        ON OrdenCompras.Articulo = StatusEComerce.Articulo
+      WHERE OrdenCompras.OrdenCompra IN (
+        SELECT OrdenCompra
+        FROM (
+          SELECT OrdenCompra
+          FROM ${DB_NAME}.compras
+          GROUP BY OrdenCompra
+          ORDER BY OrdenCompra DESC
+          LIMIT ?
+        ) AS subquery
+      )
+        AND OrdenCompras.Cantidad <> 0
+        AND StatusEComerce.id_provecomerce = ?
+        AND StatusEComerce.status <> ?
+    `;
+    const [rows] = await conn.query(sql, [ordenCant, idCorrida, statusOk]);
+    return rows;
+  }
+  const sql = `
+    SELECT
+      statusecomerce.id AS e_id,
+      statusecomerce.articulo,
+      statusecomerce.status,
+      statusecomerce.fecha,
+      statusecomerce.product_id,
+      statusecomerce.articulo_id,
+      statusecomerce.images
+    FROM ${DB_NAME}.statusecomercesincro AS statusecomerce
+    WHERE statusecomerce.id_provecomerce = ?
+      AND statusecomerce.status <> ?
+  `;
+  const [rows] = await conn.query(sql, [idCorrida, statusOk]);
+  return rows;
+}
+
+async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, onProgress) {
+  const statusOk = 'OK';
+  let countOk = 0;
+  let countError = 0;
+  let countCheck = 0;
+
+  const updateStatus = async (id, status) => {
+    const fecha = formatDateTimeLocal(new Date());
+    await conn.query(
+      `UPDATE ${DB_NAME}.statusecomercesincro SET status = ?, fecha = ? WHERE id = ?`,
+      [status, fecha, id]
+    );
+  };
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const processed = index + 1;
+    const baseProgress = {
+      processed,
+      total: rows.length,
+      currentArticulo: row.articulo || '',
+      percent: rows.length ? (processed / rows.length) * 100 : 100,
+    };
+    try {
+      onProgress?.({ ...baseProgress, phase: `Leyendo ${row.articulo || ''}` });
+      const [statusRows] = await conn.query(
+        `SELECT status FROM ${DB_NAME}.statusecomercesincro WHERE id = ? LIMIT 1`,
+        [row.e_id]
+      );
+      const currentStatus = statusRows[0]?.status || '';
+      if (currentStatus === statusOk) {
+        countCheck += 1;
+        onProgress?.({ ...baseProgress, phase: 'Sin cambios', ok: countOk, error: countError, noRequiere: countCheck });
+        continue;
+      }
+
+      const [artRows] = await conn.query(
+        `SELECT Articulo, PrecioManual, PrecioConvertido, Gastos, Ganancia, Moneda, Proveedor, Cantidad, Web
+         FROM ${DB_NAME}.articulos
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [row.articulo]
+      );
+      if (!artRows.length) {
+        if (currentStatus === 'Pending') countCheck += 1;
+        onProgress?.({ ...baseProgress, phase: 'No existe en sistema', ok: countOk, error: countError, noRequiere: countCheck });
+        continue;
+      }
+      const articuloLocal = artRows[0];
+
+      const [pedidoRows] = await conn.query(
+        `SELECT pedtemp.Articulo AS Articulo, SUM(pedtemp.cantidad) AS Cantidad
+         FROM ${DB_NAME}.pedidotemp AS pedtemp
+         INNER JOIN ${DB_NAME}.controlpedidos AS control ON pedtemp.NroPedido = control.nropedido
+         WHERE pedtemp.articulo = ?
+           AND control.estado = 1`,
+        [row.articulo]
+      );
+      let cantidad = Number(articuloLocal.Cantidad) || 0;
+      const pedidoCantidad = Number(pedidoRows[0]?.Cantidad) || 0;
+      if (pedidoCantidad) cantidad -= pedidoCantidad;
+
+      if (options.conOrden && Number(row.images) === 1 && cantidad >= options.artiCant) {
+        onProgress?.({ ...baseProgress, phase: `Publicando ${row.articulo || ''}` });
+        await tnubeRequest(
+          tnubeConnection.storeId,
+          tnubeConnection.accessToken,
+          tnubeConnection.appName,
+          'PUT',
+          `products/${row.product_id}`,
+          { published: true }
+        );
+      }
+
+      if (Number(articuloLocal.Web) === 1) {
+        onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock ${row.articulo || ''}` });
+        const precioVenta = await computePrecioVenta(conn, articuloLocal);
+        await tnubeRequest(
+          tnubeConnection.storeId,
+          tnubeConnection.accessToken,
+          tnubeConnection.appName,
+          'PUT',
+          `products/${row.product_id}/variants/${row.articulo_id}`,
+          {
+            price: precioVenta ?? 0,
+            stock: verificoStock(cantidad, options.artiCant),
+          }
+        );
+        await updateStatus(row.e_id, 'OK');
+        countOk += 1;
+      } else {
+        await updateStatus(row.e_id, 'Excluido');
+        countOk += 1;
+      }
+      onProgress?.({ ...baseProgress, phase: 'Procesado', ok: countOk, error: countError, noRequiere: countCheck });
+    } catch (_err) {
+      try {
+        await updateStatus(row.e_id, 'ErrorAPI');
+      } catch (_updateErr) {
+        /* ignore */
+      }
+      countError += 1;
+      onProgress?.({ ...baseProgress, phase: 'ErrorAPI', ok: countOk, error: countError, noRequiere: countCheck });
+    }
+  }
+
+  return { OK: countOk, Error: countError, 'No Requiere': countCheck };
+}
+
+async function runEcommerceSyncJob(job) {
+  let conn;
+  try {
+    const { idCorrida, storeId, conOrden, ordenCant, artiCant } = job.params;
+    const tnubeConnection = getTnubeConnection(storeId);
+    conn = await pool.getConnection();
+    updateEcommerceSyncJob(job, { phase: 'Buscando articulos', percent: 1 });
+    const rows = await getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant);
+    updateEcommerceSyncJob(job, { total: rows.length, phase: 'Procesando articulos', percent: rows.length ? 1 : 100 });
+    const result = await processEcommerceSyncRows(
+      conn,
+      rows,
+      tnubeConnection,
+      { conOrden, artiCant },
+      (progress) => updateEcommerceSyncJob(job, progress)
+    );
+    updateEcommerceSyncJob(job, {
+      status: 'done',
+      phase: 'Finalizado',
+      percent: 100,
+      ok: result.OK,
+      error: result.Error,
+      noRequiere: result['No Requiere'],
+      message: `OK: ${result.OK} | Error: ${result.Error} | Sin cambios: ${result['No Requiere']}`,
+    });
+  } catch (error) {
+    updateEcommerceSyncJob(job, {
+      status: 'error',
+      phase: 'Error',
+      errorMessage: error.message || 'Error en sincro TiendaNube',
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
 function parseCookies(req) {
   const cookieHeader = req.headers.cookie || '';
   return cookieHeader.split(';').reduce((acc, item) => {
@@ -746,6 +988,18 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ message: 'No autorizado' });
   }
   req.user = payload;
+  next();
+}
+
+function requireAuthKeepAlive(req, res, next) {
+  const cookies = parseCookies(req);
+  const token = cookies.auth_token;
+  const payload = token && verifyToken(token);
+  if (!payload) {
+    return res.status(401).json({ message: 'No autorizado' });
+  }
+  req.user = payload;
+  setAuthCookie(res, signToken({ ...payload, iat: Date.now() }), req);
   next();
 }
 
@@ -4382,6 +4636,9 @@ app.use('/api', (req, res, next) => {
     req.path.startsWith('/fichaje')
   ) {
     return next();
+  }
+  if (req.path.startsWith('/ecommerce') || req.path.startsWith('/tiendanubesincroArticulos')) {
+    return requireAuthKeepAlive(req, res, next);
   }
   return requireAuth(req, res, next); 
 });
@@ -13080,7 +13337,35 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
   }
 });
 
-  // Sincro Tienda Nube: actualiza publicado y precio/stock de variantes.
+  // Sincro Tienda Nube: inicia job con progreso.
+  app.post('/api/tiendanubesincroArticulos/job', requireAuth, async (req, res) => {
+  try {
+    const idCorrida = String(req.body?.id_corrida || '').trim();
+    const storeId = String(req.body?.store_id || '').trim();
+    const conOrden = req.body?.conOrden === '1' || req.body?.conOrden === 1 || req.body?.conOrden === true;
+    const ordenCant = Math.max(1, Number(req.body?.ordenCant) || 5);
+    const artiCant = Math.max(1, Number(req.body?.artiCant) || 10);
+    if (!idCorrida || !storeId) {
+      return res.status(400).json({ message: 'id_corrida y store_id requeridos' });
+    }
+    getTnubeConnection(storeId);
+    const job = createEcommerceSyncJob({ idCorrida, storeId, conOrden, ordenCant, artiCant }, req.user?.id || null);
+    runEcommerceSyncJob(job);
+    return res.json({ ok: true, job: serializeEcommerceSyncJob(job) });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al iniciar sincro TiendaNube', error: error.message });
+  }
+});
+
+  app.get('/api/tiendanubesincroArticulos/job/:jobId', requireAuth, async (req, res) => {
+  const job = ecommerceSyncJobs.get(String(req.params.jobId || ''));
+  if (!job) {
+    return res.status(404).json({ message: 'Sincronizacion no encontrada' });
+  }
+  return res.json({ job: serializeEcommerceSyncJob(job) });
+});
+
+  // Endpoint compatible: actualiza publicado y precio/stock de variantes.
   app.get('/api/tiendanubesincroArticulos', requireAuth, async (req, res) => {
   let conn;
   try {
@@ -13096,155 +13381,12 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 
     const tnubeConnection = getTnubeConnection(storeId);
     conn = await pool.getConnection();
-    const statusOk = 'OK';
-    let rows = [];
-
-    if (conOrden) {
-      const sql = `
-        SELECT
-          OrdenCompras.OrdenCompra,
-          StatusEComerce.id AS e_id,
-          StatusEComerce.id_provecomerce,
-          OrdenCompras.articulo,
-          StatusEComerce.product_id,
-          StatusEComerce.articulo_id,
-          StatusEComerce.visible,
-          StatusEComerce.images
-        FROM ${DB_NAME}.compras AS OrdenCompras
-        INNER JOIN ${DB_NAME}.statusecomercesincro AS StatusEComerce
-          ON OrdenCompras.Articulo = StatusEComerce.Articulo
-        WHERE OrdenCompras.OrdenCompra IN (
-          SELECT OrdenCompra
-          FROM (
-            SELECT OrdenCompra
-            FROM ${DB_NAME}.compras
-            GROUP BY OrdenCompra
-            ORDER BY OrdenCompra DESC
-            LIMIT ?
-          ) AS subquery
-        )
-          AND OrdenCompras.Cantidad <> 0
-          AND StatusEComerce.id_provecomerce = ?
-          AND StatusEComerce.status <> ?
-      `;
-      const [result] = await conn.query(sql, [ordenCant, idCorrida, statusOk]);
-      rows = result;
-    } else {
-      const sql = `
-        SELECT
-          statusecomerce.id AS e_id,
-          statusecomerce.articulo,
-          statusecomerce.status,
-          statusecomerce.fecha,
-          statusecomerce.product_id,
-          statusecomerce.articulo_id,
-          statusecomerce.images
-        FROM ${DB_NAME}.statusecomercesincro AS statusecomerce
-        WHERE statusecomerce.id_provecomerce = ?
-          AND statusecomerce.status <> ?
-      `;
-      const [result] = await conn.query(sql, [idCorrida, statusOk]);
-      rows = result;
-    }
-
+    const rows = await getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant);
     if (dryRun) {
       return res.json([{ OK: 0, Error: 0, 'No Requiere': 0, dryRun: true, total: rows.length }]);
     }
-
-    let countOk = 0;
-    let countError = 0;
-    let countCheck = 0;
-
-    const updateStatus = async (id, status) => {
-      const fecha = formatDateTimeLocal(new Date());
-      await conn.query(
-        `UPDATE ${DB_NAME}.statusecomercesincro SET status = ?, fecha = ? WHERE id = ?`,
-        [status, fecha, id]
-      );
-    };
-
-    for (const row of rows) {
-      try {
-        const [statusRows] = await conn.query(
-          `SELECT status FROM ${DB_NAME}.statusecomercesincro WHERE id = ? LIMIT 1`,
-          [row.e_id]
-        );
-        const currentStatus = statusRows[0]?.status || '';
-        if (currentStatus === statusOk) {
-          countCheck += 1;
-          continue;
-        }
-
-        const [artRows] = await conn.query(
-          `SELECT Articulo, PrecioManual, PrecioConvertido, Gastos, Ganancia, Moneda, Proveedor, Cantidad, Web
-           FROM ${DB_NAME}.articulos
-           WHERE Articulo = ?
-           LIMIT 1`,
-          [row.articulo]
-        );
-        if (!artRows.length) {
-          if (currentStatus === 'Pending') {
-            countCheck += 1;
-          }
-          continue;
-        }
-        const articuloLocal = artRows[0];
-
-        const [pedidoRows] = await conn.query(
-          `SELECT pedtemp.Articulo AS Articulo, SUM(pedtemp.cantidad) AS Cantidad
-           FROM ${DB_NAME}.pedidotemp AS pedtemp
-           INNER JOIN ${DB_NAME}.controlpedidos AS control ON pedtemp.NroPedido = control.nropedido
-           WHERE pedtemp.articulo = ?
-             AND control.estado = 1`,
-          [row.articulo]
-        );
-        let cantidad = Number(articuloLocal.Cantidad) || 0;
-        const pedidoCantidad = Number(pedidoRows[0]?.Cantidad) || 0;
-        if (pedidoCantidad) {
-          cantidad = cantidad - pedidoCantidad;
-        }
-
-        if (conOrden && Number(row.images) === 1 && cantidad >= artiCant) {
-          await tnubeRequest(
-            tnubeConnection.storeId,
-            tnubeConnection.accessToken,
-            tnubeConnection.appName,
-            'PUT',
-            `products/${row.product_id}`,
-            { published: true }
-          );
-        }
-
-        if (Number(articuloLocal.Web) === 1) {
-          const precioVenta = await computePrecioVenta(conn, articuloLocal);
-          await tnubeRequest(
-            tnubeConnection.storeId,
-            tnubeConnection.accessToken,
-            tnubeConnection.appName,
-            'PUT',
-            `products/${row.product_id}/variants/${row.articulo_id}`,
-            {
-              price: precioVenta ?? 0,
-              stock: verificoStock(cantidad, artiCant),
-            }
-          );
-          await updateStatus(row.e_id, 'OK');
-          countOk += 1;
-        } else {
-          await updateStatus(row.e_id, 'Excluido');
-          countOk += 1;
-        }
-        } catch (_err) {
-          try {
-            await updateStatus(row.e_id, 'ErrorAPI');
-          } catch (_updateErr) {
-            /* ignore */
-          }
-        countError += 1;
-      }
-    }
-
-    return res.json([{ OK: countOk, Error: countError, 'No Requiere': countCheck }]);
+    const result = await processEcommerceSyncRows(conn, rows, tnubeConnection, { conOrden, artiCant });
+    return res.json([result]);
   } catch (error) {
     return res.status(500).json({ message: 'Error en sincro TiendaNube', error: error.message });
   } finally {

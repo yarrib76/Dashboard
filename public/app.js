@@ -996,9 +996,11 @@ const ecommerceSyncFinish = document.getElementById('ecommerce-sync-finish');
 const ecommerceSyncErrorModal = document.getElementById('ecommerce-sync-error-modal');
 const ecommerceSyncFinishClose = document.getElementById('ecommerce-sync-finish-close');
 const ecommerceSyncErrorClose = document.getElementById('ecommerce-sync-error-close');
+const ecommerceSyncProgress = document.getElementById('ecommerce-sync-progress');
 const ecommerceSyncOk = document.getElementById('ecommerce-sync-ok');
 const ecommerceSyncError = document.getElementById('ecommerce-sync-error');
 const ecommerceSyncNoReq = document.getElementById('ecommerce-sync-noreq');
+const ecommerceSyncErrorMessage = document.getElementById('ecommerce-sync-error-message');
 const mercIaOverlay = document.getElementById('merc-ia-overlay');
 const mercIaClose = document.getElementById('merc-ia-close');
 const mercIaTitle = document.getElementById('merc-ia-title');
@@ -6852,6 +6854,26 @@ function initEcommercePanel() {
 
 // Panel detalle: sincroniza en Tienda Nube y muestra modal de progreso/resultado.
 function initEcommercePanelDetail() {
+  const formatSyncProgress = (job) => {
+    const pct = Number(job?.percent) || 0;
+    const count = Number(job?.total) > 0 ? ` | ${job.processed || 0}/${job.total}` : '';
+    const counters = ` | OK ${job?.ok || 0} | Error ${job?.error || 0} | Sin cambios ${job?.noRequiere || 0}`;
+    const articulo = job?.currentArticulo ? ` | ${job.currentArticulo}` : '';
+    return `Sincronizando: ${Math.round(pct)}% | ${job?.phase || 'Procesando'}${count}${counters}${articulo}`;
+  };
+
+  const waitSyncJob = async (jobId) => {
+    while (jobId) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const result = await fetchJSON(`/api/tiendanubesincroArticulos/job/${encodeURIComponent(jobId)}`);
+      const job = result.job || {};
+      if (ecommerceSyncProgress) ecommerceSyncProgress.textContent = formatSyncProgress(job);
+      if (job.status === 'done') return job;
+      if (job.status === 'error') throw new Error(job.errorMessage || 'Error en sincro.');
+    }
+    throw new Error('No se pudo consultar el avance de la sincronizacion.');
+  };
+
   if (ecommercePanelDetailBack) {
     ecommercePanelDetailBack.addEventListener('click', () => {
       window.history.pushState({}, '', '/');
@@ -6871,28 +6893,34 @@ function initEcommercePanelDetail() {
       const ordenCant = ecommercePanelDetailOrdenCant?.value || '5';
       const artiCant = ecommercePanelDetailArtiCant?.value || '10';
       try {
+        if (ecommerceSyncProgress) ecommerceSyncProgress.textContent = 'Sincronizando: 0% | Iniciando';
         openOverlay(ecommerceSyncLoading);
-        const params = new URLSearchParams({
-          id_corrida: ctx.idCorrida,
-          store_id: ctx.idCliente,
-          conOrden: String(conOrden),
-          ordenCant: String(ordenCant),
-          artiCant: String(artiCant),
-          dryRun: '0',
+        const start = await fetchJSON('/api/tiendanubesincroArticulos/job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id_corrida: ctx.idCorrida,
+            store_id: ctx.idCliente,
+            conOrden: String(conOrden),
+            ordenCant: String(ordenCant),
+            artiCant: String(artiCant),
+          }),
         });
-        const res = await fetch(`/api/tiendanubesincroArticulos?${params.toString()}`, {
-          credentials: 'include',
-        });
-        const data = await res.json().catch(() => null);
+        const result = await waitSyncJob(start.job?.id);
         closeOverlay(ecommerceSyncLoading);
-        if (!res.ok) throw new Error(data?.message || 'Error en sincro.');
-        const result = Array.isArray(data) ? data[0] : data || {};
-        if (ecommerceSyncOk) ecommerceSyncOk.textContent = `Procesados OK: ${result.OK || 0}`;
-        if (ecommerceSyncError) ecommerceSyncError.textContent = `Procesados Con Error: ${result.Error || 0}`;
-        if (ecommerceSyncNoReq) ecommerceSyncNoReq.textContent = `Sin Cambios: ${result['No Requiere'] || 0}`;
+        if (ecommerceSyncOk) ecommerceSyncOk.textContent = `Procesados OK: ${result.ok || 0}`;
+        if (ecommerceSyncError) ecommerceSyncError.textContent = `Procesados Con Error: ${result.error || 0}`;
+        if (ecommerceSyncNoReq) ecommerceSyncNoReq.textContent = `Sin Cambios: ${result.noRequiere || 0}`;
         openOverlay(ecommerceSyncFinish);
       } catch (error) {
         closeOverlay(ecommerceSyncLoading);
+        if (ecommerceSyncProgress) ecommerceSyncProgress.textContent = '';
+        if (ecommerceSyncErrorMessage) {
+          ecommerceSyncErrorMessage.textContent =
+            error.message === 'No autorizado'
+              ? 'La sesion no esta autorizada para consultar el avance. Volve a iniciar sesion y revisa la corrida.'
+              : error.message || 'No se pudo completar la sincronizacion.';
+        }
         openOverlay(ecommerceSyncErrorModal);
       }
     });
@@ -14563,12 +14591,30 @@ async function handleLogout() {
 }
 
 let idleListenersBound = false;
+function isEcommerceViewActive() {
+  const path = String(window.location.pathname || '').toLowerCase();
+  const viewParam = new URLSearchParams(window.location.search || '').get('view') || '';
+  return (
+    ['ecommerce-panel', 'ecommerce-panel-detail', 'ecommerce-imagenweb'].includes(currentView) ||
+    path.startsWith('/consultadetalladaecomerce') ||
+    String(viewParam).startsWith('ecommerce-')
+  );
+}
+
+function handleIdleTimeout() {
+  if (isEcommerceViewActive()) {
+    resetIdleTimer();
+    return;
+  }
+  handleLogout();
+}
+
 function resetIdleTimer() {
   if (sessionIdleTimer) {
     clearTimeout(sessionIdleTimer);
   }
   const ms = Math.max(1, Number(sessionIdleMinutes) || 0) * 60 * 1000;
-  sessionIdleTimer = setTimeout(handleLogout, ms);
+  sessionIdleTimer = setTimeout(handleIdleTimeout, ms);
 }
 
 function initIdleTimeout() {
