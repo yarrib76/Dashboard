@@ -82,6 +82,9 @@ const COOKIE_SECURE_MODE = (process.env.COOKIE_SECURE || 'auto').toLowerCase();
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE || 'Lax').trim();
 const EMP_PHOTO_STORAGE_DIR = process.env.EMP_PHOTO_DIR || '/app/fotos_empleados';
 const EMP_PHOTO_MAX_BYTES = Number(process.env.EMP_PHOTO_MAX_BYTES || 5 * 1024 * 1024);
+const TN_PUBLICACIONES_IMG_DIR = process.env.TN_PUBLICACIONES_IMG_DIR || path.join(__dirname, 'fotos_tiendanube_publicaciones');
+const TN_PUBLICACIONES_IMG_PUBLIC_PREFIX = '/tn-publicaciones-img';
+const TN_PUBLICACIONES_IMG_MAX_BYTES = Number(process.env.TN_PUBLICACIONES_IMG_MAX_BYTES || 10 * 1024 * 1024);
 const PREDICTOR_URL = process.env.PREDICTOR_URL || 'http://192.168.0.154:8000/prediccion/sku';
 const TNUBE_BASE_URL = 'https://api.tiendanube.com/v1';
 const TNUBE_STORE_ID = String(process.env.TNUBE_STORE_ID || '').trim();
@@ -100,7 +103,9 @@ const ecommerceImportJobs = new Map();
 const ecommerceSyncJobs = new Map();
 
 fs.mkdirSync(EMP_PHOTO_STORAGE_DIR, { recursive: true });
+fs.mkdirSync(TN_PUBLICACIONES_IMG_DIR, { recursive: true });
 app.use(EMP_PHOTO_PUBLIC_PREFIX, express.static(EMP_PHOTO_STORAGE_DIR));
+app.use(TN_PUBLICACIONES_IMG_PUBLIC_PREFIX, express.static(TN_PUBLICACIONES_IMG_DIR));
 
 const openai =
   OPENAI_API_KEY && OPENAI_API_KEY.trim()
@@ -1007,6 +1012,29 @@ function getTnubeLocalizedText(value) {
   return { es: text };
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatTnubeDescriptionHtml(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const bulletParts = text
+    .replace(/\r\n/g, '\n')
+    .split(/\n+|(?=\s*[•●]\s+)/)
+    .map((line) => line.replace(/^[\s•●*-]+/, '').trim())
+    .filter(Boolean);
+  if (bulletParts.length > 1 || /^[\s•●*-]+/.test(text)) {
+    return `<ul>${bulletParts.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
+  }
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
 function getTnubeProductId(product) {
   if (Array.isArray(product)) return getTnubeProductId(product[0]);
   return product?.id || product?.product_id || null;
@@ -1015,6 +1043,24 @@ function getTnubeProductId(product) {
 function getTnubeVariantRows(product) {
   if (Array.isArray(product)) return getTnubeVariantRows(product[0]);
   return Array.isArray(product?.variants) ? product.variants : [];
+}
+
+async function fetchTnubeProductVariants(connection, productId) {
+  const rows = [];
+  const perPage = 200;
+  for (let page = 1; page <= 20; page += 1) {
+    const pageRows = await tnubeRequest(
+      connection.storeId,
+      connection.accessToken,
+      connection.appName,
+      'GET',
+      `products/${encodeURIComponent(productId)}/variants${buildTnubeQuery({ per_page: perPage, page })}`
+    );
+    const normalizedRows = Array.isArray(pageRows) ? pageRows : [];
+    rows.push(...normalizedRows);
+    if (normalizedRows.length < perPage) break;
+  }
+  return rows;
 }
 
 function normalizeSku(value) {
@@ -1074,6 +1120,89 @@ function mapPublicacionVarianteRow(row) {
   };
 }
 
+function buildPublicacionImageUrl(archivoPath) {
+  const fileName = path.basename(String(archivoPath || ''));
+  return fileName ? `${TN_PUBLICACIONES_IMG_PUBLIC_PREFIX}/${encodeURIComponent(fileName)}` : '';
+}
+
+function mapPublicacionImagenRow(row) {
+  return {
+    id: row.id,
+    publicacionId: row.publicacion_id,
+    varianteId: row.variante_id || null,
+    tipo: row.tipo || '',
+    posicion: Number(row.posicion) || 1,
+    archivoPath: row.archivo_path || '',
+    archivoNombre: row.archivo_nombre || '',
+    mimeType: row.mime_type || '',
+    tamanioBytes: row.tamanio_bytes == null ? null : Number(row.tamanio_bytes),
+    tnImageId: row.tn_image_id || '',
+    estado: row.estado || '',
+    errorMensaje: row.error_mensaje || '',
+    url: buildPublicacionImageUrl(row.archivo_path),
+  };
+}
+
+async function removeManagedTnPublicacionImage(archivoPath) {
+  const fileName = path.basename(String(archivoPath || ''));
+  if (!fileName) return;
+  const target = path.resolve(TN_PUBLICACIONES_IMG_DIR, fileName);
+  const root = path.resolve(TN_PUBLICACIONES_IMG_DIR);
+  if (!target.startsWith(root + path.sep)) return;
+  await fsp.unlink(target).catch((error) => {
+    if (error?.code !== 'ENOENT') throw error;
+  });
+}
+
+function getTnubeImageId(image) {
+  if (Array.isArray(image)) return getTnubeImageId(image[0]);
+  return image?.id || image?.image_id || null;
+}
+
+async function uploadPublicacionImageToTnube(conn, tnubeConnection, productId, imageRow, variantId = null) {
+  if (!imageRow?.archivo_path) return null;
+  const fileName = path.basename(String(imageRow.archivo_path));
+  const filePath = path.resolve(TN_PUBLICACIONES_IMG_DIR, fileName);
+  const root = path.resolve(TN_PUBLICACIONES_IMG_DIR);
+  if (!filePath.startsWith(root + path.sep)) throw new Error('Ruta de imagen invalida');
+  const buffer = await fsp.readFile(filePath);
+  const payload = {
+    filename: imageRow.archivo_nombre || fileName,
+    attachment: buffer.toString('base64'),
+  };
+  if (!variantId) {
+    payload.position = Number(imageRow.posicion) || 1;
+  }
+  const created = await tnubeRequest(
+    tnubeConnection.storeId,
+    tnubeConnection.accessToken,
+    tnubeConnection.appName,
+    'POST',
+    `products/${encodeURIComponent(productId)}/images`,
+    payload
+  );
+  const imageId = getTnubeImageId(created);
+  if (!imageId) throw new Error('Tienda Nube no devolvio image_id');
+  if (variantId) {
+    await tnubeRequest(
+      tnubeConnection.storeId,
+      tnubeConnection.accessToken,
+      tnubeConnection.appName,
+      'PUT',
+      `products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
+      { image_id: imageId }
+    );
+  }
+  await conn.query(
+    `UPDATE ${DB_NAME}.tiendanube_publicacion_imagenes
+     SET tn_image_id = ?, estado = 'subida', archivo_path = NULL, error_mensaje = NULL
+     WHERE id = ?`,
+    [imageId, imageRow.id]
+  );
+  await removeManagedTnPublicacionImage(fileName);
+  return imageId;
+}
+
 async function insertPublicacionEvento(conn, publicacionId, varianteId, tipo, estadoAnterior, estadoNuevo, mensaje, detalle, userId) {
   await conn.query(
     `INSERT INTO ${DB_NAME}.tiendanube_publicacion_eventos
@@ -1117,6 +1246,95 @@ function buildTnubeVariantPayload(variante) {
   return payload;
 }
 
+function getTnubeLocalizedRawText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    if (value.name != null) return getTnubeLocalizedRawText(value.name);
+    return value.es || value.pt || value.en || Object.values(value)[0] || '';
+  }
+  return String(value);
+}
+
+function normalizeTnubeAttributeName(value) {
+  return String(getTnubeLocalizedRawText(value) || '').trim().toLowerCase();
+}
+
+function getTnubeProductAttributeNames(product) {
+  const attrs = Array.isArray(product?.attributes) ? product.attributes : [];
+  return attrs
+    .map((attr) => normalizeTnubeAttributeName(attr))
+    .filter(Boolean);
+}
+
+function getTnubeVariantValueCount(variant) {
+  if (!variant) return 0;
+  if (Array.isArray(variant.values)) return variant.values.length;
+  if (Array.isArray(variant.value)) return variant.value.length;
+  if (variant.values && typeof variant.values === 'object') return Object.keys(variant.values).length;
+  return 0;
+}
+
+function getTnubeProductAttributeCount(product) {
+  const attrCount = Array.isArray(product?.attributes) ? product.attributes.length : 0;
+  if (attrCount) return attrCount;
+  const variantRows = getTnubeVariantRows(product);
+  return Math.max(0, ...variantRows.map(getTnubeVariantValueCount));
+}
+
+function buildTnubeVariantPayloadForAttributes(variante, attributeNames = [], expectedValueCount = 0) {
+  const payload = buildTnubeVariantPayload(variante);
+  const attrs = (attributeNames || []).map((attr) => String(attr || '').trim().toLowerCase()).filter(Boolean);
+  if (!attrs.length) {
+    while (payload.values.length < expectedValueCount) {
+      payload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
+    }
+    return payload;
+  }
+
+  const valuesByAttr = new Map();
+  [
+    [variante.atributo_1_nombre, variante.atributo_1_valor],
+    [variante.atributo_2_nombre, variante.atributo_2_valor],
+    [variante.atributo_3_nombre, variante.atributo_3_valor],
+  ].forEach(([name, value]) => {
+    const key = String(name || '').trim().toLowerCase();
+    const cleanValue = String(value || '').trim();
+    if (key && cleanValue) valuesByAttr.set(key, cleanValue);
+  });
+
+  payload.values = attrs.map((attr, index) => {
+    const value = valuesByAttr.get(attr) || (index === 0 ? variante.detalle || variante.articulo : variante.articulo);
+    return getTnubeLocalizedText(value);
+  });
+  while (payload.values.length < expectedValueCount) {
+    payload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
+  }
+  return payload;
+}
+
+function padTnubeVariantPayloadValues(payload, variante, targetCount, preferLeadingArticulo = false) {
+  const nextPayload = {
+    ...payload,
+    values: Array.isArray(payload.values) ? [...payload.values] : [],
+  };
+  if (preferLeadingArticulo && targetCount > nextPayload.values.length) {
+    nextPayload.values.unshift(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
+  }
+  while (nextPayload.values.length < targetCount) {
+    nextPayload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
+  }
+  if (nextPayload.values.length > targetCount) {
+    nextPayload.values = nextPayload.values.slice(0, targetCount);
+  }
+  return nextPayload;
+}
+
+function isTnubeWrongVariantValuesCountError(error) {
+  const text = String(error?.message || error?.body || '');
+  return /wrong number of elements/i.test(text);
+}
+
 function buildTnubeProductPayload(publicacion, variantes) {
   const attrNames = [];
   variantes.forEach((variante) => {
@@ -1133,11 +1351,26 @@ function buildTnubeProductPayload(publicacion, variantes) {
 
   const payload = {
     name: getTnubeLocalizedText(publicacion.nombre),
-    description: getTnubeLocalizedText(publicacion.descripcion || publicacion.nombre),
+    description: getTnubeLocalizedText(formatTnubeDescriptionHtml(publicacion.descripcion || publicacion.nombre)),
     published: false,
     free_shipping: false,
     attributes: attrNames.map(getTnubeLocalizedText),
-    variants: variantes.map(buildTnubeVariantPayload),
+    variants: variantes.map((variante) => buildTnubeVariantPayloadForAttributes(variante, attrNames, attrNames.length)),
+  };
+  if (publicacion.tags) payload.tags = String(publicacion.tags);
+  if (publicacion.marca) payload.brand = String(publicacion.marca);
+  const categoryIds = String(publicacion.categorias || '')
+    .split(',')
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item > 0);
+  if (categoryIds.length) payload.categories = categoryIds;
+  return payload;
+}
+
+function buildTnubeProductUpdatePayload(publicacion) {
+  const payload = {
+    name: getTnubeLocalizedText(publicacion.nombre),
+    description: getTnubeLocalizedText(formatTnubeDescriptionHtml(publicacion.descripcion || publicacion.nombre)),
   };
   if (publicacion.tags) payload.tags = String(publicacion.tags);
   if (publicacion.marca) payload.brand = String(publicacion.marca);
@@ -1651,7 +1884,7 @@ function inferImageExtension(contentType, originalName) {
   return '.jpg';
 }
 
-async function parseSingleMultipartFile(req, fieldName) {
+async function parseSingleMultipartFile(req, fieldName, maxBytes = EMP_PHOTO_MAX_BYTES) {
   const contentType = String(req.headers['content-type'] || '');
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   if (!boundaryMatch) {
@@ -1665,7 +1898,7 @@ async function parseSingleMultipartFile(req, fieldName) {
   let totalBytes = 0;
   for await (const chunk of req) {
     totalBytes += chunk.length;
-    if (totalBytes > EMP_PHOTO_MAX_BYTES + 1024 * 1024) {
+    if (totalBytes > maxBytes + 1024 * 1024) {
       const error = new Error('Archivo demasiado grande');
       error.code = 'UPLOAD_TOO_LARGE';
       throw error;
@@ -5304,6 +5537,95 @@ app.put('/api/roles/:id/permissions', async (req, res) => {
     res.status(500).json({ message: 'Error al guardar permisos', error: error.message });
   } finally {
     if (conn) conn.release();
+  }
+});
+
+app.get('/api/config/tiendanube-prompt', requireAuth, async (_req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT clave, prompt, actualizado_por, actualizado_en, creado_en
+       FROM ${DB_NAME}.tiendanube_prompt_config
+       WHERE clave = 'publicaciones_descripcion_ia'
+       LIMIT 1`
+    );
+    res.json({ data: row || { clave: 'publicaciones_descripcion_ia', prompt: '' } });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar prompt TN', error: error.message });
+  }
+});
+
+app.put('/api/config/tiendanube-prompt', requireAuth, async (req, res) => {
+  try {
+    const prompt = String(req.body?.prompt || '');
+    await pool.query(
+      `INSERT INTO ${DB_NAME}.tiendanube_prompt_config (clave, prompt, actualizado_por)
+       VALUES ('publicaciones_descripcion_ia', ?, ?)
+       ON DUPLICATE KEY UPDATE
+         prompt = VALUES(prompt),
+         actualizado_por = VALUES(actualizado_por),
+         actualizado_en = CURRENT_TIMESTAMP`,
+      [prompt, req.user?.id || null]
+    );
+    res.json({ ok: true, data: { clave: 'publicaciones_descripcion_ia', prompt } });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar prompt TN', error: error.message });
+  }
+});
+
+app.post('/api/ecommerce/publicaciones/descripcion-ia', requireAuth, async (req, res) => {
+  try {
+    if (!openai) {
+      return res.status(400).json({ message: 'OPENAI_API_KEY no configurada en el servidor' });
+    }
+    const nombreWeb = String(req.body?.nombreWeb || '').trim();
+    const descripcionWeb = String(req.body?.descripcionWeb || '').trim();
+    const articulo = String(req.body?.articulo || '').trim();
+    const detalle = String(req.body?.detalle || '').trim();
+    if (!nombreWeb && !descripcionWeb && !detalle) {
+      return res.status(400).json({ message: 'Carga nombre o descripcion para generar el texto.' });
+    }
+
+    const [[promptRow]] = await pool.query(
+      `SELECT prompt
+       FROM ${DB_NAME}.tiendanube_prompt_config
+       WHERE clave = 'publicaciones_descripcion_ia'
+       LIMIT 1`
+    );
+    const prompt = String(promptRow?.prompt || '').trim();
+    if (!prompt) {
+      return res.status(400).json({ message: 'No hay prompt TN configurado.' });
+    }
+
+    const userContent = [
+      `Articulo/SKU: ${articulo || 'Sin dato'}`,
+      `Nombre web actual: ${nombreWeb || 'Sin dato'}`,
+      `Detalle del sistema: ${detalle || 'Sin dato'}`,
+      `Descripcion web actual: ${descripcionWeb || 'Sin dato'}`,
+    ].join('\n');
+
+    const completion = await withRetry(() =>
+      openai.chat.completions.create({
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content:
+              `${prompt}\n\n` +
+              'Devuelve unicamente la descripcion final para pegar en Tienda Nube. ' +
+              'El formato obligatorio es una lista con viñetas, usando una linea por punto y empezando cada linea con "• ". ' +
+              'Ordena los puntos de lo general a lo especifico: tipo de producto, estilo/material, medidas, largo/talle y marca/proveedor cuando aplique. ' +
+              'No incluyas explicaciones, titulos de respuesta, comillas envolventes ni markdown de bloque.',
+          },
+          { role: 'user', content: userContent },
+        ],
+      })
+    );
+    const descripcion = String(completion.choices?.[0]?.message?.content || '').trim();
+    if (!descripcion) return res.status(500).json({ message: 'OpenAI no devolvio descripcion.' });
+    res.json({ ok: true, descripcion });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al generar descripcion IA', error: error.message });
   }
 });
 
@@ -9941,7 +10263,9 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
          Gastos,
          Ganancia,
          Proveedor,
-         Observaciones
+         Observaciones,
+         NbreWeb,
+         DescripcionWeb
        FROM articulos
        WHERE Articulo = ?
        LIMIT 1`,
@@ -10484,6 +10808,8 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
       ganancia = 0,
       proveedor = '',
       observaciones = '',
+      nbreWeb = '',
+      descripcionWeb = '',
       ordenCompra = 0,
       opcion = 'opcion_manual',
       paisProveedor = '',
@@ -10521,6 +10847,8 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
     );
     const maxObservaciones = Number(obsRow?.maxLen) || 255;
     const observacionesFinal = (observaciones || '').toString().slice(0, maxObservaciones);
+    const nbreWebFinal = (nbreWeb || '').toString().slice(0, 255);
+    const descripcionWebFinal = (descripcionWeb || '').toString().slice(0, 450);
 
     await conn.query(
       `UPDATE articulos
@@ -10532,7 +10860,9 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
            PrecioManual = ?,
            Gastos = ?,
            Ganancia = ?,
-           Proveedor = ?
+           Proveedor = ?,
+           NbreWeb = ?,
+           DescripcionWeb = ?
        WHERE Articulo = ?
        LIMIT 1`,
       [
@@ -10545,6 +10875,8 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
         gastosFinal,
         gananciaFinal,
         proveedor || '',
+        nbreWebFinal || null,
+        descripcionWebFinal || null,
         articulo,
       ]
     );
@@ -13481,14 +13813,16 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       const where = [];
       if (termRaw) {
         const term = `%${termRaw}%`;
-        where.push('(art.Articulo LIKE ? OR art.Detalle LIKE ? OR art.ProveedorSKU LIKE ?)');
-        params.push(term, term, term);
+        where.push('(art.Articulo LIKE ? OR art.Detalle LIKE ? OR art.ProveedorSKU LIKE ? OR art.NbreWeb LIKE ? OR art.DescripcionWeb LIKE ?)');
+        params.push(term, term, term, term, term);
       }
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
       const [rows] = await pool.query(
         `SELECT
            art.Articulo AS articulo,
            art.Detalle AS detalle,
+           art.NbreWeb AS nbreWeb,
+           art.DescripcionWeb AS descripcionWeb,
            COALESCE(art.Cantidad, 0) AS stock,
            art.Proveedor AS proveedor,
            art.ProveedorSKU AS proveedorSku,
@@ -13600,10 +13934,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         ]
       );
       const publicacionId = result.insertId;
+      const savedVariantes = [];
       for (const raw of variantes) {
         const articulo = normalizeSku(raw.articulo);
         if (!articulo) continue;
-        await conn.query(
+        const [varResult] = await conn.query(
           `INSERT INTO ${DB_NAME}.tiendanube_publicacion_variantes
              (publicacion_id, articulo, sku, detalle, atributo_1_nombre, atributo_1_valor,
               atributo_2_nombre, atributo_2_valor, atributo_3_nombre, atributo_3_valor,
@@ -13627,6 +13962,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
             String(raw.codigoBarras || '').trim() || null,
           ]
         );
+        savedVariantes.push({ id: varResult.insertId, articulo, sku: normalizeSku(raw.sku || articulo) });
       }
       await insertPublicacionEvento(
         conn,
@@ -13640,8 +13976,16 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         req.user?.id
       );
       await conn.commit();
-      res.status(201).json({ ok: true, id: publicacionId });
+      res.status(201).json({ ok: true, id: publicacionId, variantes: savedVariantes });
     } catch (error) {
+      console.error('[TN_PUBLICACIONES_SYNC_FATAL_ERROR]', {
+        publicacionId: req.params.id,
+        message: error.message || '',
+        status: error.status || null,
+        url: error.url || '',
+        body: error.body || '',
+        stack: error.stack || '',
+      });
       if (conn) {
         try {
           await conn.rollback();
@@ -13656,6 +14000,405 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       });
     } finally {
       if (conn) conn.release();
+    }
+  });
+
+  app.put('/api/ecommerce/publicaciones/:id', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    let conn;
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const body = req.body || {};
+      const articuloPrincipal = normalizeSku(body.articuloPrincipal);
+      const variantes = Array.isArray(body.variantes) ? body.variantes : [];
+      if (!articuloPrincipal) return res.status(400).json({ message: 'articuloPrincipal requerido' });
+      if (!variantes.length) return res.status(400).json({ message: 'Agrega al menos una variante' });
+
+      const tnubeConnection = getConfiguredTnubeConnection();
+      const nombre = String(body.nombre || '').trim() || articuloPrincipal;
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+
+      const [[actual]] = await conn.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ? FOR UPDATE`,
+        [id]
+      );
+      if (!actual) {
+        await conn.rollback();
+        return res.status(404).json({ message: 'Publicacion no encontrada' });
+      }
+      const estadoActual = String(actual.estado || '').toLowerCase();
+      const hasSyncedProduct = Boolean(actual.product_id);
+      const replaceMode = !hasSyncedProduct && ['borrador', 'pendiente'].includes(estadoActual);
+      const addOnlyMode = hasSyncedProduct || ['creado', 'existente'].includes(estadoActual);
+      if (!replaceMode && !addOnlyMode) {
+        await conn.rollback();
+        return res.status(409).json({ message: 'Solo se pueden modificar publicaciones en borrador o sincronizadas.' });
+      }
+      if (addOnlyMode && articuloPrincipal !== normalizeSku(actual.articulo_principal)) {
+        await conn.rollback();
+        return res.status(409).json({ message: 'No se puede cambiar el articulo padre de una publicacion sincronizada.' });
+      }
+      const descripcion = String(body.descripcion || '').trim();
+
+      await conn.query(
+        `UPDATE ${DB_NAME}.articulos
+         SET NbreWeb = ?,
+             DescripcionWeb = ?
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [nombre || null, descripcion || null, articuloPrincipal]
+      );
+
+      let previousVariantsBySku = new Map();
+      let previousVariantRows = [];
+      if (replaceMode) {
+        const [previousVariants] = await conn.query(
+          `SELECT *
+           FROM ${DB_NAME}.tiendanube_publicacion_variantes
+           WHERE publicacion_id = ?`,
+          [id]
+        );
+        previousVariantRows = previousVariants || [];
+        previousVariantsBySku = new Map(
+          previousVariantRows
+            .map((row) => [normalizeSku(row.sku || row.articulo).toUpperCase(), row])
+            .filter(([sku]) => sku)
+        );
+        await conn.query(
+          `UPDATE ${DB_NAME}.tiendanube_publicaciones
+           SET store_id = ?,
+               tienda = ?,
+               articulo_principal = ?,
+               nombre = ?,
+               descripcion = ?,
+               marca = ?,
+               categorias = ?,
+               tags = ?,
+               estado = 'borrador',
+               error_mensaje = NULL
+           WHERE id = ?`,
+          [
+            tnubeConnection.storeId,
+            tnubeConnection.tienda,
+            articuloPrincipal,
+            nombre,
+            descripcion || null,
+            String(body.marca || '').trim() || null,
+            String(body.categorias || '').trim() || null,
+            String(body.tags || '').trim() || null,
+            id,
+          ]
+        );
+      } else {
+        await conn.query(
+          `UPDATE ${DB_NAME}.tiendanube_publicaciones
+           SET nombre = ?,
+               descripcion = ?,
+               marca = ?,
+               categorias = ?,
+               tags = ?,
+               estado = 'pendiente',
+               error_mensaje = NULL
+           WHERE id = ?`,
+          [
+            nombre,
+            descripcion || null,
+            String(body.marca || '').trim() || null,
+            String(body.categorias || '').trim() || null,
+            String(body.tags || '').trim() || null,
+            id,
+          ]
+        );
+      }
+
+      const [existentes] = await conn.query(
+        `SELECT sku, articulo FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ?`,
+        [id]
+      );
+      const existingSkus = new Set(
+        (existentes || [])
+          .map((row) => normalizeSku(row.sku || row.articulo).toUpperCase())
+          .filter(Boolean)
+      );
+      let addedCount = 0;
+      const savedVariantes = [];
+      const incomingSkuKeys = new Set();
+      for (const raw of variantes) {
+        const articulo = normalizeSku(raw.articulo);
+        if (!articulo) continue;
+        const sku = normalizeSku(raw.sku || articulo);
+        const skuKey = sku.toUpperCase();
+        incomingSkuKeys.add(skuKey);
+        if (addOnlyMode && existingSkus.has(skuKey)) continue;
+        const commonVariantValues = [
+          articulo,
+          sku,
+          String(raw.detalle || '').trim() || null,
+          String(raw.atributo1Nombre || '').trim() || null,
+          String(raw.atributo1Valor || '').trim() || null,
+          String(raw.atributo2Nombre || '').trim() || null,
+          String(raw.atributo2Valor || '').trim() || null,
+          String(raw.atributo3Nombre || '').trim() || null,
+          String(raw.atributo3Valor || '').trim() || null,
+          raw.precio === '' || raw.precio == null ? null : Number(raw.precio),
+          raw.precioPromocional === '' || raw.precioPromocional == null ? null : Number(raw.precioPromocional),
+          raw.stock === '' || raw.stock == null ? null : Number(raw.stock),
+          raw.peso === '' || raw.peso == null ? null : Number(raw.peso),
+          String(raw.codigoBarras || '').trim() || null,
+        ];
+        const previousVariant = replaceMode ? previousVariantsBySku.get(skuKey) : null;
+        if (previousVariant?.id) {
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET articulo = ?,
+                 sku = ?,
+                 detalle = ?,
+                 atributo_1_nombre = ?,
+                 atributo_1_valor = ?,
+                 atributo_2_nombre = ?,
+                 atributo_2_valor = ?,
+                 atributo_3_nombre = ?,
+                 atributo_3_valor = ?,
+                 precio = ?,
+                 precio_promocional = ?,
+                 stock = ?,
+                 peso = ?,
+                 codigo_barras = ?,
+                 estado = 'borrador',
+                 error_mensaje = NULL
+             WHERE id = ? AND publicacion_id = ?`,
+            [...commonVariantValues, previousVariant.id, id]
+          );
+          savedVariantes.push({ id: previousVariant.id, articulo, sku });
+          existingSkus.add(skuKey);
+          continue;
+        }
+        const [varResult] = await conn.query(
+          `INSERT INTO ${DB_NAME}.tiendanube_publicacion_variantes
+             (publicacion_id, articulo, sku, detalle, atributo_1_nombre, atributo_1_valor,
+              atributo_2_nombre, atributo_2_valor, atributo_3_nombre, atributo_3_valor,
+              precio, precio_promocional, stock, peso, codigo_barras, estado)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'borrador')`,
+          [
+            id,
+            ...commonVariantValues,
+          ]
+        );
+        existingSkus.add(skuKey);
+        addedCount += 1;
+        savedVariantes.push({ id: varResult.insertId, articulo, sku });
+      }
+
+      if (replaceMode) {
+        const removedVariantIds = previousVariantRows
+          .filter((row) => !incomingSkuKeys.has(normalizeSku(row.sku || row.articulo).toUpperCase()))
+          .map((row) => Number(row.id))
+          .filter(Number.isFinite);
+        if (removedVariantIds.length) {
+          const placeholders = removedVariantIds.map(() => '?').join(',');
+          const [removedImages] = await conn.query(
+            `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+             WHERE publicacion_id = ? AND tipo = 'variante' AND variante_id IN (${placeholders})`,
+            [id, ...removedVariantIds]
+          );
+          await conn.query(
+            `DELETE FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+             WHERE publicacion_id = ? AND tipo = 'variante' AND variante_id IN (${placeholders})`,
+            [id, ...removedVariantIds]
+          );
+          await conn.query(
+            `DELETE FROM ${DB_NAME}.tiendanube_publicacion_variantes
+             WHERE publicacion_id = ? AND id IN (${placeholders})`,
+            [id, ...removedVariantIds]
+          );
+          for (const imageRow of removedImages || []) {
+            await removeManagedTnPublicacionImage(imageRow.archivo_path);
+          }
+        }
+      }
+
+      await insertPublicacionEvento(
+        conn,
+        id,
+        null,
+        addOnlyMode ? 'agregar_variantes_borrador' : 'actualizar_borrador',
+        actual.estado,
+        addOnlyMode ? 'pendiente' : 'borrador',
+        addOnlyMode
+          ? `Publicacion y articulo web actualizados. Variantes nuevas agregadas localmente: ${addedCount}`
+          : 'Publicacion y articulo web actualizados localmente',
+        addOnlyMode ? { addedCount } : null,
+        req.user?.id
+      );
+      await conn.commit();
+      const [allVariantes] = await pool.query(
+        `SELECT id, articulo, sku FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ? ORDER BY id`,
+        [id]
+      );
+      res.json({ ok: true, id, addedCount, variantes: allVariantes || savedVariantes });
+    } catch (error) {
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      const duplicate = error?.code === 'ER_DUP_ENTRY';
+      res.status(duplicate ? 409 : 500).json({
+        message: duplicate ? 'El articulo ya tiene una publicacion para esta tienda' : 'Error al actualizar publicacion',
+        error: error.message,
+      });
+    } finally {
+      if (conn) conn.release();
+    }
+  });
+
+  app.get('/api/ecommerce/publicaciones/:id/imagenes', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const [rows] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+         WHERE publicacion_id = ?
+         ORDER BY tipo, posicion, id`,
+        [id]
+      );
+      res.json({ data: (rows || []).map(mapPublicacionImagenRow) });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar imagenes', error: error.message });
+    }
+  });
+
+  app.post('/api/ecommerce/publicaciones/:id/imagenes', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const posicion = Math.max(1, Math.min(8, Number(req.query.posicion) || 1));
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
+      const [[pub]] = await pool.query(`SELECT id FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ? LIMIT 1`, [id]);
+      if (!pub) return res.status(404).json({ message: 'Publicacion no encontrada' });
+      const upload = await parseSingleMultipartFile(req, 'foto', TN_PUBLICACIONES_IMG_MAX_BYTES);
+      const mime = String(upload.contentType || '').toLowerCase();
+      if (!mime.startsWith('image/')) return res.status(400).json({ message: 'El archivo debe ser una imagen.' });
+      if (!upload.buffer?.length) return res.status(400).json({ message: 'Archivo vacio.' });
+      if (upload.buffer.length > TN_PUBLICACIONES_IMG_MAX_BYTES) {
+        return res.status(400).json({
+          message: `La imagen supera el tamaño máximo permitido (${Math.round(TN_PUBLICACIONES_IMG_MAX_BYTES / 1024 / 1024)} MB).`,
+        });
+      }
+      const [existing] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+         WHERE publicacion_id = ? AND tipo = 'producto' AND posicion = ?`,
+        [id, posicion]
+      );
+      const safeExt = inferImageExtension(mime, upload.fileName);
+      const fileName = `tn-pub-${id}-prod-${posicion}-${Date.now()}${safeExt}`;
+      await fsp.writeFile(path.join(TN_PUBLICACIONES_IMG_DIR, fileName), upload.buffer);
+      await pool.query(
+        `DELETE FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+         WHERE publicacion_id = ? AND tipo = 'producto' AND posicion = ?`,
+        [id, posicion]
+      );
+      for (const row of existing || []) await removeManagedTnPublicacionImage(row.archivo_path);
+      const [result] = await pool.query(
+        `INSERT INTO ${DB_NAME}.tiendanube_publicacion_imagenes
+           (publicacion_id, variante_id, tipo, posicion, archivo_path, archivo_nombre, mime_type, tamanio_bytes, estado)
+         VALUES (?, NULL, 'producto', ?, ?, ?, ?, ?, 'borrador')`,
+        [id, posicion, fileName, upload.fileName || fileName, mime, upload.buffer.length]
+      );
+      const [[row]] = await pool.query(`SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes WHERE id = ?`, [result.insertId]);
+      res.status(201).json({ ok: true, data: mapPublicacionImagenRow(row) });
+    } catch (error) {
+      const msgByCode = {
+        UPLOAD_BOUNDARY_MISSING: 'Upload inválido: falta boundary multipart.',
+        UPLOAD_FILE_MISSING: 'No se recibió ninguna imagen.',
+        UPLOAD_TOO_LARGE: `La imagen supera el tamaño máximo permitido (${Math.round(TN_PUBLICACIONES_IMG_MAX_BYTES / 1024 / 1024)} MB).`,
+      };
+      const statusByCode = {
+        UPLOAD_BOUNDARY_MISSING: 400,
+        UPLOAD_FILE_MISSING: 400,
+        UPLOAD_TOO_LARGE: 413,
+      };
+      res.status(statusByCode[error.code] || 500).json({
+        message: msgByCode[error.code] || 'Error al subir imagen',
+        error: error.message,
+      });
+    }
+  });
+
+  app.post('/api/ecommerce/publicaciones/:id/variantes/:varianteId/imagen', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const varianteId = Number(req.params.varianteId);
+      if (!Number.isFinite(id) || !Number.isFinite(varianteId)) return res.status(400).json({ message: 'id invalido' });
+      const [[variante]] = await pool.query(
+        `SELECT id FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE id = ? AND publicacion_id = ? LIMIT 1`,
+        [varianteId, id]
+      );
+      if (!variante) return res.status(404).json({ message: 'Variante no encontrada' });
+      const upload = await parseSingleMultipartFile(req, 'foto', TN_PUBLICACIONES_IMG_MAX_BYTES);
+      const mime = String(upload.contentType || '').toLowerCase();
+      if (!mime.startsWith('image/')) return res.status(400).json({ message: 'El archivo debe ser una imagen.' });
+      if (!upload.buffer?.length) return res.status(400).json({ message: 'Archivo vacio.' });
+      if (upload.buffer.length > TN_PUBLICACIONES_IMG_MAX_BYTES) {
+        return res.status(400).json({
+          message: `La imagen supera el tamaño máximo permitido (${Math.round(TN_PUBLICACIONES_IMG_MAX_BYTES / 1024 / 1024)} MB).`,
+        });
+      }
+      const [existing] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+         WHERE variante_id = ? AND tipo = 'variante'`,
+        [varianteId]
+      );
+      const safeExt = inferImageExtension(mime, upload.fileName);
+      const fileName = `tn-pub-${id}-var-${varianteId}-${Date.now()}${safeExt}`;
+      await fsp.writeFile(path.join(TN_PUBLICACIONES_IMG_DIR, fileName), upload.buffer);
+      await pool.query(
+        `DELETE FROM ${DB_NAME}.tiendanube_publicacion_imagenes WHERE variante_id = ? AND tipo = 'variante'`,
+        [varianteId]
+      );
+      for (const row of existing || []) await removeManagedTnPublicacionImage(row.archivo_path);
+      const [result] = await pool.query(
+        `INSERT INTO ${DB_NAME}.tiendanube_publicacion_imagenes
+           (publicacion_id, variante_id, tipo, posicion, archivo_path, archivo_nombre, mime_type, tamanio_bytes, estado)
+         VALUES (?, ?, 'variante', ?, ?, ?, ?, ?, 'borrador')`,
+        [id, varianteId, varianteId, fileName, upload.fileName || fileName, mime, upload.buffer.length]
+      );
+      const [[row]] = await pool.query(`SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes WHERE id = ?`, [result.insertId]);
+      res.status(201).json({ ok: true, data: mapPublicacionImagenRow(row) });
+    } catch (error) {
+      const msgByCode = {
+        UPLOAD_BOUNDARY_MISSING: 'Upload inválido: falta boundary multipart.',
+        UPLOAD_FILE_MISSING: 'No se recibió ninguna imagen.',
+        UPLOAD_TOO_LARGE: `La imagen supera el tamaño máximo permitido (${Math.round(TN_PUBLICACIONES_IMG_MAX_BYTES / 1024 / 1024)} MB).`,
+      };
+      const statusByCode = {
+        UPLOAD_BOUNDARY_MISSING: 400,
+        UPLOAD_FILE_MISSING: 400,
+        UPLOAD_TOO_LARGE: 413,
+      };
+      res.status(statusByCode[error.code] || 500).json({
+        message: msgByCode[error.code] || 'Error al subir imagen de variante',
+        error: error.message,
+      });
+    }
+  });
+
+  app.delete('/api/ecommerce/publicaciones/imagenes/:imageId', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const imageId = Number(req.params.imageId);
+      if (!Number.isFinite(imageId)) return res.status(400).json({ message: 'id invalido' });
+      const [[row]] = await pool.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes WHERE id = ? LIMIT 1`,
+        [imageId]
+      );
+      if (!row) return res.status(404).json({ message: 'Imagen no encontrada' });
+      await pool.query(`DELETE FROM ${DB_NAME}.tiendanube_publicacion_imagenes WHERE id = ?`, [imageId]);
+      await removeManagedTnPublicacionImage(row.archivo_path);
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al borrar imagen', error: error.message });
     }
   });
 
@@ -13709,6 +14452,8 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           product = await fetchTnubeProduct(tnubeConnection, productId);
         }
       }
+      const hasUnsyncedVariants = variantes.some((variante) => !variante.variant_id);
+      const shouldRecreateProduct = Boolean(productId && hasUnsyncedVariants);
 
       conn = await pool.getConnection();
       await conn.beginTransaction();
@@ -13736,26 +14481,105 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           [productId, JSON.stringify(payload), id]
         );
       } else {
-        product = product || (await fetchTnubeProduct(tnubeConnection, productId));
-        await conn.query(
-          `UPDATE ${DB_NAME}.tiendanube_publicaciones
-           SET product_id = ?, estado = 'existente', sincronizado_en = NOW()
-           WHERE id = ?`,
-          [productId, id]
-        );
+        const updatePayload = buildTnubeProductUpdatePayload(publicacion);
+        if (shouldRecreateProduct) {
+          console.warn('[TN_PUBLICACIONES_RECREATE_EXISTING_PRODUCT]', {
+            publicacionId: id,
+            oldProductId: productId,
+            message: 'Producto existente con variantes pendientes: se creara uno nuevo completo con las variantes locales.',
+          });
+        } else {
+          product = await tnubeRequest(
+            tnubeConnection.storeId,
+            tnubeConnection.accessToken,
+            tnubeConnection.appName,
+            'PUT',
+            `products/${encodeURIComponent(productId)}`,
+            updatePayload
+          );
+          product = product || (await fetchTnubeProduct(tnubeConnection, productId));
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicaciones
+             SET product_id = ?, estado = 'existente', payload_json = ?, sincronizado_en = NOW()
+             WHERE id = ?`,
+            [productId, JSON.stringify(updatePayload), id]
+          );
+        }
       }
 
-      const remoteVariants = getTnubeVariantRows(product);
+      let remoteVariants = getTnubeVariantRows(product);
+      if (productId) {
+        try {
+          const explicitVariants = await fetchTnubeProductVariants(tnubeConnection, productId);
+          if (explicitVariants.length) remoteVariants = explicitVariants;
+        } catch (error) {
+          console.error('[TN_PUBLICACIONES_FETCH_VARIANTS_ERROR]', {
+            publicacionId: id,
+            productId,
+            message: error.message,
+          });
+        }
+      }
+      const productAttributeNames = getTnubeProductAttributeNames(product);
+      const productAttributeCount = Math.max(
+        getTnubeProductAttributeCount(product),
+        ...remoteVariants.map(getTnubeVariantValueCount)
+      );
       const createdProductVariants = new Map(
         remoteVariants.map((variant) => [normalizeSku(variant?.sku).toUpperCase(), variant]).filter(([sku]) => sku)
       );
+      const [imageRows] = await conn.query(
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_imagenes
+         WHERE publicacion_id = ? AND estado <> 'subida'
+         ORDER BY tipo, posicion, id`,
+        [id]
+      );
+      const productImages = (imageRows || []).filter((row) => row.tipo === 'producto' && row.archivo_path);
+      const variantImages = new Map(
+        (imageRows || [])
+          .filter((row) => row.tipo === 'variante' && row.variante_id && row.archivo_path)
+          .map((row) => [Number(row.variante_id), row])
+      );
       let okCount = 0;
       let errorCount = 0;
+      const variantErrors = [];
+      let recreateFullProduct = shouldRecreateProduct;
+      let recreateReason = shouldRecreateProduct
+        ? 'Producto existente con variantes pendientes: recreacion completa solicitada'
+        : '';
 
-      for (const variante of variantes) {
-        const sku = normalizeSku(variante.sku || variante.articulo);
-        const remote = createdProductVariants.get(sku.toUpperCase());
-        try {
+      if (!recreateFullProduct) {
+        for (const variante of variantes) {
+          const sku = normalizeSku(variante.sku || variante.articulo);
+          const remote = createdProductVariants.get(sku.toUpperCase());
+          try {
+          let syncedVariantId = remote?.id || null;
+          const storedVariantId = variante.variant_id || null;
+          if (!remote?.id && storedVariantId) {
+            const variantImage = variantImages.get(Number(variante.id));
+            if (variantImage) {
+              await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, storedVariantId);
+            }
+            await conn.query(
+              `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+               SET product_id = ?, estado = 'existente', sincronizado_en = NOW(), error_mensaje = NULL
+               WHERE id = ?`,
+              [productId, variante.id]
+            );
+            await insertPublicacionEvento(
+              conn,
+              id,
+              variante.id,
+              'variante_existente',
+              variante.estado,
+              'existente',
+              `Variante ya sincronizada en Tienda Nube: ${sku}`,
+              { productId, variantId: storedVariantId },
+              req.user?.id
+            );
+            okCount += 1;
+            continue;
+          }
           if (remote?.id) {
             await conn.query(
               `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
@@ -13774,19 +14598,65 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
               { productId, variantId: remote.id },
               req.user?.id
             );
+            const variantImage = variantImages.get(Number(variante.id));
+            if (variantImage) await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, remote.id);
             okCount += 1;
             continue;
           }
 
-          const payload = buildTnubeVariantPayload(variante);
-          const created = await tnubeRequest(
-            tnubeConnection.storeId,
-            tnubeConnection.accessToken,
-            tnubeConnection.appName,
-            'POST',
-            `products/${encodeURIComponent(productId)}/variants`,
-            payload
-          );
+          let payload = productState === 'creado'
+            ? buildTnubeVariantPayload(variante)
+            : buildTnubeVariantPayloadForAttributes(variante, productAttributeNames, productAttributeCount);
+          console.log('[TN_PUBLICACIONES_CREATE_VARIANT_PAYLOAD]', {
+            publicacionId: id,
+            productId,
+            sku,
+            productAttributeNames,
+            productAttributeCount,
+            valueCount: Array.isArray(payload.values) ? payload.values.length : 0,
+            payload,
+          });
+          let created = null;
+          let createError = null;
+          const attemptedValueCounts = new Set();
+          const maxValueCount = Math.max(3, productAttributeCount || 0);
+          for (let targetCount = Array.isArray(payload.values) ? payload.values.length : 1; targetCount <= maxValueCount; targetCount += 1) {
+            const attemptPayload = padTnubeVariantPayloadValues(
+              payload,
+              variante,
+              targetCount,
+              !productAttributeNames.length
+            );
+            attemptedValueCounts.add(targetCount);
+            try {
+              created = await tnubeRequest(
+                tnubeConnection.storeId,
+                tnubeConnection.accessToken,
+                tnubeConnection.appName,
+                'POST',
+                `products/${encodeURIComponent(productId)}/variants`,
+                attemptPayload
+              );
+              payload = attemptPayload;
+              createError = null;
+              break;
+            } catch (error) {
+              createError = error;
+              if (!isTnubeWrongVariantValuesCountError(error)) throw error;
+              console.warn('[TN_PUBLICACIONES_CREATE_VARIANT_VALUES_RETRY]', {
+                publicacionId: id,
+                productId,
+                sku,
+                attemptedValueCount: targetCount,
+                message: error.message,
+              });
+            }
+          }
+          if (!created && createError) {
+            createError.message = `${createError.message} | attemptedValueCounts=${Array.from(attemptedValueCounts).join(',')}`;
+            throw createError;
+          }
+          syncedVariantId = created?.id || null;
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
              SET product_id = ?, variant_id = ?, estado = 'creada', payload_json = ?, sincronizado_en = NOW(), error_mensaje = NULL
@@ -13804,9 +14674,39 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
             { productId, variantId: created?.id || null },
             req.user?.id
           );
+          const variantImage = variantImages.get(Number(variante.id));
+          if (variantImage && syncedVariantId) {
+            await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, syncedVariantId);
+          }
           okCount += 1;
-        } catch (error) {
+          } catch (error) {
+          if (isTnubeWrongVariantValuesCountError(error) && publicacion.product_id) {
+            recreateFullProduct = true;
+            recreateReason = error.message || 'Estructura de variantes incompatible';
+            console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_REQUIRED]', {
+              publicacionId: id,
+              oldProductId: productId,
+              sku,
+              message: recreateReason,
+            });
+            break;
+          }
           errorCount += 1;
+          const variantError = {
+            id: variante.id,
+            articulo: variante.articulo || '',
+            sku,
+            estadoAnterior: variante.estado || '',
+            variantId: variante.variant_id || null,
+            message: error.message || 'ErrorAPI',
+            stack: error.stack || '',
+          };
+          variantErrors.push(variantError);
+          console.error('[TN_PUBLICACIONES_SYNC_VARIANTE_ERROR]', {
+            publicacionId: id,
+            productId,
+            ...variantError,
+          });
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
              SET estado = 'error', error_mensaje = ?
@@ -13823,6 +14723,110 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
             error.message || 'ErrorAPI',
             { productId, sku },
             req.user?.id
+          );
+          }
+        }
+      }
+
+      if (recreateFullProduct) {
+        const oldProductId = productId;
+        const recreatePayload = buildTnubeProductPayload(publicacion, variantes);
+        console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_START]', {
+          publicacionId: id,
+          oldProductId,
+          reason: recreateReason,
+          variantCount: variantes.length,
+        });
+        product = await tnubeRequest(
+          tnubeConnection.storeId,
+          tnubeConnection.accessToken,
+          tnubeConnection.appName,
+          'POST',
+          'products',
+          recreatePayload
+        );
+        productId = getTnubeProductId(product);
+        if (!productId) throw new Error('Tienda Nube no devolvio product_id al recrear producto');
+        product = await fetchTnubeProduct(tnubeConnection, productId);
+        let recreatedVariants = getTnubeVariantRows(product);
+        try {
+          const explicitVariants = await fetchTnubeProductVariants(tnubeConnection, productId);
+          if (explicitVariants.length) recreatedVariants = explicitVariants;
+        } catch (error) {
+          console.error('[TN_PUBLICACIONES_FETCH_RECREATED_VARIANTS_ERROR]', {
+            publicacionId: id,
+            productId,
+            message: error.message,
+          });
+        }
+        const recreatedVariantsBySku = new Map(
+          recreatedVariants.map((variant) => [normalizeSku(variant?.sku).toUpperCase(), variant]).filter(([sku]) => sku)
+        );
+        okCount = 0;
+        errorCount = 0;
+        variantErrors.length = 0;
+        await conn.query(
+          `UPDATE ${DB_NAME}.tiendanube_publicaciones
+           SET product_id = ?, estado = 'creado', payload_json = ?, sincronizado_en = NOW(), error_mensaje = NULL
+           WHERE id = ?`,
+          [productId, JSON.stringify(recreatePayload), id]
+        );
+        for (const variante of variantes) {
+          const sku = normalizeSku(variante.sku || variante.articulo);
+          const remote = recreatedVariantsBySku.get(sku.toUpperCase());
+          if (!remote?.id) {
+            errorCount += 1;
+            const variantError = {
+              id: variante.id,
+              articulo: variante.articulo || '',
+              sku,
+              estadoAnterior: variante.estado || '',
+              variantId: null,
+              message: 'Producto recreado, pero Tienda Nube no devolvio la variante creada',
+              stack: '',
+            };
+            variantErrors.push(variantError);
+            await conn.query(
+              `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+               SET estado = 'error', error_mensaje = ?
+               WHERE id = ?`,
+              [variantError.message, variante.id]
+            );
+            continue;
+          }
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET product_id = ?, variant_id = ?, estado = 'creada', sincronizado_en = NOW(), error_mensaje = NULL
+             WHERE id = ?`,
+            [productId, remote.id, variante.id]
+          );
+          const variantImage = variantImages.get(Number(variante.id));
+          if (variantImage) {
+            await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, remote.id);
+          }
+          okCount += 1;
+        }
+        await insertPublicacionEvento(
+          conn,
+          id,
+          null,
+          'recrear_producto',
+          publicacion.estado,
+          errorCount ? 'parcial' : 'creado',
+          `Producto nuevo creado con todas las variantes locales. Producto anterior: ${oldProductId}. Producto nuevo: ${productId}.`,
+          { oldProductId, productId, reason: recreateReason, okCount, errorCount, variantErrors },
+          req.user?.id
+        );
+        productState = 'creado';
+      }
+
+      for (const imageRow of productImages) {
+        try {
+          await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, imageRow);
+        } catch (error) {
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_imagenes SET estado = 'error', error_mensaje = ? WHERE id = ?`,
+            [error.message || 'Error al subir imagen', imageRow.id]
           );
         }
       }
@@ -13842,11 +14846,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         publicacion.estado,
         finalState,
         `Sincronizacion finalizada. OK: ${okCount}. Error: ${errorCount}.`,
-        { productId, okCount, errorCount },
+        { productId, okCount, errorCount, variantErrors },
         req.user?.id
       );
       await conn.commit();
-      res.json({ ok: true, productId, estado: finalState, okCount, errorCount });
+      res.json({ ok: true, productId, estado: finalState, okCount, errorCount, variantErrors });
     } catch (error) {
       if (conn) {
         try {
@@ -13866,7 +14870,13 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       } catch (_updateErr) {
         /* ignore */
       }
-      res.status(500).json({ message: 'Error al sincronizar publicacion', error: error.message });
+      res.status(500).json({
+        message: 'Error al sincronizar publicacion',
+        error: error.message,
+        status: error.status || null,
+        url: error.url || null,
+        body: error.body || null,
+      });
     } finally {
       if (conn) conn.release();
     }

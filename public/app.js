@@ -139,6 +139,9 @@ const rolesTitle = document.getElementById('roles-title');
 const rolesStatus = document.getElementById('roles-status');
 const rolesAdd = document.getElementById('roles-add');
 const rolesSave = document.getElementById('roles-save');
+const promptTnText = document.getElementById('prompt-tn-text');
+const promptTnSave = document.getElementById('prompt-tn-save');
+const promptTnStatus = document.getElementById('prompt-tn-status');
 const usersList = document.getElementById('users-list');
 const usersTitle = document.getElementById('users-title');
 const usersStatus = document.getElementById('users-status');
@@ -363,6 +366,14 @@ let ecommercePublicacionRowsCache = [];
 let ecommercePublicacionCategoriaRows = [];
 let ecommercePublicacionCategoriasLoaded = false;
 let ecommercePublicacionVariantes = [];
+let ecommercePublicacionEditingId = null;
+let ecommercePublicacionVarianteEditingIndex = null;
+let ecommercePublicacionProductImages = [];
+let ecommercePublicacionImageTarget = null;
+let ecommercePublicacionPreviewTarget = null;
+let abmWebContext = 'create';
+let abmCreateWebDraft = { nbreWeb: '', descripcionWeb: '' };
+let abmEditWebDraft = { nbreWeb: '', descripcionWeb: '' };
 let controlOrdenesRows = [];
 let controlOrdenesFiltered = [];
 let controlOrdenesSearchTerm = '';
@@ -1019,9 +1030,28 @@ const ecommercePubArticuloOpen = document.getElementById('ecommerce-pub-articulo
 const ecommercePubArticulosList = document.getElementById('ecommerce-pub-articulos-list');
 const ecommercePubNombre = document.getElementById('ecommerce-pub-nombre');
 const ecommercePubDescripcion = document.getElementById('ecommerce-pub-descripcion');
+const ecommercePubDescripcionEditor = document.getElementById('ecommerce-pub-descripcion-editor');
+const ecommercePubDescripcionPanel = document.getElementById('ecommerce-pub-descripcion-panel');
+const ecommercePubDescripcionExpanded = document.getElementById('ecommerce-pub-descripcion-expanded');
 const ecommercePubMarca = document.getElementById('ecommerce-pub-marca');
 const ecommercePubTags = document.getElementById('ecommerce-pub-tags');
 const ecommercePubCategoria = document.getElementById('ecommerce-pub-categoria');
+const ecommercePubCategoriaPicker = document.getElementById('ecommerce-pub-categoria-picker');
+const ecommercePubCategoriaToggle = document.getElementById('ecommerce-pub-categoria-toggle');
+const ecommercePubCategoriaMenu = document.getElementById('ecommerce-pub-categoria-menu');
+const ecommercePubCategoriaSearch = document.getElementById('ecommerce-pub-categoria-search');
+const ecommercePubCategoriaAll = document.getElementById('ecommerce-pub-categoria-all');
+const ecommercePubCategoriaList = document.getElementById('ecommerce-pub-categoria-list');
+const ecommercePubProductImagesOpen = document.getElementById('ecommerce-pub-product-images-open');
+const ecommercePubImagesOverlay = document.getElementById('ecommerce-pub-images-overlay');
+const ecommercePubImagesClose = document.getElementById('ecommerce-pub-images-close');
+const ecommercePubImagesGrid = document.getElementById('ecommerce-pub-images-grid');
+const ecommercePubImagesStatus = document.getElementById('ecommerce-pub-images-status');
+const ecommercePubImagePreviewOverlay = document.getElementById('ecommerce-pub-image-preview-overlay');
+const ecommercePubImagePreviewClose = document.getElementById('ecommerce-pub-image-preview-close');
+const ecommercePubImagePreviewImg = document.getElementById('ecommerce-pub-image-preview-img');
+const ecommercePubImagePreviewDelete = document.getElementById('ecommerce-pub-image-preview-delete');
+const ecommercePubImageInput = document.getElementById('ecommerce-pub-image-input');
 const ecommercePubVarianteSearch = document.getElementById('ecommerce-pub-variante-search');
 const ecommercePubVarianteOpen = document.getElementById('ecommerce-pub-variante-open');
 const ecommercePubVariantesList = document.getElementById('ecommerce-pub-variantes-list');
@@ -1131,8 +1161,18 @@ const abmCreateGananciaProveedorInput = document.getElementById('abm-create-gana
 const abmCreateOrdenInput = document.getElementById('abm-create-orden');
 const abmCreateCalcOpen = document.getElementById('abm-create-calc-open');
 const abmCreateObservacionesInput = document.getElementById('abm-create-observaciones');
+const abmCreateWebOpen = document.getElementById('abm-create-web-open');
 const abmCreateSave = document.getElementById('abm-create-save');
 const abmCreateStatus = document.getElementById('abm-create-status');
+const abmWebOverlay = document.getElementById('abm-web-overlay');
+const abmWebForm = document.getElementById('abm-web-form');
+const abmWebTitle = document.getElementById('abm-web-title');
+const abmWebClose = document.getElementById('abm-web-close');
+const abmWebCancel = document.getElementById('abm-web-cancel');
+const abmWebNombreInput = document.getElementById('abm-web-nombre');
+const abmWebDescripcionInput = document.getElementById('abm-web-descripcion');
+const abmWebIaBtn = document.getElementById('abm-web-ia');
+const abmWebStatus = document.getElementById('abm-web-status');
 const abmBatchCalcOpen = document.getElementById('abm-batch-calc-open');
 const abmBatchCalcOverlay = document.getElementById('abm-batch-calc-overlay');
 const abmBatchCalcClose = document.getElementById('abm-batch-calc-close');
@@ -1209,6 +1249,7 @@ const abmGastosProveedorInput = document.getElementById('abm-gastos-proveedor');
 const abmGananciaProveedorInput = document.getElementById('abm-ganancia-proveedor');
 const abmOrdenInput = document.getElementById('abm-orden');
 const abmObservacionesInput = document.getElementById('abm-observaciones');
+const abmEditWebOpen = document.getElementById('abm-edit-web-open');
 const abmProveedorLoading = document.getElementById('abm-proveedor-loading');
 const salonDesdeInput = document.getElementById('salon-desde');
 const salonHastaInput = document.getElementById('salon-hasta');
@@ -5334,6 +5375,7 @@ function clearAbmCreateForm() {
   if (abmCreateGastosInput) abmCreateGastosInput.value = '';
   if (abmCreateGananciaInput) abmCreateGananciaInput.value = '';
   if (abmCreateObservacionesInput) abmCreateObservacionesInput.value = '';
+  abmCreateWebDraft = { nbreWeb: '', descripcionWeb: '' };
   if (abmCreatePesosInput) abmCreatePesosInput.checked = true;
   setAbmCreateModo('opcion_pesos');
 }
@@ -5422,6 +5464,65 @@ async function openAbmCalc() {
 
 function closeAbmCalc() {
   if (abmCalcOverlay) abmCalcOverlay.classList.remove('open');
+}
+
+function getAbmWebDraft() {
+  return abmWebContext === 'edit' ? abmEditWebDraft : abmCreateWebDraft;
+}
+
+function setAbmWebDraft(values = {}) {
+  const draft = {
+    nbreWeb: String(values.nbreWeb ?? values.NbreWeb ?? '').slice(0, 255),
+    descripcionWeb: String(values.descripcionWeb ?? values.DescripcionWeb ?? '').slice(0, 450),
+  };
+  if (abmWebContext === 'edit') {
+    abmEditWebDraft = draft;
+  } else {
+    abmCreateWebDraft = draft;
+  }
+}
+
+function openAbmWebModal(context = 'create') {
+  if (!abmWebOverlay) return;
+  abmWebContext = context === 'edit' ? 'edit' : 'create';
+  const draft = getAbmWebDraft();
+  if (abmWebTitle) {
+    abmWebTitle.textContent = abmWebContext === 'edit' ? 'Datos web del articulo' : 'Datos web del nuevo articulo';
+  }
+  if (abmWebNombreInput) abmWebNombreInput.value = draft.nbreWeb || '';
+  if (abmWebDescripcionInput) abmWebDescripcionInput.value = draft.descripcionWeb || '';
+  if (abmWebStatus) abmWebStatus.textContent = '';
+  openOverlay(abmWebOverlay);
+  setTimeout(() => abmWebNombreInput?.focus(), 0);
+}
+
+function closeAbmWebModal() {
+  closeOverlay(abmWebOverlay);
+}
+
+async function generateAbmWebDescriptionWithIa() {
+  if (!abmWebDescripcionInput) return;
+  try {
+    if (abmWebIaBtn) abmWebIaBtn.disabled = true;
+    if (abmWebStatus) abmWebStatus.textContent = 'Generando descripcion...';
+    const payload = {
+      nombreWeb: abmWebNombreInput?.value || '',
+      descripcionWeb: abmWebDescripcionInput?.value || '',
+      articulo: abmWebContext === 'edit' ? abmArticuloInput?.value || abmCurrentArticulo || '' : abmCreateArticuloInput?.value || '',
+      detalle: abmWebContext === 'edit' ? abmDetalleInput?.value || '' : abmCreateDetalleInput?.value || '',
+    };
+    const res = await fetchJSON('/api/ecommerce/publicaciones/descripcion-ia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    abmWebDescripcionInput.value = res.descripcion || '';
+    if (abmWebStatus) abmWebStatus.textContent = 'Descripcion generada. Confirmar para aplicar.';
+  } catch (error) {
+    if (abmWebStatus) abmWebStatus.textContent = error.message || 'No se pudo generar descripcion.';
+  } finally {
+    if (abmWebIaBtn) abmWebIaBtn.disabled = false;
+  }
 }
 
 async function openAbmCreateCalc() {
@@ -5657,6 +5758,10 @@ async function openAbmEdit(articulo) {
     if (abmGastosInput) abmGastosInput.value = row.Gastos ?? row.gastos ?? '';
     if (abmGananciaInput) abmGananciaInput.value = row.Ganancia ?? row.ganancia ?? '';
     if (abmObservacionesInput) abmObservacionesInput.value = '';
+    abmEditWebDraft = {
+      nbreWeb: String(row.NbreWeb ?? row.nbreWeb ?? '').slice(0, 255),
+      descripcionWeb: String(row.DescripcionWeb ?? row.descripcionWeb ?? '').slice(0, 450),
+    };
     if (abmOrdenInput) abmOrdenInput.value = ordenRes.numeroOrden ?? ordenRes.NumeroOrden ?? '';
     if (abmRestaInput) abmRestaInput.checked = false;
 
@@ -7110,7 +7215,10 @@ function setEcommercePrincipalArticulo(row) {
   if (!row) return;
   const value = formatEcommercePubArticuloOption(row);
   if (ecommercePubArticuloSearch) ecommercePubArticuloSearch.value = value;
-  if (ecommercePubDescripcion) ecommercePubDescripcion.value = row.detalle || '';
+  if (ecommercePubNombre) ecommercePubNombre.value = row.nbreWeb || row.NbreWeb || '';
+  if (ecommercePubDescripcion) {
+    ecommercePubDescripcion.value = row.descripcionWeb || row.DescripcionWeb || row.detalle || '';
+  }
 }
 
 function setEcommerceVarianteArticulo(row) {
@@ -7119,17 +7227,33 @@ function setEcommerceVarianteArticulo(row) {
   if (ecommercePubAttrValue && !ecommercePubAttrValue.value) ecommercePubAttrValue.value = row.detalle || row.articulo || '';
 }
 
+function openEcommerceDescripcionEditor() {
+  if (!ecommercePubDescripcionEditor || !ecommercePubDescripcionExpanded) return;
+  ecommercePubDescripcionExpanded.value = ecommercePubDescripcion?.value || '';
+  ecommercePubDescripcionEditor.classList.add('open');
+  setTimeout(() => ecommercePubDescripcionExpanded.focus(), 0);
+}
+
+function closeEcommerceDescripcionEditor() {
+  if (!ecommercePubDescripcionEditor) return;
+  if (ecommercePubDescripcion && ecommercePubDescripcionExpanded) {
+    ecommercePubDescripcion.value = ecommercePubDescripcionExpanded.value;
+  }
+  ecommercePubDescripcionEditor.classList.remove('open');
+}
+
+function syncEcommerceDescripcionFromExpanded() {
+  if (!ecommercePubDescripcion || !ecommercePubDescripcionExpanded) return;
+  ecommercePubDescripcion.value = ecommercePubDescripcionExpanded.value;
+}
+
 async function loadEcommercePubCategorias() {
   if (!ecommercePubCategoria || ecommercePublicacionCategoriasLoaded) return;
   try {
     const res = await fetchJSON('/api/ecommerce/publicaciones/categorias');
     const rows = Array.isArray(res.data) ? res.data : [];
     ecommercePublicacionCategoriaRows = rows;
-    ecommercePubCategoria.innerHTML =
-      '<option value="">Sin categoria</option>' +
-      rows
-        .map((row) => `<option value="${escapeAttr(row.id)}">${escapeAttr(row.label || row.name || row.id)}</option>`)
-        .join('');
+    renderEcommercePubCategoriaOptions(rows);
     ecommercePublicacionCategoriasLoaded = true;
   } catch (error) {
     if (ecommercePubFormStatus) {
@@ -7138,11 +7262,111 @@ async function loadEcommercePubCategorias() {
   }
 }
 
+function renderEcommercePubCategoriaOptions(rows) {
+  if (!ecommercePubCategoriaList) return;
+  ecommercePubCategoriaList.innerHTML = (rows || [])
+    .map((row) => {
+      const label = row.label || row.name || row.id;
+      return `
+        <label class="ecommerce-category-option" title="${escapeAttr(label)}" data-label="${escapeAttr(label)}">
+          <input type="checkbox" class="ecommerce-category-check" value="${escapeAttr(row.id)}" />
+          <span>${escapeAttr(label)}</span>
+        </label>
+      `;
+    })
+    .join('');
+  syncEcommerceCategoriaChecksFromValue();
+  updateEcommerceCategoriaSummary();
+}
+
 function getEcommercePubCategoriaLabel(value) {
-  const id = String(value || '').trim();
-  if (!id) return 'Sin categoria';
-  const row = ecommercePublicacionCategoriaRows.find((item) => String(item.id) === id);
-  return row?.label || row?.name || id;
+  const ids = String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!ids.length) return 'Sin categoria';
+  return ids
+    .map((id) => {
+      const row = ecommercePublicacionCategoriaRows.find((item) => String(item.id) === id);
+      return row?.label || row?.name || id;
+    })
+    .join(', ');
+}
+
+function getSelectedEcommerceCategorias() {
+  return String(ecommercePubCategoria?.value || '').trim();
+}
+
+function getSelectedEcommerceCategoriaIds() {
+  return getSelectedEcommerceCategorias()
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function setSelectedEcommerceCategorias(ids) {
+  const cleanIds = Array.from(new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean)));
+  if (ecommercePubCategoria) ecommercePubCategoria.value = cleanIds.join(',');
+  syncEcommerceCategoriaChecksFromValue();
+  updateEcommerceCategoriaSummary();
+}
+
+function syncEcommerceCategoriaChecksFromValue() {
+  if (!ecommercePubCategoriaList) return;
+  const selected = new Set(getSelectedEcommerceCategoriaIds());
+  ecommercePubCategoriaList.querySelectorAll('.ecommerce-category-check').forEach((checkbox) => {
+    checkbox.checked = selected.has(String(checkbox.value || ''));
+  });
+  if (ecommercePubCategoriaAll) {
+    const checks = Array.from(ecommercePubCategoriaList.querySelectorAll('.ecommerce-category-check'));
+    const selectedCount = checks.filter((checkbox) => checkbox.checked).length;
+    ecommercePubCategoriaAll.checked = checks.length > 0 && selectedCount === checks.length;
+    ecommercePubCategoriaAll.indeterminate = selectedCount > 0 && selectedCount < checks.length;
+  }
+}
+
+function updateEcommerceCategoriaSummary() {
+  if (!ecommercePubCategoriaToggle) return;
+  const ids = getSelectedEcommerceCategoriaIds();
+  if (!ids.length) {
+    ecommercePubCategoriaToggle.textContent = 'Sin categoria';
+    ecommercePubCategoriaToggle.title = 'Sin categoria';
+    return;
+  }
+  const labels = ids.map((id) => {
+    const row = ecommercePublicacionCategoriaRows.find((item) => String(item.id) === id);
+    return row?.label || row?.name || id;
+  });
+  ecommercePubCategoriaToggle.textContent = labels.length === 1 ? labels[0] : `${labels.length} categorias seleccionadas`;
+  ecommercePubCategoriaToggle.title = labels.join(', ');
+}
+
+function filterEcommerceCategoriaOptions(term) {
+  if (!ecommercePubCategoriaList) return;
+  const normalize = (value) =>
+    String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+  const clean = normalize(term);
+  ecommercePubCategoriaList.querySelectorAll('.ecommerce-category-option').forEach((option) => {
+    const label = normalize(option.dataset.label || option.textContent || '');
+    option.style.display = clean && !label.includes(clean) ? 'none' : '';
+  });
+}
+
+function toggleEcommerceCategoriaMenu(forceOpen) {
+  if (!ecommercePubCategoriaPicker) return;
+  const open = typeof forceOpen === 'boolean' ? forceOpen : !ecommercePubCategoriaPicker.classList.contains('open');
+  ecommercePubCategoriaPicker.classList.toggle('open', open);
+  if (open) {
+    if (ecommercePubCategoriaSearch) {
+      ecommercePubCategoriaSearch.value = '';
+      filterEcommerceCategoriaOptions('');
+      requestAnimationFrame(() => ecommercePubCategoriaSearch.focus());
+    }
+  }
 }
 
 function getEcommercePubPickSearchInput() {
@@ -7260,40 +7484,219 @@ function selectEcommercePubPickArticulo(articulo) {
   closeEcommercePubPick();
 }
 
+function getEcommerceImageSrc(image) {
+  return image?.previewUrl || image?.url || '';
+}
+
+function makeStagedImage(file, posicion = 1) {
+  return {
+    file,
+    posicion,
+    previewUrl: URL.createObjectURL(file),
+    archivoNombre: file.name,
+    estado: 'borrador',
+  };
+}
+
+function revokeStagedImage(image) {
+  if (image?.previewUrl) URL.revokeObjectURL(image.previewUrl);
+}
+
+function renderEcommerceProductImageStrip() {
+  if (!ecommercePubProductImagesOpen) return;
+  ecommercePubProductImagesOpen.innerHTML = [1, 2, 3, 4]
+    .map((pos) => {
+      const image = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === pos);
+      const src = getEcommerceImageSrc(image);
+      return `<span class="ecommerce-image-slot small ${src ? '' : 'empty'}">${
+        src ? `<img src="${escapeAttr(src)}" alt="Foto ${pos}">` : ''
+      }</span>`;
+    })
+    .join('');
+}
+
+function renderEcommerceProductImagesGrid() {
+  if (!ecommercePubImagesGrid) return;
+  ecommercePubImagesGrid.innerHTML = Array.from({ length: 8 }, (_, index) => {
+    const pos = index + 1;
+    const image = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === pos);
+    const src = getEcommerceImageSrc(image);
+    return `
+      <button type="button" class="ecommerce-image-slot large ${src ? '' : 'empty'}" data-pos="${pos}">
+        ${src ? `<img src="${escapeAttr(src)}" alt="Foto ${pos}">` : '<span class="ecommerce-image-add">+</span>'}
+        ${src ? `<span class="ecommerce-image-delete" data-pos="${pos}">🗑</span>` : ''}
+      </button>
+    `;
+  }).join('');
+}
+
+function renderEcommerceImages() {
+  renderEcommerceProductImageStrip();
+  renderEcommerceProductImagesGrid();
+}
+
+function openEcommerceImagePreview(src, target = null) {
+  if (!src || !ecommercePubImagePreviewOverlay || !ecommercePubImagePreviewImg) return;
+  ecommercePublicacionPreviewTarget = target;
+  ecommercePubImagePreviewImg.src = src;
+  if (ecommercePubImagePreviewDelete) {
+    ecommercePubImagePreviewDelete.hidden = !target;
+  }
+  openOverlay(ecommercePubImagePreviewOverlay);
+}
+
+async function deleteEcommercePreviewImage() {
+  const target = ecommercePublicacionPreviewTarget;
+  if (!target) return;
+  if (target.type === 'producto') {
+    const pos = Number(target.posicion);
+    const image = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === pos);
+    await deleteEcommerceImage(image);
+    ecommercePublicacionProductImages = ecommercePublicacionProductImages.filter((item) => Number(item.posicion) !== pos);
+    renderEcommerceImages();
+  } else if (target.type === 'variante') {
+    const row = ecommercePublicacionVariantes[target.index];
+    if (row?.image) {
+      await deleteEcommerceImage(row.image);
+      row.image = null;
+      renderEcommercePubVariants();
+    }
+  }
+  ecommercePublicacionPreviewTarget = null;
+  closeOverlay(ecommercePubImagePreviewOverlay);
+}
+
+function openEcommerceImagePicker(target) {
+  if (!ecommercePubImageInput) return;
+  ecommercePublicacionImageTarget = target;
+  ecommercePubImageInput.value = '';
+  ecommercePubImageInput.click();
+}
+
+async function deleteEcommerceImage(image) {
+  if (!image) return;
+  if (image.id) {
+    await fetchJSON(`/api/ecommerce/publicaciones/imagenes/${encodeURIComponent(image.id)}`, { method: 'DELETE' });
+  }
+  revokeStagedImage(image);
+}
+
+async function loadEcommercePublicacionImages(publicacionId) {
+  ecommercePublicacionProductImages.forEach(revokeStagedImage);
+  ecommercePublicacionProductImages = [];
+  ecommercePublicacionVariantes.forEach((row) => {
+    if (row.image) revokeStagedImage(row.image);
+    row.image = null;
+  });
+  if (!publicacionId) {
+    renderEcommerceImages();
+    renderEcommercePubVariants();
+    return;
+  }
+  const res = await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(publicacionId)}/imagenes`);
+  const rows = Array.isArray(res.data) ? res.data : [];
+  ecommercePublicacionProductImages = rows.filter((row) => row.tipo === 'producto');
+  rows
+    .filter((row) => row.tipo === 'variante')
+    .forEach((image) => {
+      const variant = ecommercePublicacionVariantes.find((row) => Number(row.id) === Number(image.varianteId));
+      if (variant) variant.image = image;
+    });
+  renderEcommerceImages();
+  renderEcommercePubVariants();
+}
+
+async function uploadEcommerceImage(publicacionId, image, variantId = null) {
+  if (!image?.file) return null;
+  const formData = new FormData();
+  formData.append('foto', image.file);
+  const url = variantId
+    ? `/api/ecommerce/publicaciones/${encodeURIComponent(publicacionId)}/variantes/${encodeURIComponent(variantId)}/imagen`
+    : `/api/ecommerce/publicaciones/${encodeURIComponent(publicacionId)}/imagenes?posicion=${encodeURIComponent(image.posicion || 1)}`;
+  const res = await fetch(url, { method: 'POST', body: formData });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = payload.error && payload.error !== payload.message ? `: ${payload.error}` : '';
+    throw new Error(`${payload.message || `Error ${res.status}`}${detail}`);
+  }
+  return payload.data || null;
+}
+
+async function uploadPendingEcommerceImages(publicacionId, variantes = []) {
+  if (!publicacionId) return;
+  const variantBySku = new Map((variantes || []).map((row) => [String(row.sku || row.articulo || '').toUpperCase(), row]));
+  for (const image of ecommercePublicacionProductImages.filter((row) => row.file)) {
+    await uploadEcommerceImage(publicacionId, image);
+  }
+  for (const row of ecommercePublicacionVariantes) {
+    if (!row.image?.file) continue;
+    const saved = variantBySku.get(String(row.sku || row.articulo || '').toUpperCase()) || (row.id ? row : null);
+    if (saved?.id) await uploadEcommerceImage(publicacionId, row.image, saved.id);
+  }
+  await loadEcommercePublicacionImages(publicacionId);
+}
+
 function renderEcommercePubVariants() {
   const tbody = ecommercePubVariantsTable?.querySelector('tbody');
   if (!tbody) return;
   tbody.innerHTML = ecommercePublicacionVariantes
     .map(
-      (row, index) => `
-        <tr>
-          <td>${escapeAttr(row.articulo)}</td>
-          <td>${escapeAttr(row.detalle)}</td>
-          <td>${escapeAttr(row.sku)}</td>
-          <td>${escapeAttr(row.atributo1Nombre)}</td>
-          <td>${escapeAttr(row.atributo1Valor)}</td>
-          <td>${formatMoney(row.precio || 0)}</td>
-          <td>${escapeAttr(row.stock ?? '')}</td>
-          <td><button type="button" class="abm-link-btn ecommerce-pub-remove-variante" data-index="${index}">Quitar</button></td>
-        </tr>
-      `
+      (row, index) => {
+        const synced = !!row.variantId || ['creada', 'existente'].includes(String(row.estado || '').toLowerCase());
+        return `
+          <tr>
+            <td>${escapeAttr(row.articulo)}</td>
+            <td>${escapeAttr(row.detalle)}</td>
+            <td>${escapeAttr(row.sku)}</td>
+            <td>${escapeAttr(row.atributo1Nombre)}</td>
+            <td>${escapeAttr(row.atributo1Valor)}</td>
+            <td>${formatMoney(row.precio || 0)}</td>
+            <td>${escapeAttr(row.stock ?? '')}</td>
+            <td>
+              <button type="button" class="ecommerce-variant-image ${getEcommerceImageSrc(row.image) ? '' : 'empty'}" data-index="${index}">
+                ${
+                  getEcommerceImageSrc(row.image)
+                    ? `<img src="${escapeAttr(getEcommerceImageSrc(row.image))}" alt="Foto variante">`
+                    : '+'
+                }
+              </button>
+            </td>
+            <td>
+              ${
+                synced
+                  ? '<span class="ecommerce-pub-variant-locked">Sincronizada</span>'
+                  : `<button type="button" class="abm-link-btn ecommerce-pub-edit-variante" data-index="${index}">Modificar</button>
+                    <button type="button" class="abm-link-btn ecommerce-pub-remove-variante" data-index="${index}">Quitar</button>`
+              }
+            </td>
+          </tr>
+        `;
+      }
     )
     .join('');
 }
 
 function clearEcommercePubForm() {
+  ecommercePublicacionProductImages.forEach(revokeStagedImage);
+  ecommercePublicacionVariantes.forEach((row) => revokeStagedImage(row.image));
   if (ecommercePubArticuloSearch) ecommercePubArticuloSearch.value = '';
   if (ecommercePubNombre) ecommercePubNombre.value = '';
   if (ecommercePubDescripcion) ecommercePubDescripcion.value = '';
   if (ecommercePubMarca) ecommercePubMarca.value = '';
   if (ecommercePubTags) ecommercePubTags.value = '';
-  if (ecommercePubCategoria) ecommercePubCategoria.value = '';
+  setSelectedEcommerceCategorias([]);
   if (ecommercePubVarianteSearch) ecommercePubVarianteSearch.value = '';
   if (ecommercePubAttrName) ecommercePubAttrName.value = 'Color';
   if (ecommercePubAttrValue) ecommercePubAttrValue.value = '';
   ecommercePublicacionVariantes = [];
+  ecommercePublicacionProductImages = [];
+  ecommercePublicacionEditingId = null;
+  ecommercePublicacionVarianteEditingIndex = null;
   renderEcommercePubVariants();
+  renderEcommerceImages();
   if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = '';
+  if (ecommercePubSave) ecommercePubSave.textContent = 'Guardar publicacion';
+  if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Agregar variante';
 }
 
 function addEcommercePubVariantFromInput() {
@@ -7302,24 +7705,55 @@ function addEcommercePubVariantFromInput() {
     if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Selecciona una variante.';
     return;
   }
-  if (ecommercePublicacionVariantes.some((row) => row.articulo === articulo)) {
+  if (
+    ecommercePublicacionVariantes.some(
+      (row, index) => row.articulo === articulo && index !== ecommercePublicacionVarianteEditingIndex
+    )
+  ) {
     if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'La variante ya fue agregada.';
     return;
   }
   const cached = findCachedEcommerceArticulo(articulo);
-  ecommercePublicacionVariantes.push({
+  const previous =
+    ecommercePublicacionVarianteEditingIndex == null
+      ? null
+      : ecommercePublicacionVariantes[ecommercePublicacionVarianteEditingIndex] || null;
+  const variante = {
     articulo,
     sku: articulo,
-    detalle: cached?.detalle || '',
+    detalle: cached?.detalle || previous?.detalle || '',
     atributo1Nombre: String(ecommercePubAttrName?.value || 'Color').trim() || 'Color',
     atributo1Valor: String(ecommercePubAttrValue?.value || cached?.detalle || articulo).trim(),
-    precio: cached?.precio == null ? 0 : Number(cached.precio),
-    stock: cached?.stock == null ? 0 : Number(cached.stock),
-  });
+    precio: cached?.precio == null ? Number(previous?.precio) || 0 : Number(cached.precio),
+    stock: cached?.stock == null ? Number(previous?.stock) || 0 : Number(cached.stock),
+    image: previous?.image || null,
+  };
+  if (ecommercePublicacionVarianteEditingIndex == null) {
+    ecommercePublicacionVariantes.push(variante);
+  } else {
+    ecommercePublicacionVariantes[ecommercePublicacionVarianteEditingIndex] = variante;
+  }
   if (ecommercePubVarianteSearch) ecommercePubVarianteSearch.value = '';
   if (ecommercePubAttrValue) ecommercePubAttrValue.value = '';
+  ecommercePublicacionVarianteEditingIndex = null;
+  if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Agregar variante';
   if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = '';
   renderEcommercePubVariants();
+}
+
+function editEcommercePubVariant(index) {
+  const row = ecommercePublicacionVariantes[index];
+  if (!row) return;
+  ecommercePublicacionVarianteEditingIndex = index;
+  const cached = findCachedEcommerceArticulo(row.articulo);
+  if (ecommercePubVarianteSearch) {
+    ecommercePubVarianteSearch.value = cached ? formatEcommercePubArticuloOption(cached) : row.articulo || '';
+  }
+  if (ecommercePubAttrName) ecommercePubAttrName.value = row.atributo1Nombre || 'Color';
+  if (ecommercePubAttrValue) ecommercePubAttrValue.value = row.atributo1Valor || row.detalle || row.articulo || '';
+  if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Actualizar variante';
+  if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = `Editando variante ${row.articulo || ''}.`;
+  ecommercePubVarianteSearch?.focus();
 }
 
 async function saveEcommercePublicacion() {
@@ -7348,24 +7782,96 @@ async function saveEcommercePublicacion() {
     descripcion: ecommercePubDescripcion?.value || principal?.detalle || '',
     marca: ecommercePubMarca?.value || '',
     tags: ecommercePubTags?.value || '',
-    categorias: ecommercePubCategoria?.value || '',
+    categorias: getSelectedEcommerceCategorias(),
     variantes: ecommercePublicacionVariantes,
   };
   try {
     if (ecommercePubSave) ecommercePubSave.disabled = true;
-    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Guardando publicacion...';
-    const res = await fetchJSON('/api/ecommerce/publicaciones', {
-      method: 'POST',
+    if (ecommercePubFormStatus) {
+      ecommercePubFormStatus.textContent = ecommercePublicacionEditingId
+        ? 'Actualizando publicacion...'
+        : 'Guardando publicacion...';
+    }
+    const url = ecommercePublicacionEditingId
+      ? `/api/ecommerce/publicaciones/${encodeURIComponent(ecommercePublicacionEditingId)}`
+      : '/api/ecommerce/publicaciones';
+    const res = await fetchJSON(url, {
+      method: ecommercePublicacionEditingId ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = `Publicacion #${res.id} guardada.`;
+    if (ecommercePubFormStatus) {
+      ecommercePubFormStatus.textContent = `Publicacion #${res.id || ecommercePublicacionEditingId} guardada.`;
+    }
+    await uploadPendingEcommerceImages(res.id || ecommercePublicacionEditingId, res.variantes || []);
     clearEcommercePubForm();
     await loadEcommercePublicaciones(true);
   } catch (error) {
     if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = error.message || 'No se pudo guardar.';
   } finally {
     if (ecommercePubSave) ecommercePubSave.disabled = false;
+  }
+}
+
+async function editEcommercePublicacion(id) {
+  if (!id) return;
+  try {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = `Cargando publicacion #${id}...`;
+    const res = await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}`);
+    const pub = res.data || {};
+    const estado = String(pub.estado || '').toLowerCase();
+    if (!['borrador', 'pendiente', 'creado', 'existente'].includes(estado)) {
+      if (ecommercePubFormStatus) {
+        ecommercePubFormStatus.textContent = 'Solo se pueden modificar publicaciones en borrador o sincronizadas.';
+      }
+      return;
+    }
+    ecommercePublicacionEditingId = pub.id || id;
+    if (ecommercePubArticuloSearch) {
+      const cached = findCachedEcommerceArticulo(pub.articuloPrincipal);
+      ecommercePubArticuloSearch.value = cached
+        ? formatEcommercePubArticuloOption(cached)
+        : String(pub.articuloPrincipal || '');
+    }
+    if (ecommercePubNombre) ecommercePubNombre.value = pub.nombre || '';
+    if (ecommercePubDescripcion) ecommercePubDescripcion.value = pub.descripcion || '';
+    if (ecommercePubMarca) ecommercePubMarca.value = pub.marca || '';
+    if (ecommercePubTags) ecommercePubTags.value = pub.tags || '';
+    setSelectedEcommerceCategorias(String(pub.categorias || '').split(','));
+    ecommercePublicacionVarianteEditingIndex = null;
+    ecommercePublicacionVariantes = (Array.isArray(res.variantes) ? res.variantes : []).map((row) => ({
+      id: row.id,
+      articulo: row.articulo,
+      sku: row.sku || row.articulo,
+      detalle: row.detalle || '',
+      estado: row.estado || '',
+      variantId: row.variantId || '',
+      productId: row.productId || '',
+      atributo1Nombre: row.atributo1Nombre || 'Color',
+      atributo1Valor: row.atributo1Valor || row.detalle || row.articulo,
+      atributo2Nombre: row.atributo2Nombre || '',
+      atributo2Valor: row.atributo2Valor || '',
+      atributo3Nombre: row.atributo3Nombre || '',
+      atributo3Valor: row.atributo3Valor || '',
+      precio: row.precio == null ? 0 : Number(row.precio),
+      precioPromocional: row.precioPromocional,
+      stock: row.stock == null ? 0 : Number(row.stock),
+      peso: row.peso,
+      codigoBarras: row.codigoBarras || '',
+      image: null,
+    }));
+    await loadEcommercePublicacionImages(ecommercePublicacionEditingId);
+    renderEcommercePubVariants();
+    if (ecommercePubSave) ecommercePubSave.textContent = 'Actualizar publicacion';
+    if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Agregar variante';
+    if (ecommercePubFormStatus) {
+      ecommercePubFormStatus.textContent = pub.productId || ['creado', 'existente'].includes(estado)
+        ? `Editando publicacion #${ecommercePublicacionEditingId}. En sincronizadas solo se agregan variantes nuevas.`
+        : `Editando publicacion #${ecommercePublicacionEditingId}.`;
+    }
+    ecommercePubArticuloSearch?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (error) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = error.message || 'No se pudo cargar publicacion.';
   }
 }
 
@@ -7376,7 +7882,7 @@ function renderEcommercePublicacionesFallback(rows) {
     .map(
       (row) => `
         <tr>
-          <td>${escapeAttr(row.id)}</td>
+          <td>${renderEcommercePublicacionId(row)}</td>
           <td>${escapeAttr(row.articuloPrincipal)}</td>
           <td>${escapeAttr(row.nombre)}</td>
           <td>${escapeAttr(row.estado)}</td>
@@ -7385,6 +7891,7 @@ function renderEcommercePublicacionesFallback(rows) {
           <td>${escapeAttr(formatDateTime(row.actualizadoEn || ''))}</td>
           <td>
             <button type="button" class="abm-link-btn ecommerce-pub-detail" data-id="${escapeAttr(row.id)}">Ver</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-edit" data-id="${escapeAttr(row.id)}">Modificar</button>
             <button type="button" class="abm-link-btn ecommerce-pub-sync" data-id="${escapeAttr(row.id)}">Sincro</button>
             <button type="button" class="abm-link-btn ecommerce-pub-delete" data-id="${escapeAttr(row.id)}">Quitar</button>
           </td>
@@ -7405,6 +7912,20 @@ function filterEcommercePublicacionesRows(rows) {
   });
 }
 
+function getEcommercePublicacionEstadoClass(estado) {
+  const value = String(estado || '').toLowerCase();
+  if (value === 'creado' || value === 'existente') return 'synced';
+  if (value === 'error' || value === 'parcial') return 'error';
+  return 'draft';
+}
+
+function renderEcommercePublicacionId(row) {
+  const stateClass = getEcommercePublicacionEstadoClass(row?.estado);
+  return `<span class="ecommerce-pub-id-state"><span class="ecommerce-pub-state-dot ${stateClass}"></span>${escapeAttr(
+    row?.id ?? ''
+  )}</span>`;
+}
+
 function renderEcommercePublicacionesRows(rows) {
   const filteredRows = filterEcommercePublicacionesRows(rows);
   if (ecommercePublicacionesTable) {
@@ -7415,7 +7936,7 @@ function renderEcommercePublicacionesRows(rows) {
     ecommercePublicacionesTable = new DataTable('#ecommerce-pub-table', {
       data: filteredRows,
       columns: [
-        { data: 'id' },
+        { data: null, render: (row) => renderEcommercePublicacionId(row) },
         { data: 'articuloPrincipal' },
         { data: 'nombre' },
         { data: 'estado' },
@@ -7430,6 +7951,7 @@ function renderEcommercePublicacionesRows(rows) {
           orderable: false,
           render: (id, _type, row) =>
             `<button type="button" class="abm-link-btn ecommerce-pub-detail" data-id="${escapeAttr(id)}">Ver</button>
+            <button type="button" class="abm-link-btn ecommerce-pub-edit" data-id="${escapeAttr(id)}">Modificar</button>
             <button type="button" class="abm-link-btn ecommerce-pub-sync" data-id="${escapeAttr(id)}">${
               row.estado === 'sincronizando' ? 'Procesando' : 'Sincro'
             }</button>
@@ -7504,6 +8026,7 @@ async function openEcommercePublicacionDetail(id) {
               <td>${escapeAttr(row.stock ?? '')}</td>
               <td>${escapeAttr(row.estado)}</td>
               <td>${escapeAttr(row.variantId || '-')}</td>
+              <td>${escapeAttr(row.errorMensaje || '-')}</td>
             </tr>
           `
         )
@@ -7523,14 +8046,30 @@ async function syncEcommercePublicacion(id) {
   if (!id) return;
   try {
     if (ecommercePubStatus) ecommercePubStatus.textContent = `Sincronizando publicacion #${id}...`;
-    await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}/sync`, {
+    const res = await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
+    console.log('[TN sync response]', res);
+    if (Array.isArray(res.variantErrors) && res.variantErrors.length) {
+      console.error('[TN sync variant errors]', res.variantErrors);
+    }
     ecommercePublicacionesLoaded = false;
     await loadEcommercePublicaciones(true);
-    if (ecommercePubStatus) ecommercePubStatus.textContent = `Publicacion #${id} sincronizada.`;
+    if (ecommercePubStatus) {
+      ecommercePubStatus.textContent = res.errorCount
+        ? `Publicacion #${id} sincronizada con errores. Revisar consola.`
+        : `Publicacion #${id} sincronizada.`;
+    }
   } catch (error) {
+    console.error('[TN sync request error]', {
+      id,
+      status: error.status || null,
+      message: error.message || '',
+      payload: error.payload || null,
+      url: error.url || null,
+      stack: error.stack || '',
+    });
     ecommercePublicacionesLoaded = false;
     await loadEcommercePublicaciones(true);
     if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'No se pudo sincronizar.';
@@ -7602,9 +8141,23 @@ function initEcommercePublicaciones() {
       queueSearch(ecommercePubArticuloSearch.value);
       const articulo = getArticuloFromInput(ecommercePubArticuloSearch.value);
       const cached = findCachedEcommerceArticulo(articulo);
-      if (cached && ecommercePubDescripcion) ecommercePubDescripcion.value = cached.detalle || '';
+      if (cached) setEcommercePrincipalArticulo(cached);
     });
   }
+  if (ecommercePubDescripcion) {
+    ecommercePubDescripcion.addEventListener('focus', openEcommerceDescripcionEditor);
+  }
+  if (ecommercePubDescripcionExpanded) {
+    ecommercePubDescripcionExpanded.addEventListener('input', syncEcommerceDescripcionFromExpanded);
+  }
+  document.addEventListener('click', (event) => {
+    if (
+      ecommercePubDescripcionEditor?.classList.contains('open') &&
+      !ecommercePubDescripcionEditor.contains(event.target)
+    ) {
+      closeEcommerceDescripcionEditor();
+    }
+  });
   if (ecommercePubArticuloOpen) ecommercePubArticuloOpen.addEventListener('click', () => openEcommercePubPick('principal'));
   if (ecommercePubVarianteSearch) {
     ecommercePubVarianteSearch.addEventListener('input', () => {
@@ -7618,6 +8171,93 @@ function initEcommercePublicaciones() {
   if (ecommercePubAddVariante) ecommercePubAddVariante.addEventListener('click', addEcommercePubVariantFromInput);
   if (ecommercePubSave) ecommercePubSave.addEventListener('click', saveEcommercePublicacion);
   if (ecommercePubClear) ecommercePubClear.addEventListener('click', clearEcommercePubForm);
+  if (ecommercePubProductImagesOpen) {
+    ecommercePubProductImagesOpen.addEventListener('click', () => {
+      renderEcommerceImages();
+      openOverlay(ecommercePubImagesOverlay);
+    });
+  }
+  if (ecommercePubImagesClose) ecommercePubImagesClose.addEventListener('click', () => closeOverlay(ecommercePubImagesOverlay));
+  if (ecommercePubImagesOverlay) {
+    ecommercePubImagesOverlay.addEventListener('click', (event) => {
+      if (event.target === ecommercePubImagesOverlay) closeOverlay(ecommercePubImagesOverlay);
+    });
+  }
+  if (ecommercePubImagePreviewClose) {
+    ecommercePubImagePreviewClose.addEventListener('click', () => {
+      ecommercePublicacionPreviewTarget = null;
+      closeOverlay(ecommercePubImagePreviewOverlay);
+    });
+  }
+  if (ecommercePubImagePreviewDelete) {
+    ecommercePubImagePreviewDelete.addEventListener('click', async () => {
+      try {
+        await deleteEcommercePreviewImage();
+      } catch (error) {
+        if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = error.message || 'No se pudo borrar la foto.';
+      }
+    });
+  }
+  if (ecommercePubImagePreviewOverlay) {
+    ecommercePubImagePreviewOverlay.addEventListener('click', (event) => {
+      if (event.target === ecommercePubImagePreviewOverlay) {
+        ecommercePublicacionPreviewTarget = null;
+        closeOverlay(ecommercePubImagePreviewOverlay);
+      }
+    });
+  }
+  if (ecommercePubImagesGrid) {
+    ecommercePubImagesGrid.addEventListener('click', async (event) => {
+      const deleteBtn = event.target.closest('.ecommerce-image-delete');
+      if (deleteBtn) {
+        event.stopPropagation();
+        const pos = Number(deleteBtn.dataset.pos);
+        const image = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === pos);
+        try {
+          await deleteEcommerceImage(image);
+          ecommercePublicacionProductImages = ecommercePublicacionProductImages.filter((item) => Number(item.posicion) !== pos);
+          renderEcommerceImages();
+        } catch (error) {
+          if (ecommercePubImagesStatus) ecommercePubImagesStatus.textContent = error.message || 'No se pudo borrar imagen.';
+        }
+        return;
+      }
+      const slot = event.target.closest('.ecommerce-image-slot');
+      if (!slot) return;
+      const pos = Number(slot.dataset.pos);
+      const image = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === pos);
+      const src = getEcommerceImageSrc(image);
+      if (src) {
+        openEcommerceImagePreview(src, { type: 'producto', posicion: pos });
+      } else {
+        openEcommerceImagePicker({ type: 'producto', posicion: pos });
+      }
+    });
+  }
+  if (ecommercePubImageInput) {
+    ecommercePubImageInput.addEventListener('change', async () => {
+      const file = ecommercePubImageInput.files?.[0];
+      const target = ecommercePublicacionImageTarget;
+      if (!file || !target) return;
+      if (target.type === 'producto') {
+        const existing = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === Number(target.posicion));
+        if (existing) await deleteEcommerceImage(existing).catch(() => {});
+        ecommercePublicacionProductImages = ecommercePublicacionProductImages.filter(
+          (item) => Number(item.posicion) !== Number(target.posicion)
+        );
+        ecommercePublicacionProductImages.push(makeStagedImage(file, target.posicion));
+        ecommercePublicacionProductImages.sort((a, b) => Number(a.posicion) - Number(b.posicion));
+        renderEcommerceImages();
+      } else if (target.type === 'variante') {
+        const row = ecommercePublicacionVariantes[target.index];
+        if (row) {
+          if (row.image) await deleteEcommerceImage(row.image).catch(() => {});
+          row.image = makeStagedImage(file, 1);
+          renderEcommercePubVariants();
+        }
+      }
+    });
+  }
   if (ecommercePubRefresh) {
     ecommercePubRefresh.addEventListener('click', () => {
       ecommercePublicacionesLoaded = false;
@@ -7625,6 +8265,35 @@ function initEcommercePublicaciones() {
     });
   }
   if (ecommercePubSyncAll) ecommercePubSyncAll.addEventListener('click', syncAllEcommercePublicaciones);
+  if (ecommercePubCategoriaToggle) {
+    ecommercePubCategoriaToggle.addEventListener('click', () => toggleEcommerceCategoriaMenu());
+  }
+  if (ecommercePubCategoriaSearch) {
+    ecommercePubCategoriaSearch.addEventListener('input', () => filterEcommerceCategoriaOptions(ecommercePubCategoriaSearch.value));
+  }
+  if (ecommercePubCategoriaAll) {
+    ecommercePubCategoriaAll.addEventListener('change', () => {
+      const allIds = ecommercePubCategoriaAll.checked
+        ? ecommercePublicacionCategoriaRows.map((row) => String(row.id)).filter(Boolean)
+        : [];
+      setSelectedEcommerceCategorias(allIds);
+    });
+  }
+  if (ecommercePubCategoriaList) {
+    ecommercePubCategoriaList.addEventListener('change', (event) => {
+      const checkbox = event.target.closest?.('.ecommerce-category-check');
+      if (!checkbox) return;
+      const selected = Array.from(ecommercePubCategoriaList.querySelectorAll('.ecommerce-category-check:checked')).map(
+        (item) => item.value
+      );
+      setSelectedEcommerceCategorias(selected);
+    });
+  }
+  document.addEventListener('click', (event) => {
+    if (!ecommercePubCategoriaPicker?.contains(event.target)) {
+      toggleEcommerceCategoriaMenu(false);
+    }
+  });
   if (ecommercePubEstadoFilter) {
     ecommercePubEstadoFilter.addEventListener('change', () => {
       const filteredRows = renderEcommercePublicacionesRows(ecommercePublicacionRowsCache);
@@ -7637,13 +8306,34 @@ function initEcommercePublicaciones() {
   }
   if (ecommercePubVariantsTable) {
     ecommercePubVariantsTable.addEventListener('click', (event) => {
+      const imageBtn = event.target.closest('.ecommerce-variant-image');
+      if (imageBtn) {
+        const index = Number(imageBtn.dataset.index);
+        const row = ecommercePublicacionVariantes[index];
+        const src = getEcommerceImageSrc(row?.image);
+        if (src) {
+          openEcommerceImagePreview(src, { type: 'variante', index });
+        } else if (Number.isFinite(index)) {
+          openEcommerceImagePicker({ type: 'variante', index });
+        }
+        return;
+      }
       const btn = event.target.closest('.ecommerce-pub-remove-variante');
       if (!btn) return;
       const index = Number(btn.dataset.index);
       if (Number.isFinite(index)) {
         ecommercePublicacionVariantes.splice(index, 1);
+        ecommercePublicacionVarianteEditingIndex = null;
+        if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Agregar variante';
         renderEcommercePubVariants();
       }
+      return;
+    });
+    ecommercePubVariantsTable.addEventListener('click', (event) => {
+      const btn = event.target.closest('.ecommerce-pub-edit-variante');
+      if (!btn) return;
+      const index = Number(btn.dataset.index);
+      if (Number.isFinite(index)) editEcommercePubVariant(index);
     });
   }
   if (ecommercePubTableEl) {
@@ -7656,6 +8346,11 @@ function initEcommercePublicaciones() {
       const deleteBtn = event.target.closest('.ecommerce-pub-delete');
       if (deleteBtn) {
         deleteEcommercePublicacion(deleteBtn.dataset.id);
+        return;
+      }
+      const editBtn = event.target.closest('.ecommerce-pub-edit');
+      if (editBtn) {
+        editEcommercePublicacion(editBtn.dataset.id);
         return;
       }
       const btn = event.target.closest('.ecommerce-pub-sync');
@@ -8570,6 +9265,30 @@ function initAbm() {
   if (abmCreateBtn) abmCreateBtn.addEventListener('click', openAbmCreate);
   if (abmCreateClose) abmCreateClose.addEventListener('click', closeAbmCreate);
   if (abmCreateCancel) abmCreateCancel.addEventListener('click', closeAbmCreate);
+  if (abmCreateWebOpen) abmCreateWebOpen.addEventListener('click', () => openAbmWebModal('create'));
+  if (abmEditWebOpen) abmEditWebOpen.addEventListener('click', () => openAbmWebModal('edit'));
+  if (abmWebClose) abmWebClose.addEventListener('click', closeAbmWebModal);
+  if (abmWebCancel) abmWebCancel.addEventListener('click', closeAbmWebModal);
+  if (abmWebOverlay) {
+    abmWebOverlay.addEventListener('click', (e) => {
+      if (e.target === abmWebOverlay) closeAbmWebModal();
+    });
+  }
+  if (abmWebIaBtn) {
+    abmWebIaBtn.addEventListener('click', generateAbmWebDescriptionWithIa);
+  }
+  if (abmWebForm) {
+    abmWebForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      setAbmWebDraft({
+        nbreWeb: abmWebNombreInput?.value || '',
+        descripcionWeb: abmWebDescripcionInput?.value || '',
+      });
+      if (abmWebContext === 'edit' && abmEditStatus) abmEditStatus.textContent = 'Datos web cargados.';
+      if (abmWebContext === 'create' && abmCreateStatus) abmCreateStatus.textContent = 'Datos web cargados.';
+      closeAbmWebModal();
+    });
+  }
   if (abmCreateProveedorSelect) {
     abmCreateProveedorSelect.addEventListener('change', (e) => {
       loadCreateProveedorMeta(e.target.value);
@@ -8614,6 +9333,8 @@ function initAbm() {
         ganancia: Number(abmCreateGananciaInput?.value) || 0,
         proveedor: abmCreateProveedorSelect?.value || '',
         observaciones: abmCreateObservacionesInput?.value || '',
+        nbreWeb: abmCreateWebDraft.nbreWeb || '',
+        descripcionWeb: abmCreateWebDraft.descripcionWeb || '',
         ordenCompra: Number(abmCreateOrdenInput?.value) || 0,
         opcion,
         paisProveedor: abmCreatePaisInput?.value || '',
@@ -8837,6 +9558,8 @@ function initAbm() {
         ganancia: Number(abmGananciaInput?.value) || 0,
         proveedor: abmProveedorSelect?.value || '',
         observaciones: abmObservacionesInput?.value || '',
+        nbreWeb: abmEditWebDraft.nbreWeb || '',
+        descripcionWeb: abmEditWebDraft.descripcionWeb || '',
         ordenCompra: Number(abmOrdenInput?.value) || 0,
         opcion,
         paisProveedor: abmPaisInput?.value || '',
@@ -9047,7 +9770,11 @@ async function fetchJSON(url, options = {}) {
       (data && data.error) ||
       (typeof data === 'string' && data) ||
       `Error ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.payload = data;
+    error.url = url;
+    throw error;
   }
   return data;
 }
@@ -16224,6 +16951,7 @@ let rolesOptions = [];
 let vendedorasOptions = [];
 let usersSearchTerm = '';
 let usersPage = 1;
+let promptTnLoaded = false;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
 const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
@@ -16502,6 +17230,38 @@ async function initRolesModule() {
     });
 }
 
+async function loadPromptTn(force = false) {
+  if (!promptTnText || (!force && promptTnLoaded)) return;
+  try {
+    if (promptTnStatus) promptTnStatus.textContent = 'Cargando prompt...';
+    const res = await fetchJSON('/api/config/tiendanube-prompt');
+    promptTnText.value = res.data?.prompt || '';
+    promptTnLoaded = true;
+    if (promptTnStatus) promptTnStatus.textContent = '';
+  } catch (error) {
+    if (promptTnStatus) promptTnStatus.textContent = error.message || 'No se pudo cargar prompt TN.';
+  }
+}
+
+async function savePromptTn() {
+  if (!promptTnText) return;
+  try {
+    if (promptTnSave) promptTnSave.disabled = true;
+    if (promptTnStatus) promptTnStatus.textContent = 'Guardando prompt...';
+    await fetchJSON('/api/config/tiendanube-prompt', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: promptTnText.value || '' }),
+    });
+    promptTnLoaded = true;
+    if (promptTnStatus) promptTnStatus.textContent = 'Prompt TN guardado.';
+  } catch (error) {
+    if (promptTnStatus) promptTnStatus.textContent = error.message || 'No se pudo guardar prompt TN.';
+  } finally {
+    if (promptTnSave) promptTnSave.disabled = false;
+  }
+}
+
 function initConfigTabs() {
   const tabs = document.querySelectorAll('#config-tabs .tab');
   const panels = document.querySelectorAll('.tab-panel');
@@ -16514,8 +17274,10 @@ function initConfigTabs() {
       const target = tab.dataset.tab;
       const panel = document.getElementById(`tab-${target}`);
       if (panel) panel.classList.add('active');
+      if (target === 'prompt-tn') loadPromptTn();
     });
   });
+  if (promptTnSave) promptTnSave.addEventListener('click', savePromptTn);
 }
 
 async function loadUsers() {

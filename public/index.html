@@ -2211,21 +2211,38 @@
           </label>
           <label>
             <span>Descripcion</span>
-            <input type="text" id="ecommerce-pub-descripcion" placeholder="Descripcion breve" />
+            <div class="ecommerce-description-editor" id="ecommerce-pub-descripcion-editor">
+              <textarea id="ecommerce-pub-descripcion" rows="1" placeholder="Descripcion breve"></textarea>
+              <div class="ecommerce-description-panel" id="ecommerce-pub-descripcion-panel">
+                <textarea id="ecommerce-pub-descripcion-expanded" rows="8" placeholder="Escribi la descripcion como se vera en la tienda"></textarea>
+              </div>
+            </div>
           </label>
-          <label>
-            <span>Marca</span>
-            <input type="text" id="ecommerce-pub-marca" placeholder="Marca" />
-          </label>
-          <label>
-            <span>Tags</span>
-            <input type="text" id="ecommerce-pub-tags" placeholder="tag1, tag2" />
+          <label class="ecommerce-product-images-field">
+            <span>Fotos articulo</span>
+            <button type="button" id="ecommerce-pub-product-images-open" class="ecommerce-image-strip">
+              <span class="ecommerce-image-slot small empty"></span>
+              <span class="ecommerce-image-slot small empty"></span>
+              <span class="ecommerce-image-slot small empty"></span>
+              <span class="ecommerce-image-slot small empty"></span>
+            </button>
           </label>
           <label>
             <span>Categoria</span>
-            <select id="ecommerce-pub-categoria">
-              <option value="">Sin categoria</option>
-            </select>
+            <div class="ecommerce-category-picker" id="ecommerce-pub-categoria-picker">
+              <button id="ecommerce-pub-categoria-toggle" class="ecommerce-category-toggle" type="button">
+                Sin categoria
+              </button>
+              <input type="hidden" id="ecommerce-pub-categoria" />
+              <div class="ecommerce-category-menu" id="ecommerce-pub-categoria-menu">
+                <input type="search" id="ecommerce-pub-categoria-search" placeholder="Buscar" />
+                <label class="ecommerce-category-option ecommerce-category-option-all">
+                  <input type="checkbox" id="ecommerce-pub-categoria-all" />
+                  <span>Todas</span>
+                </label>
+                <div id="ecommerce-pub-categoria-list" class="ecommerce-category-list"></div>
+              </div>
+            </div>
           </label>
         </div>
 
@@ -2260,6 +2277,7 @@
                 <th>Valor</th>
                 <th>Precio</th>
                 <th>Stock</th>
+                <th>Foto</th>
                 <th></th>
               </tr>
             </thead>
@@ -2322,6 +2340,36 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="ecommerce-pub-images-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Fotos del articulo</h3>
+        <button id="ecommerce-pub-images-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div id="ecommerce-pub-images-grid" class="ecommerce-images-grid"></div>
+        <p class="status" id="ecommerce-pub-images-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="ecommerce-pub-image-preview-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Imagen</h3>
+        <button id="ecommerce-pub-image-preview-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="ecommerce-image-preview-frame">
+          <img id="ecommerce-pub-image-preview-img" class="ecommerce-image-preview" alt="Imagen publicacion" />
+          <button id="ecommerce-pub-image-preview-delete" type="button" title="Eliminar foto">&#128465;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="ecommerce-pub-image-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+
   <div class="modal-overlay" id="ecommerce-pub-detail-overlay">
     <div class="modal modal-wide">
       <div class="modal-header">
@@ -2343,6 +2391,7 @@
                 <th>Stock</th>
                 <th>Estado</th>
                 <th>Variant ID</th>
+                <th>Error</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -3207,6 +3256,7 @@
         <button class="tab active" data-tab="roles">Roles</button>
         <button class="tab" data-tab="usuarios">Usuarios</button>
         <button class="tab" data-tab="perfiles">Perfiles</button>
+        <button class="tab" data-tab="prompt-tn">Prompt TN</button>
       </div>
       <div class="tab-panel active" id="tab-roles">
         <div class="roles-layout">
@@ -3321,6 +3371,27 @@
       </div>
       <div class="tab-panel" id="tab-perfiles">
         <p class="status">Proximamente: perfiles y grupos.</p>
+      </div>
+      <div class="tab-panel" id="tab-prompt-tn">
+        <div class="prompt-tn-layout">
+          <div class="roles-list">
+            <div class="roles-header">
+              <h3>Prompt TN</h3>
+            </div>
+            <button type="button" class="role-item active">Descripcion IA</button>
+          </div>
+          <div class="roles-perms">
+            <div class="roles-header">
+              <h3>Prompt Tienda Nube</h3>
+              <button type="button" id="prompt-tn-save">Guardar</button>
+            </div>
+            <label class="prompt-tn-editor">
+              <span>Prompt para generar descripcion de publicaciones</span>
+              <textarea id="prompt-tn-text" rows="14" placeholder="Escribi el prompt que se usara para generar textos de Tienda Nube"></textarea>
+            </label>
+            <p class="status" id="prompt-tn-status"></p>
+          </div>
+        </div>
       </div>
     </article>
   </section>
@@ -3631,6 +3702,10 @@
             Observaciones
             <textarea id="abm-create-observaciones" rows="3"></textarea>
           </label>
+          <div class="abm-span-2 abm-web-row">
+            <button type="button" id="abm-create-web-open" class="abm-web-btn">Datos web</button>
+            <span>Nombre y descripcion para tienda</span>
+          </div>
         </div>
         <div class="abm-form-actions">
           <button type="submit" id="abm-create-save">Guardar</button>
@@ -3723,12 +3798,45 @@
               <span>Observaciones</span>
               <textarea id="abm-observaciones" rows="4"></textarea>
             </label>
+            <div class="abm-span-2 abm-web-row">
+              <button type="button" id="abm-edit-web-open" class="abm-web-btn">Datos web</button>
+              <span>Nombre y descripcion para tienda</span>
+            </div>
           </div>
           <div class="abm-form-actions">
             <button type="submit" id="abm-edit-save">Guardar</button>
             <button type="button" id="abm-edit-cancel">Cancelar</button>
           </div>
           <p class="status" id="abm-edit-status"></p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="abm-web-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="abm-web-title">Datos web del articulo</h3>
+        <button id="abm-web-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="abm-web-form">
+          <div class="abm-web-grid">
+            <label>
+              <span>Nombre del Articulo Web</span>
+              <input type="text" id="abm-web-nombre" maxlength="255" />
+            </label>
+            <label>
+              <span>Descripcion Web</span>
+              <textarea id="abm-web-descripcion" rows="5" maxlength="450"></textarea>
+            </label>
+          </div>
+          <div class="abm-form-actions">
+            <button type="button" id="abm-web-ia" class="abm-web-ai-btn" title="IA">🤖 IA</button>
+            <button type="submit" id="abm-web-save">Confirmar</button>
+            <button type="button" id="abm-web-cancel">Cancelar</button>
+          </div>
+          <p class="status" id="abm-web-status"></p>
         </form>
       </div>
     </div>
