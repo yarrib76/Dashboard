@@ -2318,6 +2318,16 @@ body.theme-light .ecommerce-category-menu {
   font-weight: 600;
 }
 
+.ecommerce-pub-detail-grid .ecommerce-pub-detail-error {
+  grid-column: 1 / -1;
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.ecommerce-pub-detail-grid .ecommerce-pub-detail-error strong {
+  color: #ef4444;
+}
+
 
 .range-value {
   display: inline-block;

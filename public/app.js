@@ -7385,6 +7385,18 @@ function focusEcommercePubPickSearch() {
   return true;
 }
 
+function clearEcommercePubPickSearch() {
+  const searchInput = getEcommercePubPickSearchInput();
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    searchInput.dispatchEvent(new Event('search', { bubbles: true }));
+  }
+  if (ecommercePublicacionPickTable) {
+    ecommercePublicacionPickTable.search('').draw();
+  }
+}
+
 async function loadEcommercePubPickTable() {
   if (!ecommercePubPickTableEl) return;
   try {
@@ -7395,10 +7407,14 @@ async function loadEcommercePubPickTable() {
     renderEcommercePubDatalist(ecommercePubArticulosList, rows);
     renderEcommercePubDatalist(ecommercePubVariantesList, rows);
     if (ecommercePublicacionPickTable) {
+      ecommercePublicacionPickTable.search('');
       ecommercePublicacionPickTable.clear();
       ecommercePublicacionPickTable.rows.add(rows);
       ecommercePublicacionPickTable.draw();
-      requestAnimationFrame(() => focusEcommercePubPickSearch());
+      requestAnimationFrame(() => {
+        clearEcommercePubPickSearch();
+        focusEcommercePubPickSearch();
+      });
     } else if (window.DataTable) {
       ecommercePublicacionPickTable = new DataTable('#ecommerce-pub-pick-table', {
         data: rows,
@@ -7461,12 +7477,17 @@ async function openEcommercePubPick(target) {
       ecommercePublicacionPickTarget === 'variante' ? 'Seleccionar Variante' : 'Seleccionar Articulo Principal';
   }
   openOverlay(ecommercePubPickOverlay);
+  clearEcommercePubPickSearch();
   await loadEcommercePubPickTable();
-  if (ecommercePublicacionPickTable) {
-    ecommercePublicacionPickTable.search('').draw();
-  }
-  requestAnimationFrame(() => focusEcommercePubPickSearch());
-  setTimeout(focusEcommercePubPickSearch, 150);
+  clearEcommercePubPickSearch();
+  requestAnimationFrame(() => {
+    clearEcommercePubPickSearch();
+    focusEcommercePubPickSearch();
+  });
+  setTimeout(() => {
+    clearEcommercePubPickSearch();
+    focusEcommercePubPickSearch();
+  }, 150);
 }
 
 function closeEcommercePubPick() {
@@ -7662,11 +7683,11 @@ function renderEcommercePubVariants() {
               </button>
             </td>
             <td>
+              <button type="button" class="abm-link-btn ecommerce-pub-edit-variante" data-index="${index}">Modificar</button>
               ${
                 synced
                   ? '<span class="ecommerce-pub-variant-locked">Sincronizada</span>'
-                  : `<button type="button" class="abm-link-btn ecommerce-pub-edit-variante" data-index="${index}">Modificar</button>
-                    <button type="button" class="abm-link-btn ecommerce-pub-remove-variante" data-index="${index}">Quitar</button>`
+                  : `<button type="button" class="abm-link-btn ecommerce-pub-remove-variante" data-index="${index}">Quitar</button>`
               }
             </td>
           </tr>
@@ -7719,6 +7740,7 @@ function addEcommercePubVariantFromInput() {
       ? null
       : ecommercePublicacionVariantes[ecommercePublicacionVarianteEditingIndex] || null;
   const variante = {
+    ...(previous || {}),
     articulo,
     sku: articulo,
     detalle: cached?.detalle || previous?.detalle || '',
@@ -7726,6 +7748,8 @@ function addEcommercePubVariantFromInput() {
     atributo1Valor: String(ecommercePubAttrValue?.value || cached?.detalle || articulo).trim(),
     precio: cached?.precio == null ? Number(previous?.precio) || 0 : Number(cached.precio),
     stock: cached?.stock == null ? Number(previous?.stock) || 0 : Number(cached.stock),
+    estado: previous ? 'borrador' : '',
+    errorMensaje: '',
     image: previous?.image || null,
   };
   if (ecommercePublicacionVarianteEditingIndex == null) {
@@ -7820,9 +7844,9 @@ async function editEcommercePublicacion(id) {
     const res = await fetchJSON(`/api/ecommerce/publicaciones/${encodeURIComponent(id)}`);
     const pub = res.data || {};
     const estado = String(pub.estado || '').toLowerCase();
-    if (!['borrador', 'pendiente', 'creado', 'existente'].includes(estado)) {
+    if (!['borrador', 'pendiente', 'creado', 'existente', 'error', 'parcial'].includes(estado)) {
       if (ecommercePubFormStatus) {
-        ecommercePubFormStatus.textContent = 'Solo se pueden modificar publicaciones en borrador o sincronizadas.';
+        ecommercePubFormStatus.textContent = 'Solo se pueden modificar publicaciones en borrador, sincronizadas o con error.';
       }
       return;
     }
@@ -7866,7 +7890,7 @@ async function editEcommercePublicacion(id) {
     if (ecommercePubAddVariante) ecommercePubAddVariante.textContent = 'Agregar variante';
     if (ecommercePubFormStatus) {
       ecommercePubFormStatus.textContent = pub.productId || ['creado', 'existente'].includes(estado)
-        ? `Editando publicacion #${ecommercePublicacionEditingId}. En sincronizadas solo se agregan variantes nuevas.`
+        ? `Editando publicacion #${ecommercePublicacionEditingId}. Podes modificar variantes y volver a sincronizar.`
         : `Editando publicacion #${ecommercePublicacionEditingId}.`;
     }
     ecommercePubArticuloSearch?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -8009,6 +8033,11 @@ async function openEcommercePublicacionDetail(id) {
         <div><span>Categoria</span><strong>${escapeAttr(categoriaLabel)}</strong></div>
         <div><span>Estado</span><strong>${escapeAttr(pub.estado || '')}</strong></div>
         <div><span>Product ID</span><strong>${escapeAttr(pub.productId || '-')}</strong></div>
+        ${
+          pub.errorMensaje
+            ? `<div class="ecommerce-pub-detail-error"><span>Error</span><strong>${escapeAttr(pub.errorMensaje)}</strong></div>`
+            : ''
+        }
       `;
     }
     const tbody = ecommercePubDetailTableEl?.querySelector('tbody');
@@ -8058,21 +8087,15 @@ async function syncEcommercePublicacion(id) {
     await loadEcommercePublicaciones(true);
     if (ecommercePubStatus) {
       ecommercePubStatus.textContent = res.errorCount
-        ? `Publicacion #${id} sincronizada con errores. Revisar consola.`
+        ? `Publicacion #${id} sincronizada con errores. Ver detalle.`
         : `Publicacion #${id} sincronizada.`;
     }
   } catch (error) {
-    console.error('[TN sync request error]', {
-      id,
-      status: error.status || null,
-      message: error.message || '',
-      payload: error.payload || null,
-      url: error.url || null,
-      stack: error.stack || '',
-    });
     ecommercePublicacionesLoaded = false;
     await loadEcommercePublicaciones(true);
-    if (ecommercePubStatus) ecommercePubStatus.textContent = error.message || 'No se pudo sincronizar.';
+    if (ecommercePubStatus) {
+      ecommercePubStatus.textContent = `Error al sincronizar publicacion #${id}. Ver detalle.`;
+    }
   }
 }
 

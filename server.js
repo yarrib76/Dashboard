@@ -397,6 +397,28 @@ async function tnubeRequest(storeId, token, appName, method, pathUrl, payload) {
   return response.body;
 }
 
+function formatTnubeSyncError(error, fallback = 'Error al sincronizar con Tienda Nube') {
+  const raw = String(error?.body || error?.message || fallback || '').trim();
+  if (!raw) return fallback;
+  const jsonStart = raw.indexOf('{');
+  if (jsonStart >= 0) {
+    const jsonText = raw.slice(jsonStart).split(' | attemptedValueCounts=')[0];
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (Array.isArray(parsed?.values) && parsed.values.length) return parsed.values.join(', ');
+      if (parsed?.description) return String(parsed.description);
+      if (parsed?.message) return String(parsed.message);
+    } catch (_error) {
+      /* keep raw message */
+    }
+  }
+  return raw.length > 450 ? `${raw.slice(0, 447)}...` : raw;
+}
+
+function isTnPublicacionesDebugEnabled() {
+  return process.env.TN_PUBLICACIONES_DEBUG === '1';
+}
+
 function redondeoDecimal(precioVenta) {
   let precio = Number(precioVenta) || 0;
   precio = Math.round(precio * 100) / 100;
@@ -1223,14 +1245,8 @@ async function insertPublicacionEvento(conn, publicacionId, varianteId, tipo, es
 
 function buildTnubeVariantPayload(variante) {
   const values = [];
-  [
-    [variante.atributo_1_nombre, variante.atributo_1_valor],
-    [variante.atributo_2_nombre, variante.atributo_2_valor],
-    [variante.atributo_3_nombre, variante.atributo_3_valor],
-  ].forEach(([, value]) => {
-    const clean = String(value || '').trim();
-    if (clean) values.push(getTnubeLocalizedText(clean));
-  });
+  const cleanValue = String(variante.atributo_1_valor || '').trim();
+  if (cleanValue) values.push(getTnubeLocalizedText(cleanValue));
   if (!values.length) values.push(getTnubeLocalizedText(variante.detalle || variante.articulo));
 
   const payload = {
@@ -1246,116 +1262,26 @@ function buildTnubeVariantPayload(variante) {
   return payload;
 }
 
-function getTnubeLocalizedRawText(value) {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    if (value.name != null) return getTnubeLocalizedRawText(value.name);
-    return value.es || value.pt || value.en || Object.values(value)[0] || '';
-  }
-  return String(value);
-}
-
-function normalizeTnubeAttributeName(value) {
-  return String(getTnubeLocalizedRawText(value) || '').trim().toLowerCase();
-}
-
-function getTnubeProductAttributeNames(product) {
-  const attrs = Array.isArray(product?.attributes) ? product.attributes : [];
-  return attrs
-    .map((attr) => normalizeTnubeAttributeName(attr))
-    .filter(Boolean);
-}
-
-function getTnubeVariantValueCount(variant) {
-  if (!variant) return 0;
-  if (Array.isArray(variant.values)) return variant.values.length;
-  if (Array.isArray(variant.value)) return variant.value.length;
-  if (variant.values && typeof variant.values === 'object') return Object.keys(variant.values).length;
-  return 0;
-}
-
-function getTnubeProductAttributeCount(product) {
-  const attrCount = Array.isArray(product?.attributes) ? product.attributes.length : 0;
-  if (attrCount) return attrCount;
-  const variantRows = getTnubeVariantRows(product);
-  return Math.max(0, ...variantRows.map(getTnubeVariantValueCount));
-}
-
-function buildTnubeVariantPayloadForAttributes(variante, attributeNames = [], expectedValueCount = 0) {
-  const payload = buildTnubeVariantPayload(variante);
-  const attrs = (attributeNames || []).map((attr) => String(attr || '').trim().toLowerCase()).filter(Boolean);
-  if (!attrs.length) {
-    while (payload.values.length < expectedValueCount) {
-      payload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
-    }
-    return payload;
-  }
-
-  const valuesByAttr = new Map();
-  [
-    [variante.atributo_1_nombre, variante.atributo_1_valor],
-    [variante.atributo_2_nombre, variante.atributo_2_valor],
-    [variante.atributo_3_nombre, variante.atributo_3_valor],
-  ].forEach(([name, value]) => {
-    const key = String(name || '').trim().toLowerCase();
-    const cleanValue = String(value || '').trim();
-    if (key && cleanValue) valuesByAttr.set(key, cleanValue);
-  });
-
-  payload.values = attrs.map((attr, index) => {
-    const value = valuesByAttr.get(attr) || (index === 0 ? variante.detalle || variante.articulo : variante.articulo);
-    return getTnubeLocalizedText(value);
-  });
-  while (payload.values.length < expectedValueCount) {
-    payload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
-  }
-  return payload;
-}
-
-function padTnubeVariantPayloadValues(payload, variante, targetCount, preferLeadingArticulo = false) {
-  const nextPayload = {
-    ...payload,
-    values: Array.isArray(payload.values) ? [...payload.values] : [],
-  };
-  if (preferLeadingArticulo && targetCount > nextPayload.values.length) {
-    nextPayload.values.unshift(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
-  }
-  while (nextPayload.values.length < targetCount) {
-    nextPayload.values.push(getTnubeLocalizedText(variante.articulo || variante.sku || variante.detalle));
-  }
-  if (nextPayload.values.length > targetCount) {
-    nextPayload.values = nextPayload.values.slice(0, targetCount);
-  }
-  return nextPayload;
-}
-
 function isTnubeWrongVariantValuesCountError(error) {
   const text = String(error?.message || error?.body || '');
   return /wrong number of elements/i.test(text);
 }
 
 function buildTnubeProductPayload(publicacion, variantes) {
-  const attrNames = [];
-  variantes.forEach((variante) => {
-    [
-      variante.atributo_1_nombre,
-      variante.atributo_2_nombre,
-      variante.atributo_3_nombre,
-    ].forEach((name) => {
-      const clean = String(name || '').trim();
-      if (clean && !attrNames.includes(clean)) attrNames.push(clean);
-    });
-  });
-  if (!attrNames.length) attrNames.push('Articulo');
+  const attrName =
+    variantes
+      .map((variante) => String(variante.atributo_1_nombre || '').trim())
+      .find((name) => name && name.toLowerCase() !== 'articulo') ||
+    String(variantes[0]?.atributo_1_nombre || '').trim() ||
+    'Color';
 
   const payload = {
     name: getTnubeLocalizedText(publicacion.nombre),
     description: getTnubeLocalizedText(formatTnubeDescriptionHtml(publicacion.descripcion || publicacion.nombre)),
     published: false,
     free_shipping: false,
-    attributes: attrNames.map(getTnubeLocalizedText),
-    variants: variantes.map((variante) => buildTnubeVariantPayloadForAttributes(variante, attrNames, attrNames.length)),
+    attributes: [getTnubeLocalizedText(attrName)],
+    variants: variantes.map((variante) => buildTnubeVariantPayload(variante)),
   };
   if (publicacion.tags) payload.tags = String(publicacion.tags);
   if (publicacion.marca) payload.brand = String(publicacion.marca);
@@ -1400,13 +1326,18 @@ async function findTnubeProductBySku(connection, sku) {
 }
 
 async function fetchTnubeProduct(connection, productId) {
-  return tnubeRequest(
-    connection.storeId,
-    connection.accessToken,
-    connection.appName,
-    'GET',
-    `products/${encodeURIComponent(productId)}`
-  );
+  try {
+    return await tnubeRequest(
+      connection.storeId,
+      connection.accessToken,
+      connection.appName,
+      'GET',
+      `products/${encodeURIComponent(productId)}`
+    );
+  } catch (error) {
+    if (Number(error?.status) === 404) return null;
+    throw error;
+  }
 }
 
 function getTnubeCategoryName(category) {
@@ -13978,14 +13909,6 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       await conn.commit();
       res.status(201).json({ ok: true, id: publicacionId, variantes: savedVariantes });
     } catch (error) {
-      console.error('[TN_PUBLICACIONES_SYNC_FATAL_ERROR]', {
-        publicacionId: req.params.id,
-        message: error.message || '',
-        status: error.status || null,
-        url: error.url || '',
-        body: error.body || '',
-        stack: error.stack || '',
-      });
       if (conn) {
         try {
           await conn.rollback();
@@ -14029,11 +13952,14 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       }
       const estadoActual = String(actual.estado || '').toLowerCase();
       const hasSyncedProduct = Boolean(actual.product_id);
-      const replaceMode = !hasSyncedProduct && ['borrador', 'pendiente'].includes(estadoActual);
+      const editableLocalStates = ['borrador', 'pendiente', 'error', 'parcial'];
+      const replaceMode = !hasSyncedProduct && editableLocalStates.includes(estadoActual);
       const addOnlyMode = hasSyncedProduct || ['creado', 'existente'].includes(estadoActual);
       if (!replaceMode && !addOnlyMode) {
         await conn.rollback();
-        return res.status(409).json({ message: 'Solo se pueden modificar publicaciones en borrador o sincronizadas.' });
+        return res.status(409).json({
+          message: 'Solo se pueden modificar publicaciones en borrador, sincronizadas o con error.',
+        });
       }
       if (addOnlyMode && articuloPrincipal !== normalizeSku(actual.articulo_principal)) {
         await conn.rollback();
@@ -14113,9 +14039,17 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       }
 
       const [existentes] = await conn.query(
-        `SELECT sku, articulo FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ?`,
+        `SELECT * FROM ${DB_NAME}.tiendanube_publicacion_variantes WHERE publicacion_id = ?`,
         [id]
       );
+      if (!replaceMode) {
+        previousVariantRows = existentes || [];
+        previousVariantsBySku = new Map(
+          previousVariantRows
+            .map((row) => [normalizeSku(row.sku || row.articulo).toUpperCase(), row])
+            .filter(([sku]) => sku)
+        );
+      }
       const existingSkus = new Set(
         (existentes || [])
           .map((row) => normalizeSku(row.sku || row.articulo).toUpperCase())
@@ -14130,7 +14064,6 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         const sku = normalizeSku(raw.sku || articulo);
         const skuKey = sku.toUpperCase();
         incomingSkuKeys.add(skuKey);
-        if (addOnlyMode && existingSkus.has(skuKey)) continue;
         const commonVariantValues = [
           articulo,
           sku,
@@ -14147,8 +14080,33 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           raw.peso === '' || raw.peso == null ? null : Number(raw.peso),
           String(raw.codigoBarras || '').trim() || null,
         ];
-        const previousVariant = replaceMode ? previousVariantsBySku.get(skuKey) : null;
+        const previousVariant = previousVariantsBySku.get(skuKey);
         if (previousVariant?.id) {
+          const previousComparable = [
+            normalizeSku(previousVariant.articulo),
+            normalizeSku(previousVariant.sku || previousVariant.articulo),
+            String(previousVariant.detalle || '').trim() || null,
+            String(previousVariant.atributo_1_nombre || '').trim() || null,
+            String(previousVariant.atributo_1_valor || '').trim() || null,
+            String(previousVariant.atributo_2_nombre || '').trim() || null,
+            String(previousVariant.atributo_2_valor || '').trim() || null,
+            String(previousVariant.atributo_3_nombre || '').trim() || null,
+            String(previousVariant.atributo_3_valor || '').trim() || null,
+            previousVariant.precio == null ? null : Number(previousVariant.precio),
+            previousVariant.precio_promocional == null ? null : Number(previousVariant.precio_promocional),
+            previousVariant.stock == null ? null : Number(previousVariant.stock),
+            previousVariant.peso == null ? null : Number(previousVariant.peso),
+            String(previousVariant.codigo_barras || '').trim() || null,
+          ];
+          const variantChanged = commonVariantValues.some((value, index) => value !== previousComparable[index]);
+          const previousState = String(previousVariant.estado || '').toLowerCase();
+          const shouldResetVariant =
+            replaceMode ||
+            variantChanged ||
+            previousState === 'error' ||
+            previousState === 'parcial';
+          const nextState = shouldResetVariant ? (replaceMode ? 'borrador' : 'pendiente') : previousVariant.estado || 'borrador';
+          const nextVariantId = shouldResetVariant && !replaceMode ? null : previousVariant.variant_id || null;
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
              SET articulo = ?,
@@ -14165,10 +14123,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
                  stock = ?,
                  peso = ?,
                  codigo_barras = ?,
-                 estado = 'borrador',
+                 variant_id = ?,
+                 estado = ?,
                  error_mensaje = NULL
              WHERE id = ? AND publicacion_id = ?`,
-            [...commonVariantValues, previousVariant.id, id]
+            [...commonVariantValues, nextVariantId, nextState, previousVariant.id, id]
           );
           savedVariantes.push({ id: previousVariant.id, articulo, sku });
           existingSkus.add(skuKey);
@@ -14443,8 +14402,18 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 
       let product = null;
       let productId = publicacion.product_id || null;
+      let missingStoredProductId = null;
       if (productId) {
         product = await fetchTnubeProduct(tnubeConnection, productId);
+        if (!product) {
+          missingStoredProductId = productId;
+          productId = null;
+          product = await findTnubeProductBySku(tnubeConnection, publicacion.articulo_principal);
+          productId = getTnubeProductId(product);
+          if (productId) {
+            product = await fetchTnubeProduct(tnubeConnection, productId);
+          }
+        }
       } else {
         product = await findTnubeProductBySku(tnubeConnection, publicacion.articulo_principal);
         productId = getTnubeProductId(product);
@@ -14459,6 +14428,20 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       await conn.beginTransaction();
       let productState = 'existente';
       if (!productId) {
+        if (missingStoredProductId) {
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicaciones
+             SET product_id = NULL
+             WHERE id = ?`,
+            [id]
+          );
+          await conn.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET product_id = NULL, variant_id = NULL, estado = 'sincronizando', error_mensaje = NULL
+             WHERE publicacion_id = ?`,
+            [id]
+          );
+        }
         const payload = buildTnubeProductPayload(publicacion, variantes);
         product = await tnubeRequest(
           tnubeConnection.storeId,
@@ -14483,11 +14466,13 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       } else {
         const updatePayload = buildTnubeProductUpdatePayload(publicacion);
         if (shouldRecreateProduct) {
-          console.warn('[TN_PUBLICACIONES_RECREATE_EXISTING_PRODUCT]', {
-            publicacionId: id,
-            oldProductId: productId,
-            message: 'Producto existente con variantes pendientes: se creara uno nuevo completo con las variantes locales.',
-          });
+          if (isTnPublicacionesDebugEnabled()) {
+            console.warn('[TN_PUBLICACIONES_RECREATE_EXISTING_PRODUCT]', {
+              publicacionId: id,
+              oldProductId: productId,
+              message: 'Producto existente con variantes pendientes: se creara uno nuevo completo con las variantes locales.',
+            });
+          }
         } else {
           product = await tnubeRequest(
             tnubeConnection.storeId,
@@ -14513,18 +14498,15 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           const explicitVariants = await fetchTnubeProductVariants(tnubeConnection, productId);
           if (explicitVariants.length) remoteVariants = explicitVariants;
         } catch (error) {
-          console.error('[TN_PUBLICACIONES_FETCH_VARIANTS_ERROR]', {
-            publicacionId: id,
-            productId,
-            message: error.message,
-          });
+          if (isTnPublicacionesDebugEnabled()) {
+            console.error('[TN_PUBLICACIONES_FETCH_VARIANTS_ERROR]', {
+              publicacionId: id,
+              productId,
+              message: error.message,
+            });
+          }
         }
       }
-      const productAttributeNames = getTnubeProductAttributeNames(product);
-      const productAttributeCount = Math.max(
-        getTnubeProductAttributeCount(product),
-        ...remoteVariants.map(getTnubeVariantValueCount)
-      );
       const createdProductVariants = new Map(
         remoteVariants.map((variant) => [normalizeSku(variant?.sku).toUpperCase(), variant]).filter(([sku]) => sku)
       );
@@ -14604,58 +14586,15 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
             continue;
           }
 
-          let payload = productState === 'creado'
-            ? buildTnubeVariantPayload(variante)
-            : buildTnubeVariantPayloadForAttributes(variante, productAttributeNames, productAttributeCount);
-          console.log('[TN_PUBLICACIONES_CREATE_VARIANT_PAYLOAD]', {
-            publicacionId: id,
-            productId,
-            sku,
-            productAttributeNames,
-            productAttributeCount,
-            valueCount: Array.isArray(payload.values) ? payload.values.length : 0,
-            payload,
-          });
-          let created = null;
-          let createError = null;
-          const attemptedValueCounts = new Set();
-          const maxValueCount = Math.max(3, productAttributeCount || 0);
-          for (let targetCount = Array.isArray(payload.values) ? payload.values.length : 1; targetCount <= maxValueCount; targetCount += 1) {
-            const attemptPayload = padTnubeVariantPayloadValues(
-              payload,
-              variante,
-              targetCount,
-              !productAttributeNames.length
-            );
-            attemptedValueCounts.add(targetCount);
-            try {
-              created = await tnubeRequest(
-                tnubeConnection.storeId,
-                tnubeConnection.accessToken,
-                tnubeConnection.appName,
-                'POST',
-                `products/${encodeURIComponent(productId)}/variants`,
-                attemptPayload
-              );
-              payload = attemptPayload;
-              createError = null;
-              break;
-            } catch (error) {
-              createError = error;
-              if (!isTnubeWrongVariantValuesCountError(error)) throw error;
-              console.warn('[TN_PUBLICACIONES_CREATE_VARIANT_VALUES_RETRY]', {
-                publicacionId: id,
-                productId,
-                sku,
-                attemptedValueCount: targetCount,
-                message: error.message,
-              });
-            }
-          }
-          if (!created && createError) {
-            createError.message = `${createError.message} | attemptedValueCounts=${Array.from(attemptedValueCounts).join(',')}`;
-            throw createError;
-          }
+          const payload = buildTnubeVariantPayload(variante);
+          const created = await tnubeRequest(
+            tnubeConnection.storeId,
+            tnubeConnection.accessToken,
+            tnubeConnection.appName,
+            'POST',
+            `products/${encodeURIComponent(productId)}/variants`,
+            payload
+          );
           syncedVariantId = created?.id || null;
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
@@ -14683,35 +14622,40 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           if (isTnubeWrongVariantValuesCountError(error) && publicacion.product_id) {
             recreateFullProduct = true;
             recreateReason = error.message || 'Estructura de variantes incompatible';
-            console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_REQUIRED]', {
-              publicacionId: id,
-              oldProductId: productId,
-              sku,
-              message: recreateReason,
-            });
+            if (isTnPublicacionesDebugEnabled()) {
+              console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_REQUIRED]', {
+                publicacionId: id,
+                oldProductId: productId,
+                sku,
+                message: recreateReason,
+              });
+            }
             break;
           }
           errorCount += 1;
+          const errorMessage = formatTnubeSyncError(error, 'Error al sincronizar variante');
           const variantError = {
             id: variante.id,
             articulo: variante.articulo || '',
             sku,
             estadoAnterior: variante.estado || '',
             variantId: variante.variant_id || null,
-            message: error.message || 'ErrorAPI',
+            message: errorMessage,
             stack: error.stack || '',
           };
           variantErrors.push(variantError);
-          console.error('[TN_PUBLICACIONES_SYNC_VARIANTE_ERROR]', {
-            publicacionId: id,
-            productId,
-            ...variantError,
-          });
+          if (isTnPublicacionesDebugEnabled()) {
+            console.error('[TN_PUBLICACIONES_SYNC_VARIANTE_ERROR]', {
+              publicacionId: id,
+              productId,
+              ...variantError,
+            });
+          }
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
              SET estado = 'error', error_mensaje = ?
              WHERE id = ?`,
-            [error.message || 'ErrorAPI', variante.id]
+            [errorMessage, variante.id]
           );
           await insertPublicacionEvento(
             conn,
@@ -14720,7 +14664,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
             'error_variante',
             variante.estado,
             'error',
-            error.message || 'ErrorAPI',
+            errorMessage,
             { productId, sku },
             req.user?.id
           );
@@ -14731,12 +14675,14 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       if (recreateFullProduct) {
         const oldProductId = productId;
         const recreatePayload = buildTnubeProductPayload(publicacion, variantes);
-        console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_START]', {
-          publicacionId: id,
-          oldProductId,
-          reason: recreateReason,
-          variantCount: variantes.length,
-        });
+        if (isTnPublicacionesDebugEnabled()) {
+          console.warn('[TN_PUBLICACIONES_RECREATE_PRODUCT_START]', {
+            publicacionId: id,
+            oldProductId,
+            reason: recreateReason,
+            variantCount: variantes.length,
+          });
+        }
         product = await tnubeRequest(
           tnubeConnection.storeId,
           tnubeConnection.accessToken,
@@ -14753,11 +14699,13 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           const explicitVariants = await fetchTnubeProductVariants(tnubeConnection, productId);
           if (explicitVariants.length) recreatedVariants = explicitVariants;
         } catch (error) {
-          console.error('[TN_PUBLICACIONES_FETCH_RECREATED_VARIANTS_ERROR]', {
-            publicacionId: id,
-            productId,
-            message: error.message,
-          });
+          if (isTnPublicacionesDebugEnabled()) {
+            console.error('[TN_PUBLICACIONES_FETCH_RECREATED_VARIANTS_ERROR]', {
+              publicacionId: id,
+              productId,
+              message: error.message,
+            });
+          }
         }
         const recreatedVariantsBySku = new Map(
           recreatedVariants.map((variant) => [normalizeSku(variant?.sku).toUpperCase(), variant]).filter(([sku]) => sku)
@@ -14802,7 +14750,35 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
           );
           const variantImage = variantImages.get(Number(variante.id));
           if (variantImage) {
-            await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, remote.id);
+            try {
+              await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, variantImage, remote.id);
+            } catch (error) {
+              errorCount += 1;
+              const errorMessage = formatTnubeSyncError(error, 'Error al subir imagen de variante');
+              const variantError = {
+                id: variante.id,
+                articulo: variante.articulo || '',
+                sku,
+                estadoAnterior: variante.estado || '',
+                variantId: remote.id,
+                message: errorMessage,
+                stack: error.stack || '',
+              };
+              variantErrors.push(variantError);
+              await conn.query(
+                `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+                 SET estado = 'error', error_mensaje = ?
+                 WHERE id = ?`,
+                [errorMessage, variante.id]
+              );
+              await conn.query(
+                `UPDATE ${DB_NAME}.tiendanube_publicacion_imagenes
+                 SET estado = 'error', error_mensaje = ?
+                 WHERE id = ?`,
+                [errorMessage, variantImage.id]
+              );
+              continue;
+            }
           }
           okCount += 1;
         }
@@ -14824,9 +14800,10 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         try {
           await uploadPublicacionImageToTnube(conn, tnubeConnection, productId, imageRow);
         } catch (error) {
+          const errorMessage = formatTnubeSyncError(error, 'Error al subir imagen de producto');
           await conn.query(
             `UPDATE ${DB_NAME}.tiendanube_publicacion_imagenes SET estado = 'error', error_mensaje = ? WHERE id = ?`,
-            [error.message || 'Error al subir imagen', imageRow.id]
+            [errorMessage, imageRow.id]
           );
         }
       }
@@ -14852,6 +14829,17 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       await conn.commit();
       res.json({ ok: true, productId, estado: finalState, okCount, errorCount, variantErrors });
     } catch (error) {
+      const errorMessage = formatTnubeSyncError(error, 'Error en sincronizacion');
+      if (isTnPublicacionesDebugEnabled()) {
+        console.error('[TN_PUBLICACIONES_SYNC_FATAL_ERROR]', {
+          publicacionId: req.params.id,
+          message: errorMessage,
+          status: error.status || null,
+          url: error.url || '',
+          body: error.body || '',
+          stack: error.stack || '',
+        });
+      }
       if (conn) {
         try {
           await conn.rollback();
@@ -14864,7 +14852,13 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         if (Number.isFinite(id)) {
           await pool.query(
             `UPDATE ${DB_NAME}.tiendanube_publicaciones SET estado = 'error', error_mensaje = ? WHERE id = ?`,
-            [error.message || 'Error en sincronizacion', id]
+            [errorMessage, id]
+          );
+          await pool.query(
+            `UPDATE ${DB_NAME}.tiendanube_publicacion_variantes
+             SET estado = 'error', error_mensaje = ?
+             WHERE publicacion_id = ?`,
+            [errorMessage, id]
           );
         }
       } catch (_updateErr) {
@@ -14872,7 +14866,7 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       }
       res.status(500).json({
         message: 'Error al sincronizar publicacion',
-        error: error.message,
+        error: errorMessage,
         status: error.status || null,
         url: error.url || null,
         body: error.body || null,
