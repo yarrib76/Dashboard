@@ -1033,6 +1033,8 @@ const ecommercePubDescripcion = document.getElementById('ecommerce-pub-descripci
 const ecommercePubDescripcionEditor = document.getElementById('ecommerce-pub-descripcion-editor');
 const ecommercePubDescripcionPanel = document.getElementById('ecommerce-pub-descripcion-panel');
 const ecommercePubDescripcionExpanded = document.getElementById('ecommerce-pub-descripcion-expanded');
+const ecommercePubDescripcionClose = document.getElementById('ecommerce-pub-descripcion-close');
+const ecommercePubDescripcionBullets = document.getElementById('ecommerce-pub-descripcion-bullets');
 const ecommercePubMarca = document.getElementById('ecommerce-pub-marca');
 const ecommercePubTags = document.getElementById('ecommerce-pub-tags');
 const ecommercePubCategoria = document.getElementById('ecommerce-pub-categoria');
@@ -7247,6 +7249,32 @@ function syncEcommerceDescripcionFromExpanded() {
   ecommercePubDescripcion.value = ecommercePubDescripcionExpanded.value;
 }
 
+function toggleEcommerceDescripcionBullets() {
+  const textarea = ecommercePubDescripcionExpanded;
+  if (!textarea) return;
+  const value = textarea.value;
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  const lineStart = value.lastIndexOf('\n', Math.max(0, selectionStart - 1)) + 1;
+  const nextLineBreak = value.indexOf('\n', selectionEnd);
+  const lineEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+  const selectedBlock = value.slice(lineStart, lineEnd);
+  const lines = selectedBlock.split('\n');
+  const nonEmptyLines = lines.filter((line) => line.trim());
+  const removeBullets = nonEmptyLines.length > 0 && nonEmptyLines.every((line) => /^\s*\u2022\s?/.test(line));
+  const replacement = lines
+    .map((line) => {
+      if (removeBullets) return line.replace(/^(\s*)\u2022\s?/, '$1');
+      if (!line.trim() && lines.length > 1) return line;
+      const indent = line.match(/^\s*/)?.[0] || '';
+      return `${indent}\u2022 ${line.slice(indent.length)}`;
+    })
+    .join('\n');
+  textarea.setRangeText(replacement, lineStart, lineEnd, 'select');
+  syncEcommerceDescripcionFromExpanded();
+  textarea.focus();
+}
+
 async function loadEcommercePubCategorias() {
   if (!ecommercePubCategoria || ecommercePublicacionCategoriasLoaded) return;
   try {
@@ -8173,14 +8201,13 @@ function initEcommercePublicaciones() {
   if (ecommercePubDescripcionExpanded) {
     ecommercePubDescripcionExpanded.addEventListener('input', syncEcommerceDescripcionFromExpanded);
   }
-  document.addEventListener('click', (event) => {
-    if (
-      ecommercePubDescripcionEditor?.classList.contains('open') &&
-      !ecommercePubDescripcionEditor.contains(event.target)
-    ) {
-      closeEcommerceDescripcionEditor();
-    }
-  });
+  if (ecommercePubDescripcionBullets) {
+    ecommercePubDescripcionBullets.addEventListener('mousedown', (event) => event.preventDefault());
+    ecommercePubDescripcionBullets.addEventListener('click', toggleEcommerceDescripcionBullets);
+  }
+  if (ecommercePubDescripcionClose) {
+    ecommercePubDescripcionClose.addEventListener('click', closeEcommerceDescripcionEditor);
+  }
   if (ecommercePubArticuloOpen) ecommercePubArticuloOpen.addEventListener('click', () => openEcommercePubPick('principal'));
   if (ecommercePubVarianteSearch) {
     ecommercePubVarianteSearch.addEventListener('input', () => {
@@ -9292,11 +9319,6 @@ function initAbm() {
   if (abmEditWebOpen) abmEditWebOpen.addEventListener('click', () => openAbmWebModal('edit'));
   if (abmWebClose) abmWebClose.addEventListener('click', closeAbmWebModal);
   if (abmWebCancel) abmWebCancel.addEventListener('click', closeAbmWebModal);
-  if (abmWebOverlay) {
-    abmWebOverlay.addEventListener('click', (e) => {
-      if (e.target === abmWebOverlay) closeAbmWebModal();
-    });
-  }
   if (abmWebIaBtn) {
     abmWebIaBtn.addEventListener('click', generateAbmWebDescriptionWithIa);
   }

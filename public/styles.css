@@ -1943,10 +1943,57 @@ body.theme-light .abm-actions-menu {
   display: block;
 }
 
+.ecommerce-description-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 7px 48px 7px 10px;
+  border-bottom: 1px solid #d1d5db;
+  background: #f9fafb;
+}
+
+.ecommerce-description-tool {
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #c9ced8;
+  border-radius: 6px;
+  background: #e5e7eb;
+  color: #1f2937;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ecommerce-description-tool:hover {
+  background: #d1d5db;
+}
+
+.ecommerce-description-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #c9ced8;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ecommerce-description-close:hover {
+  background: #e5e7eb;
+}
+
 .ecommerce-description-panel textarea {
   width: 100%;
   min-height: 230px;
-  padding: 26px 38px;
+  padding: 24px 38px;
   border: 0;
   border-radius: 0;
   background: #fff;
