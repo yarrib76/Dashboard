@@ -1273,6 +1273,7 @@ const abmPedidosStatus = document.getElementById('abm-pedidos-status');
 const abmPedidosDetalle = document.getElementById('abm-pedidos-detalle');
 const abmArticuloInput = document.getElementById('abm-articulo');
 const abmDetalleInput = document.getElementById('abm-detalle');
+const abmProveedorSkuInput = document.getElementById('abm-proveedor-sku');
 const abmCantidadActualInput = document.getElementById('abm-cantidad-actual');
 const abmRestaInput = document.getElementById('abm-resta');
 const abmCantidadInput = document.getElementById('abm-cantidad');
@@ -2065,8 +2066,15 @@ async function printFacturaPdf() {
   };
   const doc = new window.jspdf.jsPDF({ unit: 'mm', format: [80, 297] });
   const margin = 4;
-  const y = 6;
+  const facturaNumero = facturaNumeroInput?.value || 'nueva';
+  const now = new Date();
+  const fechaPdf = now.toLocaleDateString();
+  const horaPdf = now.toLocaleTimeString();
+  let y = 6;
   const tableWidth = doc.internal.pageSize.getWidth() - margin * 2;
+  doc.setFontSize(8);
+  doc.text(`Fecha: ${fechaPdf}  Hora: ${horaPdf}`, margin, y);
+  y += 6;
   const headers = ['Cant', 'Detalle', 'Unitario', 'Total'];
   const pdfItems = [...facturaNuevaItems].sort((a, b) =>
     String(a?.detalle || a?.articulo || '').localeCompare(String(b?.detalle || b?.articulo || ''), 'es', {
@@ -2136,7 +2144,6 @@ async function printFacturaPdf() {
   if (envio > 0 && totals.recargoPct <= 0) {
     doc.text(`Envio: ${envio.toFixed(2)}  Total Con Envio: ${totals.totalConEnvio.toFixed(2)}`, margin, fy);
   }
-  const facturaNumero = facturaNumeroInput?.value || 'nueva';
   doc.save(`factura-${facturaNumero}.pdf`);
 }
 
@@ -5790,6 +5797,7 @@ async function openAbmEdit(articulo) {
     }
     if (abmArticuloInput) abmArticuloInput.value = row.Articulo || row.articulo || articulo || '';
     if (abmDetalleInput) abmDetalleInput.value = row.Detalle || row.detalle || '';
+    if (abmProveedorSkuInput) abmProveedorSkuInput.value = row.ProveedorSKU || row.proveedorSku || '';
     if (abmCantidadActualInput) abmCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
     if (abmCantidadInput) abmCantidadInput.value = '';
     if (abmPrecioOrigenInput) abmPrecioOrigenInput.value = row.PrecioOrigen ?? row.precioOrigen ?? '';
@@ -10066,6 +10074,7 @@ function initAbm() {
           : 'opcion_manual';
       const payload = {
         detalle: abmDetalleInput?.value || '',
+        proveedorSku: abmProveedorSkuInput?.value || '',
         cantidadDelta: Number(abmCantidadInput?.value) || 0,
         resta: !!abmRestaInput?.checked,
         precioOrigen: Number(abmPrecioOrigenInput?.value) || 0,

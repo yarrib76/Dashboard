@@ -1774,6 +1774,19 @@ let cachedFichajeUserColumns = { codigo: null, foto: null };
 let fichajeUserColumnsChecked = false;
 const FICHAJE_IDEMPOTENCY_WINDOW_MS = 60 * 1000;
 
+async function getTableColumnSet(dbClient, tableName, columnNames) {
+  if (!Array.isArray(columnNames) || columnNames.length === 0) return new Set();
+  const [rows] = await dbClient.query(
+    `SELECT COLUMN_NAME
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME IN (${columnNames.map(() => '?').join(',')})`,
+    [tableName, ...columnNames]
+  );
+  return new Set((rows || []).map((row) => row.COLUMN_NAME));
+}
+
 async function getUserRoleColumn() {
   if (userRoleChecked) return userRoleColumn;
   userRoleChecked = true;
@@ -10468,6 +10481,11 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
   try {
     const articulo = req.query.articulo;
     if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+    const articuloColumns = await getTableColumnSet(pool, 'articulos', ['NbreWeb', 'DescripcionWeb']);
+    const nbreWebSelect = articuloColumns.has('NbreWeb') ? 'NbreWeb' : 'NULL AS NbreWeb';
+    const descripcionWebSelect = articuloColumns.has('DescripcionWeb')
+      ? 'DescripcionWeb'
+      : 'NULL AS DescripcionWeb';
     const [rows] = await pool.query(
       `SELECT
          Articulo,
@@ -10480,9 +10498,10 @@ app.get('/api/mercaderia/abm/articulo', async (req, res) => {
          Gastos,
          Ganancia,
          Proveedor,
+         ProveedorSKU,
          Observaciones,
-         NbreWeb,
-         DescripcionWeb
+         ${nbreWebSelect},
+         ${descripcionWebSelect}
        FROM articulos
        WHERE Articulo = ?
        LIMIT 1`,
@@ -11024,6 +11043,7 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
       gastos = 0,
       ganancia = 0,
       proveedor = '',
+      proveedorSku = '',
       observaciones = '',
       nbreWeb = '',
       descripcionWeb = '',
@@ -11066,36 +11086,47 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
     const observacionesFinal = (observaciones || '').toString().slice(0, maxObservaciones);
     const nbreWebFinal = (nbreWeb || '').toString().slice(0, 255);
     const descripcionWebFinal = (descripcionWeb || '').toString().slice(0, 450);
+    const articuloColumns = await getTableColumnSet(conn, 'articulos', ['NbreWeb', 'DescripcionWeb']);
+    const updateFields = [
+      'Detalle = ?',
+      'Cantidad = ?',
+      'PrecioOrigen = ?',
+      'PrecioConvertido = ?',
+      'Moneda = ?',
+      'PrecioManual = ?',
+      'Gastos = ?',
+      'Ganancia = ?',
+      'Proveedor = ?',
+      'ProveedorSKU = ?',
+    ];
+    const updateValues = [
+      detalle || '',
+      nuevaCantidad,
+      Number(precioOrigen) || 0,
+      precioConvertidoFinal,
+      moneda,
+      precioManualFinal,
+      gastosFinal,
+      gananciaFinal,
+      proveedor || '',
+      proveedorSku || '',
+    ];
+    if (articuloColumns.has('NbreWeb')) {
+      updateFields.push('NbreWeb = ?');
+      updateValues.push(nbreWebFinal || null);
+    }
+    if (articuloColumns.has('DescripcionWeb')) {
+      updateFields.push('DescripcionWeb = ?');
+      updateValues.push(descripcionWebFinal || null);
+    }
+    updateValues.push(articulo);
 
     await conn.query(
       `UPDATE articulos
-       SET Detalle = ?,
-           Cantidad = ?,
-           PrecioOrigen = ?,
-           PrecioConvertido = ?,
-           Moneda = ?,
-           PrecioManual = ?,
-           Gastos = ?,
-           Ganancia = ?,
-           Proveedor = ?,
-           NbreWeb = ?,
-           DescripcionWeb = ?
+       SET ${updateFields.join(',\n           ')}
        WHERE Articulo = ?
        LIMIT 1`,
-      [
-        detalle || '',
-        nuevaCantidad,
-        Number(precioOrigen) || 0,
-        precioConvertidoFinal,
-        moneda,
-        precioManualFinal,
-        gastosFinal,
-        gananciaFinal,
-        proveedor || '',
-        nbreWebFinal || null,
-        descripcionWebFinal || null,
-        articulo,
-      ]
+      updateValues
     );
 
     const tipoOrden = resta ? 1 : 2;
@@ -11172,6 +11203,7 @@ app.put('/api/mercaderia/abm/articulo/:id', async (req, res) => {
         detalle: detalle || '',
         cantidad: nuevaCantidad,
         proveedor: proveedor || '',
+        proveedorSku: proveedorSku || '',
       },
     });
   } catch (error) {

@@ -4490,6 +4490,20 @@ body.theme-light .pedido-notas-badge {
   overflow: auto;
 }
 
+#abm-edit-overlay {
+  padding: 12px;
+}
+
+#abm-edit-overlay .modal {
+  max-width: 1240px;
+  max-height: 96vh;
+}
+
+#abm-edit-overlay .modal-body {
+  max-height: calc(96vh - 68px);
+  overflow: auto;
+}
+
 .abm-loading-overlay {
   position: fixed;
   inset: 0;
