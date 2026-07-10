@@ -371,6 +371,13 @@ let ecommercePublicacionVarianteEditingIndex = null;
 let ecommercePublicacionProductImages = [];
 let ecommercePublicacionImageTarget = null;
 let ecommercePublicacionPreviewTarget = null;
+let ecommerceTnRows = [];
+let ecommerceTnMeta = null;
+let ecommerceAsigRows = [];
+let ecommerceAsigVendedoras = [];
+const ecommerceAsigSelected = new Set();
+let currentLocalName = '';
+let currentTnubeStoreId = '';
 let abmWebContext = 'create';
 let abmCreateWebDraft = { nbreWeb: '', descripcionWeb: '' };
 let abmEditWebDraft = { nbreWeb: '', descripcionWeb: '' };
@@ -452,6 +459,12 @@ const controlOrdenesFilters = {
   observaciones: '',
   proveedor: '',
 };
+const ecommerceLocalOptions = [
+  { key: 'viamore', label: 'Viamore', storeId: '1043936' },
+  { key: 'samira', label: 'Samira', storeId: '938857' },
+  { key: 'donatella', label: 'Donatella', storeId: '963000' },
+  { key: 'meganay', label: 'MegaNay', storeId: '4999055' },
+];
 const viewDashboard = document.getElementById('view-dashboard');
 const viewDashboardComparativo = document.getElementById('view-dashboard-comparativo');
 const viewPanelControl = document.getElementById('view-panel-control');
@@ -476,6 +489,8 @@ const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb
 const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
 const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
 const viewEcommercePublicaciones = document.getElementById('view-ecommerce-publicaciones');
+const viewEcommerceOrdenesTn = document.getElementById('view-ecommerce-ordenes-tn');
+const viewEcommerceAsignacionPedidos = document.getElementById('view-ecommerce-asignacion-pedidos');
 const viewCajas = document.getElementById('view-cajas');
 const viewCajasCierre = document.getElementById('view-cajas-cierre');
 const viewCajasNuevaFactura = document.getElementById('view-cajas-nueva-factura');
@@ -498,6 +513,30 @@ const apisRefreshBtn = document.getElementById('apis-refresh');
 const apisStatus = document.getElementById('apis-status');
 const apisListStatus = document.getElementById('apis-list-status');
 const apisTableBody = document.querySelector('#apis-table tbody');
+const ecommerceTnFechaMin = document.getElementById('ecommerce-tn-fecha-min');
+const ecommerceTnFechaMax = document.getElementById('ecommerce-tn-fecha-max');
+const ecommerceTnLocal = document.getElementById('ecommerce-tn-local');
+const ecommerceTnPreviewBtn = document.getElementById('ecommerce-tn-preview');
+const ecommerceTnReplicarBtn = document.getElementById('ecommerce-tn-replicar');
+const ecommerceTnTableBody = document.querySelector('#ecommerce-tn-table tbody');
+const ecommerceTnStatus = document.getElementById('ecommerce-tn-status');
+const ecommerceTnTotal = document.getElementById('ecommerce-tn-total');
+const ecommerceTnPendientes = document.getElementById('ecommerce-tn-pendientes');
+const ecommerceTnDuplicadas = document.getElementById('ecommerce-tn-duplicadas');
+const ecommerceTnAdvertencias = document.getElementById('ecommerce-tn-advertencias');
+const ecommerceAsigLocal = document.getElementById('ecommerce-asig-local');
+const ecommerceAsigSearch = document.getElementById('ecommerce-asig-search');
+const ecommerceAsigMostrarTodos = document.getElementById('ecommerce-asig-mostrar-todos');
+const ecommerceAsigRefreshBtn = document.getElementById('ecommerce-asig-refresh');
+const ecommerceAsigBulkVendedora = document.getElementById('ecommerce-asig-bulk-vendedora');
+const ecommerceAsigBulkApply = document.getElementById('ecommerce-asig-bulk-apply');
+const ecommerceAsigCheckAll = document.getElementById('ecommerce-asig-check-all');
+const ecommerceAsigTableBody = document.querySelector('#ecommerce-asig-table tbody');
+const ecommerceAsigStatus = document.getElementById('ecommerce-asig-status');
+const ecommerceAsigSinAsignar = document.getElementById('ecommerce-asig-sin-asignar');
+const ecommerceAsigAsignados = document.getElementById('ecommerce-asig-asignados');
+const ecommerceAsigTotal = document.getElementById('ecommerce-asig-total');
+const ecommerceAsigSeleccionados = document.getElementById('ecommerce-asig-seleccionados');
 const mercDesde = document.getElementById('merc-desde');
 const mercHasta = document.getElementById('merc-hasta');
 const mercProveedoresList = document.getElementById('merc-proveedores-list');
@@ -6653,6 +6692,439 @@ function buildSquareWhiteFromImage(img) {
   ctx.fillRect(0, 0, size, size);
   ctx.drawImage(img, offsetX, offsetY);
   return canvas.toDataURL('image/png');
+}
+
+function getDateInputValue(dateObj = new Date()) {
+  const yyyy = dateObj.getFullYear();
+  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const dd = String(dateObj.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function normalizeLocalName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function resolveEcommerceLocalOption(localValue, storeIdValue = '') {
+  const normalized = normalizeLocalName(localValue);
+  const known = ecommerceLocalOptions.find((item) => item.key === normalized);
+  const label = known?.label || String(localValue || '').trim();
+  const storeId = String(storeIdValue || known?.storeId || '').trim();
+  return { label, storeId };
+}
+
+function setSingleSelectOption(selectEl, value, label) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  const option = document.createElement('option');
+  option.value = value || '';
+  option.textContent = label || 'Local no configurado';
+  selectEl.appendChild(option);
+  selectEl.value = value || '';
+  selectEl.disabled = true;
+}
+
+function setEcommerceTnLocalFromCurrent(localValue, storeIdValue = currentTnubeStoreId) {
+  const option = resolveEcommerceLocalOption(localValue, storeIdValue);
+  const label = option.label || 'Local no configurado';
+  if (ecommerceTnLocal) {
+    setSingleSelectOption(ecommerceTnLocal, option.storeId, label);
+  }
+  if (ecommerceAsigLocal) {
+    setSingleSelectOption(ecommerceAsigLocal, option.label, label);
+  }
+}
+
+function resetEcommerceTnSummary() {
+  if (ecommerceTnTotal) ecommerceTnTotal.textContent = '0';
+  if (ecommerceTnPendientes) ecommerceTnPendientes.textContent = '0';
+  if (ecommerceTnDuplicadas) ecommerceTnDuplicadas.textContent = '0';
+  if (ecommerceTnAdvertencias) ecommerceTnAdvertencias.textContent = '0';
+}
+
+function updateEcommerceTnSummary(resumen = {}) {
+  if (ecommerceTnTotal) ecommerceTnTotal.textContent = String(Number(resumen.total) || 0);
+  if (ecommerceTnPendientes) ecommerceTnPendientes.textContent = String(Number(resumen.pendientes) || 0);
+  if (ecommerceTnDuplicadas) ecommerceTnDuplicadas.textContent = String(Number(resumen.duplicadas) || 0);
+  if (ecommerceTnAdvertencias) ecommerceTnAdvertencias.textContent = String(Number(resumen.conAdvertencias) || 0);
+}
+
+function getEcommerceTnPendingRows() {
+  return ecommerceTnRows.filter((row) => !row.duplicated && row.status !== 'created' && row.status !== 'duplicated');
+}
+
+function getEcommerceTnStatusBadge(row) {
+  const detail = row.message || (Array.isArray(row.warnings) ? row.warnings.join('. ') : '');
+  const title = detail ? ` title="${escapeAttr(detail)}"` : '';
+  if (row.status === 'created') return `<span class="badge green"${title}>Creada</span>`;
+  if (row.status === 'error') return `<span class="badge red"${title}>Error</span>`;
+  if (row.duplicated || row.status === 'duplicated') return `<span class="badge gray"${title}>Duplicada</span>`;
+  if (row.warnings?.length) return `<span class="badge yellow"${title}>Pendiente</span>`;
+  return '<span class="badge green">Pendiente</span>';
+}
+
+function buildEcommerceTnResultMessage(resumen = {}) {
+  const base = `Creadas: ${resumen.creadas || 0}. Duplicadas: ${resumen.duplicadas || 0}. Errores: ${resumen.errores || 0}.`;
+  const errores = ecommerceTnRows
+    .filter((row) => row.status === 'error' && row.message)
+    .map((row) => `Orden ${row.ordenWeb}: ${row.message}`);
+  return errores.length ? `${base} ${errores.join(' | ')}` : base;
+}
+
+function getEcommerceTnNotes(row) {
+  const notes = [];
+  if (row.message) notes.push(row.message);
+  if (Array.isArray(row.warnings)) notes.push(...row.warnings);
+  return notes.filter(Boolean).join(' | ') || '-';
+}
+
+function formatEcommerceTnItems(row) {
+  const items = Array.isArray(row.items) ? row.items : [];
+  if (!items.length) return '-';
+  const label = items
+    .slice(0, 3)
+    .map((item) => `${item.cantidad || 0} x ${item.articulo || item.detalle || '-'}`)
+    .join(' | ');
+  return items.length > 3 ? `${label} (+${items.length - 3})` : label;
+}
+
+function renderEcommerceTnRows() {
+  if (!ecommerceTnTableBody) return;
+  if (!ecommerceTnRows.length) {
+    ecommerceTnTableBody.innerHTML = '<tr><td colspan="8">Sin ordenes para mostrar.</td></tr>';
+    if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.disabled = true;
+    return;
+  }
+  ecommerceTnTableBody.innerHTML = ecommerceTnRows
+    .map((row) => {
+      const cliente = [row.nombre, row.apellido].filter(Boolean).join(' ').trim() || 'Cliente';
+      return `
+        <tr class="${row.status === 'error' ? 'ecommerce-tn-row-error' : ''}">
+          <td>${getEcommerceTnStatusBadge(row)}</td>
+          <td>${escapeAttr(row.ordenWeb || '')}</td>
+          <td>${escapeAttr(cliente)}</td>
+          <td>${escapeAttr(row.mail || '-')}</td>
+          <td>${escapeAttr(row.localidad || '-')}</td>
+          <td>${escapeAttr(row.provincia || '-')}</td>
+          <td>${formatMoney(row.totalWeb || 0)}</td>
+          <td>${escapeAttr(getEcommerceTnNotes(row))}</td>
+        </tr>
+      `;
+    })
+    .join('');
+  if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.disabled = getEcommerceTnPendingRows().length === 0;
+}
+
+async function loadEcommerceTnPreview() {
+  if (!ecommerceTnFechaMin?.value || !ecommerceTnFechaMax?.value) {
+    setStatusMessage(ecommerceTnStatus, 'Selecciona el rango de fechas.', 'error');
+    return;
+  }
+  if (!ecommerceTnLocal?.value) {
+    setStatusMessage(ecommerceTnStatus, 'Selecciona un local.', 'error');
+    return;
+  }
+  try {
+    if (ecommerceTnPreviewBtn) ecommerceTnPreviewBtn.disabled = true;
+    if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.disabled = true;
+    setStatusMessage(ecommerceTnStatus, 'Consultando TiendaNube...');
+    const params = new URLSearchParams({
+      fecha_min: ecommerceTnFechaMin.value,
+      fecha_max: ecommerceTnFechaMax.value,
+    });
+    const storeId = String(ecommerceTnLocal?.value || '').trim();
+    if (storeId) params.set('store_id', storeId);
+    const payload = await fetchJSON(`/api/ecommerce/ordenes-tn/preview?${params.toString()}`);
+    ecommerceTnRows = payload.data || [];
+    ecommerceTnMeta = payload.meta || null;
+    updateEcommerceTnSummary(payload.resumen || {});
+    renderEcommerceTnRows();
+    const pendientes = Number(payload.resumen?.pendientes) || 0;
+    setStatusMessage(
+      ecommerceTnStatus,
+      pendientes ? `Hay ${pendientes} ordenes listas para crear.` : 'No hay ordenes nuevas para crear.',
+      pendientes ? 'ok' : ''
+    );
+  } catch (error) {
+    ecommerceTnRows = [];
+    ecommerceTnMeta = null;
+    resetEcommerceTnSummary();
+    renderEcommerceTnRows();
+    setStatusMessage(ecommerceTnStatus, error.message || 'No se pudo verificar TiendaNube.', 'error');
+  } finally {
+    if (ecommerceTnPreviewBtn) ecommerceTnPreviewBtn.disabled = false;
+  }
+}
+
+async function replicateEcommerceTnRows() {
+  const ordenes = getEcommerceTnPendingRows();
+  if (!ordenes.length) {
+    setStatusMessage(ecommerceTnStatus, 'No hay ordenes pendientes para crear.');
+    return;
+  }
+  try {
+    if (ecommerceTnPreviewBtn) ecommerceTnPreviewBtn.disabled = true;
+    if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.disabled = true;
+    setStatusMessage(ecommerceTnStatus, `Creando ${ordenes.length} pedidos...`);
+    const storeId = String(ecommerceTnLocal?.value || ecommerceTnMeta?.storeId || '').trim();
+    if (!storeId) throw new Error('Selecciona un local.');
+    const payload = await fetchJSON('/api/ecommerce/ordenes-tn/replicar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ store_id: storeId, ordenes }),
+    });
+    const resultByOrder = new Map((payload.data || []).map((row) => [String(row.ordenWeb || ''), row]));
+    ecommerceTnRows = ecommerceTnRows.map((row) => {
+      const result = resultByOrder.get(String(row.ordenWeb || ''));
+      if (!result) return row;
+      return {
+        ...row,
+        status: result.status,
+        duplicated: result.status === 'duplicated' ? true : row.duplicated,
+        message: result.nroPedido ? `${result.message || ''} #${result.nroPedido}`.trim() : result.message,
+      };
+    });
+    const resumen = payload.resumen || {};
+    const pendientes = getEcommerceTnPendingRows().length;
+    updateEcommerceTnSummary({
+      total: ecommerceTnRows.length,
+      pendientes,
+      duplicadas: ecommerceTnRows.filter((row) => row.duplicated || row.status === 'duplicated').length,
+      conAdvertencias: ecommerceTnRows.filter((row) => row.warnings?.length || row.status === 'error').length,
+    });
+    renderEcommerceTnRows();
+    setStatusMessage(
+      ecommerceTnStatus,
+      buildEcommerceTnResultMessage(resumen),
+      Number(resumen.errores) ? 'error' : 'ok'
+    );
+  } catch (error) {
+    setStatusMessage(ecommerceTnStatus, error.message || 'No se pudieron crear los pedidos.', 'error');
+  } finally {
+    if (ecommerceTnPreviewBtn) ecommerceTnPreviewBtn.disabled = false;
+    if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.disabled = getEcommerceTnPendingRows().length === 0;
+  }
+}
+
+function initEcommerceOrdenesTn() {
+  if (!viewEcommerceOrdenesTn) return;
+  const today = getDateInputValue();
+  if (ecommerceTnFechaMin && !ecommerceTnFechaMin.value) ecommerceTnFechaMin.value = today;
+  if (ecommerceTnFechaMax && !ecommerceTnFechaMax.value) ecommerceTnFechaMax.value = today;
+  setEcommerceTnLocalFromCurrent(currentLocalName);
+  resetEcommerceTnSummary();
+  renderEcommerceTnRows();
+  if (ecommerceTnPreviewBtn) ecommerceTnPreviewBtn.addEventListener('click', loadEcommerceTnPreview);
+  if (ecommerceTnReplicarBtn) ecommerceTnReplicarBtn.addEventListener('click', replicateEcommerceTnRows);
+}
+
+function isEcommerceAsigUnassigned(row) {
+  const seller = String(row?.vendedora || '').trim().toUpperCase();
+  return !seller || seller === 'PAGINA';
+}
+
+function getEcommerceAsigFilteredRows() {
+  const term = String(ecommerceAsigSearch?.value || '').trim().toLowerCase();
+  if (!term) return ecommerceAsigRows;
+  return ecommerceAsigRows.filter((row) =>
+    [
+      row.nropedido,
+      row.ordenWeb,
+      row.cliente,
+      row.mail,
+      row.local,
+      row.vendedora,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(term)
+  );
+}
+
+function updateEcommerceAsigSummary() {
+  const total = ecommerceAsigRows.length;
+  const sinAsignar = ecommerceAsigRows.filter(isEcommerceAsigUnassigned).length;
+  const selectedCount = ecommerceAsigSelected.size;
+  if (ecommerceAsigSinAsignar) ecommerceAsigSinAsignar.textContent = String(sinAsignar);
+  if (ecommerceAsigAsignados) ecommerceAsigAsignados.textContent = String(total - sinAsignar);
+  if (ecommerceAsigTotal) ecommerceAsigTotal.textContent = String(total);
+  if (ecommerceAsigSeleccionados) ecommerceAsigSeleccionados.textContent = String(selectedCount);
+  if (ecommerceAsigBulkApply) ecommerceAsigBulkApply.disabled = selectedCount === 0 || !ecommerceAsigBulkVendedora?.value;
+}
+
+function renderEcommerceAsigVendedoras() {
+  const options = ['<option value="">Seleccionar vendedora</option>']
+    .concat(ecommerceAsigVendedoras.map((row) => `<option value="${escapeAttr(row.nombre || '')}">${escapeAttr(row.nombre || '')}</option>`))
+    .join('');
+  if (ecommerceAsigBulkVendedora) ecommerceAsigBulkVendedora.innerHTML = options;
+}
+
+function buildEcommerceAsigRowSelect(row) {
+  const current = String(row.vendedora || '').trim();
+  const options = ['<option value="">Seleccionar</option>']
+    .concat(
+      ecommerceAsigVendedoras.map((seller) => {
+        const name = seller.nombre || '';
+        const selected = name === current ? ' selected' : '';
+        return `<option value="${escapeAttr(name)}"${selected}>${escapeAttr(name)}</option>`;
+      })
+    )
+    .join('');
+  return `<select class="ecommerce-asig-row-vendedora" data-id="${row.id}">${options}</select>`;
+}
+
+function renderEcommerceAsigRows() {
+  if (!ecommerceAsigTableBody) return;
+  const rows = getEcommerceAsigFilteredRows();
+  ecommerceAsigSelected.forEach((id) => {
+    if (!ecommerceAsigRows.some((row) => String(row.id) === String(id))) ecommerceAsigSelected.delete(id);
+  });
+  if (!rows.length) {
+    ecommerceAsigTableBody.innerHTML = '<tr><td colspan="9">Sin pedidos para mostrar.</td></tr>';
+    if (ecommerceAsigCheckAll) ecommerceAsigCheckAll.checked = false;
+    updateEcommerceAsigSummary();
+    return;
+  }
+  ecommerceAsigTableBody.innerHTML = rows
+    .map((row) => {
+      const id = String(row.id || '');
+      const unassigned = isEcommerceAsigUnassigned(row);
+      const checked = ecommerceAsigSelected.has(id) ? ' checked' : '';
+      return `
+        <tr>
+          <td><input type="checkbox" class="ecommerce-asig-row-check" data-id="${escapeAttr(id)}"${checked} /></td>
+          <td><span class="badge ${unassigned ? 'yellow' : 'green'}">${unassigned ? 'Sin asignar' : 'Asignado'}</span></td>
+          <td>${escapeAttr(row.nropedido || '')}</td>
+          <td>${escapeAttr(row.ordenWeb || '')}</td>
+          <td>${escapeAttr(row.cliente || '-')}</td>
+          <td>${escapeAttr(row.mail || '-')}</td>
+          <td>${escapeAttr(row.local || '-')}</td>
+          <td>${formatMoney(row.totalweb || 0)}</td>
+          <td>${buildEcommerceAsigRowSelect(row)}</td>
+        </tr>
+      `;
+    })
+    .join('');
+  if (ecommerceAsigCheckAll) {
+    ecommerceAsigCheckAll.checked = rows.length > 0 && rows.every((row) => ecommerceAsigSelected.has(String(row.id)));
+  }
+  updateEcommerceAsigSummary();
+}
+
+async function loadEcommerceAsigVendedoras() {
+  const payload = await fetchJSON('/api/config/vendedoras');
+  ecommerceAsigVendedoras = payload.data || [];
+  renderEcommerceAsigVendedoras();
+}
+
+async function loadEcommerceAsignacionPedidos() {
+  if (!viewEcommerceAsignacionPedidos) return;
+  try {
+    if (ecommerceAsigRefreshBtn) ecommerceAsigRefreshBtn.disabled = true;
+    setStatusMessage(ecommerceAsigStatus, 'Cargando pedidos...');
+    if (!ecommerceAsigVendedoras.length) await loadEcommerceAsigVendedoras();
+    const params = new URLSearchParams({
+      mostrar_todos: ecommerceAsigMostrarTodos?.checked ? '1' : '0',
+    });
+    const local = String(ecommerceAsigLocal?.value || '').trim();
+    if (local) params.set('local', local);
+    const payload = await fetchJSON(`/api/ecommerce/ordenes-tn/asignacion?${params.toString()}`);
+    ecommerceAsigRows = payload.data || [];
+    ecommerceAsigSelected.clear();
+    renderEcommerceAsigRows();
+    setStatusMessage(ecommerceAsigStatus, ecommerceAsigRows.length ? `Pedidos: ${ecommerceAsigRows.length}` : 'Sin pedidos para asignar.');
+  } catch (error) {
+    ecommerceAsigRows = [];
+    ecommerceAsigSelected.clear();
+    renderEcommerceAsigRows();
+    setStatusMessage(ecommerceAsigStatus, error.message || 'No se pudo cargar asignacion de pedidos.', 'error');
+  } finally {
+    if (ecommerceAsigRefreshBtn) ecommerceAsigRefreshBtn.disabled = false;
+  }
+}
+
+async function assignEcommercePedidos(pedidoIds, vendedora) {
+  const ids = (pedidoIds || []).map((id) => Number(id)).filter(Boolean);
+  if (!ids.length) throw new Error('Selecciona al menos un pedido.');
+  if (!vendedora) throw new Error('Selecciona una vendedora.');
+  return fetchJSON('/api/ecommerce/ordenes-tn/asignacion', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pedido_ids: ids, vendedora }),
+  });
+}
+
+async function applyEcommerceAsigBulk() {
+  try {
+    const vendedora = String(ecommerceAsigBulkVendedora?.value || '').trim();
+    const ids = Array.from(ecommerceAsigSelected);
+    if (ecommerceAsigBulkApply) ecommerceAsigBulkApply.disabled = true;
+    setStatusMessage(ecommerceAsigStatus, `Asignando ${ids.length} pedidos...`);
+    const result = await assignEcommercePedidos(ids, vendedora);
+    setStatusMessage(ecommerceAsigStatus, `Actualizados: ${result.actualizados || 0}. Omitidos: ${result.omitidos || 0}.`, 'ok');
+    await loadEcommerceAsignacionPedidos();
+  } catch (error) {
+    setStatusMessage(ecommerceAsigStatus, error.message || 'No se pudieron asignar los pedidos.', 'error');
+    updateEcommerceAsigSummary();
+  }
+}
+
+async function applyEcommerceAsigRow(id) {
+  const select = Array.from(ecommerceAsigTableBody?.querySelectorAll('.ecommerce-asig-row-vendedora') || []).find(
+    (item) => String(item.dataset.id || '') === String(id)
+  );
+  const vendedora = String(select?.value || '').trim();
+  try {
+    setStatusMessage(ecommerceAsigStatus, 'Asignando pedido...');
+    const result = await assignEcommercePedidos([id], vendedora);
+    setStatusMessage(ecommerceAsigStatus, `Pedido actualizado. Actualizados: ${result.actualizados || 0}.`, 'ok');
+    await loadEcommerceAsignacionPedidos();
+  } catch (error) {
+    setStatusMessage(ecommerceAsigStatus, error.message || 'No se pudo asignar el pedido.', 'error');
+  }
+}
+
+function onEcommerceAsigTableClick(event) {
+  const check = event.target.closest('.ecommerce-asig-row-check');
+  if (check) {
+    const id = String(check.dataset.id || '');
+    if (check.checked) ecommerceAsigSelected.add(id);
+    else ecommerceAsigSelected.delete(id);
+    renderEcommerceAsigRows();
+    return;
+  }
+}
+
+function onEcommerceAsigTableChange(event) {
+  const select = event.target.closest('.ecommerce-asig-row-vendedora');
+  if (!select) return;
+  applyEcommerceAsigRow(select.dataset.id);
+}
+
+function initEcommerceAsignacionPedidos() {
+  if (!viewEcommerceAsignacionPedidos) return;
+  setEcommerceTnLocalFromCurrent(currentLocalName);
+  renderEcommerceAsigRows();
+  safeOn(ecommerceAsigRefreshBtn, 'click', loadEcommerceAsignacionPedidos);
+  safeOn(ecommerceAsigMostrarTodos, 'change', loadEcommerceAsignacionPedidos);
+  safeOn(ecommerceAsigLocal, 'change', loadEcommerceAsignacionPedidos);
+  safeOn(ecommerceAsigSearch, 'input', renderEcommerceAsigRows);
+  safeOn(ecommerceAsigBulkVendedora, 'change', updateEcommerceAsigSummary);
+  safeOn(ecommerceAsigBulkApply, 'click', applyEcommerceAsigBulk);
+  safeOn(ecommerceAsigTableBody, 'click', onEcommerceAsigTableClick);
+  safeOn(ecommerceAsigTableBody, 'change', onEcommerceAsigTableChange);
+  safeOn(ecommerceAsigCheckAll, 'change', () => {
+    const rows = getEcommerceAsigFilteredRows();
+    if (ecommerceAsigCheckAll.checked) {
+      rows.forEach((row) => ecommerceAsigSelected.add(String(row.id)));
+    } else {
+      rows.forEach((row) => ecommerceAsigSelected.delete(String(row.id)));
+    }
+    renderEcommerceAsigRows();
+  });
 }
 
 function getWatermarkConfig() {
@@ -15202,6 +15674,8 @@ function resolvePermissionKey(target) {
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
   if (target === 'ecommerce-panel' || target === 'ecommerce-panel-detail') return 'ecommerce-panel';
   if (target === 'ecommerce-publicaciones') return 'ecommerce-publicaciones';
+  if (target === 'ecommerce-ordenes-tn') return 'ecommerce-ordenes-tn';
+  if (target === 'ecommerce-asignacion-pedidos') return 'ecommerce-asignacion-pedidos';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
@@ -15322,6 +15796,8 @@ function getFirstAllowedView(perms = {}) {
       'ecommerce-imagenweb',
       'ecommerce-panel',
       'ecommerce-publicaciones',
+      'ecommerce-ordenes-tn',
+      'ecommerce-asignacion-pedidos',
       'cajas',
       'cajas-cierre',
       'cajas-nueva-factura',
@@ -15373,17 +15849,22 @@ async function loadCurrentUser() {
     if (userRoleEl) {
       userRoleEl.textContent = data?.user?.role || 'Equipo';
     }
+    currentLocalName = data?.local || '';
+    currentTnubeStoreId = data?.tnubeStoreId || '';
     if (tagLogo) {
       const logoPath = getLogoPathByLocal(data?.local);
       if (logoPath) tagLogo.src = logoPath;
     }
+    setEcommerceTnLocalFromCurrent(currentLocalName, currentTnubeStoreId);
     ecommerceWatermarkLogoUrl = getWatermarkLogoByLocal(data?.local);
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
     normalizeDashboardPermissions(currentPermissions, data?.permissions || {});
     const hasEcommerceSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel') ||
-      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-publicaciones');
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-publicaciones') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-ordenes-tn') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-asignacion-pedidos');
     const hasFidelizacionSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-panel') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-mis') ||
@@ -16039,7 +16520,7 @@ function isEcommerceViewActive() {
   const path = String(window.location.pathname || '').toLowerCase();
   const viewParam = new URLSearchParams(window.location.search || '').get('view') || '';
   return (
-    ['ecommerce-panel', 'ecommerce-panel-detail', 'ecommerce-imagenweb', 'ecommerce-publicaciones'].includes(currentView) ||
+    ['ecommerce-panel', 'ecommerce-panel-detail', 'ecommerce-imagenweb', 'ecommerce-publicaciones', 'ecommerce-ordenes-tn', 'ecommerce-asignacion-pedidos'].includes(currentView) ||
     path.startsWith('/consultadetalladaecomerce') ||
     String(viewParam).startsWith('ecommerce-')
   );
@@ -16977,6 +17458,8 @@ const permissionGroups = [
       { key: 'ecommerce-imagenweb', label: 'ImagenWeb' },
       { key: 'ecommerce-panel', label: 'Panel' },
       { key: 'ecommerce-publicaciones', label: 'Publicaciones' },
+      { key: 'ecommerce-ordenes-tn', label: 'Ordenes TiendaNube - Replica TN' },
+      { key: 'ecommerce-asignacion-pedidos', label: 'Ordenes TiendaNube - Asignacion Pedidos' },
     ],
   },
   {
@@ -17028,10 +17511,18 @@ function normalizeDashboardPermissions(perms = {}, rawPerms = {}) {
 function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
   if (!perms.ecommerce) return perms;
   if (hasSubPerms) return perms;
-  if (!perms['ecommerce-imagenweb'] && !perms['ecommerce-panel'] && !perms['ecommerce-publicaciones']) {
+  if (
+    !perms['ecommerce-imagenweb'] &&
+    !perms['ecommerce-panel'] &&
+    !perms['ecommerce-publicaciones'] &&
+    !perms['ecommerce-ordenes-tn'] &&
+    !perms['ecommerce-asignacion-pedidos']
+  ) {
     perms['ecommerce-imagenweb'] = true;
     perms['ecommerce-panel'] = true;
     perms['ecommerce-publicaciones'] = true;
+    perms['ecommerce-ordenes-tn'] = true;
+    perms['ecommerce-asignacion-pedidos'] = true;
   }
   return perms;
 }
@@ -17096,7 +17587,9 @@ async function loadRolePermissions(roleId) {
       if (
         row.permiso === 'ecommerce-imagenweb' ||
         row.permiso === 'ecommerce-panel' ||
-        row.permiso === 'ecommerce-publicaciones'
+        row.permiso === 'ecommerce-publicaciones' ||
+        row.permiso === 'ecommerce-ordenes-tn' ||
+        row.permiso === 'ecommerce-asignacion-pedidos'
       ) {
         hasEcommerceSubPerms = true;
       }
@@ -17157,7 +17650,7 @@ function renderPermissions() {
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
     mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
-    ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones'],
+    ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones', 'ecommerce-ordenes-tn', 'ecommerce-asignacion-pedidos'],
   };
   const submenuKeys = new Set(Object.values(submenuMap).flat());
 
@@ -17623,8 +18116,18 @@ function initMenu() {
       e.stopPropagation();
       const group = parent.closest('.menu-group');
       const isOpen = group?.classList.contains('open');
-      groups.forEach((g) => g.classList.remove('open'));
-      if (group && !isOpen) group.classList.add('open');
+      const siblingGroups = group?.parentElement
+        ? Array.from(group.parentElement.children).filter((el) => el.classList?.contains('menu-group'))
+        : [];
+      siblingGroups.forEach((g) => {
+        if (g !== group) g.classList.remove('open');
+      });
+      if (group && isOpen) {
+        group.classList.remove('open');
+        group.querySelectorAll('.menu-group.open').forEach((child) => child.classList.remove('open'));
+      } else if (group) {
+        group.classList.add('open');
+      }
     });
   });
 
@@ -17633,12 +18136,17 @@ function initMenu() {
       navItems.forEach((b) => b.classList.remove('active'));
       parentButtons.forEach((p) => p.classList.remove('active'));
       btn.classList.add('active');
-      const group = btn.closest('.menu-group');
-      if (group) {
-        group.classList.add('open');
-        const parentBtn = group.querySelector('.menu-parent');
-        if (parentBtn) parentBtn.classList.add('active');
+      const parentGroups = [];
+      let group = btn.closest('.menu-group');
+      while (group) {
+        parentGroups.push(group);
+        group = group.parentElement?.closest('.menu-group') || null;
       }
+      parentGroups.forEach((item) => {
+        item.classList.add('open');
+        const parentBtn = Array.from(item.children).find((child) => child.classList?.contains('menu-parent'));
+        if (parentBtn) parentBtn.classList.add('active');
+      });
       if (btn.classList.contains('logout')) return;
       const target = btn.dataset.target;
       if (
@@ -20852,6 +21360,8 @@ function switchView(target) {
       viewEcommercePanel,
       viewEcommercePanelDetail,
       viewEcommercePublicaciones,
+      viewEcommerceOrdenesTn,
+      viewEcommerceAsignacionPedidos,
       viewCajas,
       viewCajasCierre,
       viewCajasNuevaFactura,
@@ -20897,6 +21407,8 @@ function switchView(target) {
       viewEcommercePanel,
       viewEcommercePanelDetail,
       viewEcommercePublicaciones,
+      viewEcommerceOrdenesTn,
+      viewEcommerceAsignacionPedidos,
       viewCajas,
       viewCajasCierre,
       viewCajasNuevaFactura,
@@ -20997,6 +21509,11 @@ function switchView(target) {
     viewEcommercePublicaciones.classList.remove('hidden');
     loadEcommercePubCategorias();
     loadEcommercePublicaciones();
+  } else if (target === 'ecommerce-ordenes-tn') {
+    viewEcommerceOrdenesTn.classList.remove('hidden');
+  } else if (target === 'ecommerce-asignacion-pedidos') {
+    viewEcommerceAsignacionPedidos.classList.remove('hidden');
+    loadEcommerceAsignacionPedidos();
   } else if (target === 'cajas') {
     viewCajas.classList.remove('hidden');
   } else if (target === 'cajas-cierre') {
@@ -21086,6 +21603,8 @@ initEcommerceImagenweb();
 initEcommercePanel();
 initEcommercePanelDetail();
 initEcommercePublicaciones();
+initEcommerceOrdenesTn();
+initEcommerceAsignacionPedidos();
 initCajasCierre();
 initPedidoNuevo();
 initFacturaNueva();

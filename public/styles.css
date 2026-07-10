@@ -880,6 +880,7 @@ input[type='month'] {
 
 .client-inline input[type='search'],
 .client-inline input[type='date'],
+.client-inline input[type='text'],
 .client-inline select {
   min-width: 160px;
 }
@@ -1797,6 +1798,139 @@ body.theme-light .abm-actions-menu {
 .ecommerce-panel-actions > button {
   width: auto;
   flex: 0 0 auto;
+}
+
+.menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.ecommerce-tn-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.ecommerce-tn-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.ecommerce-tn-summary > div {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+}
+
+.ecommerce-tn-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ecommerce-tn-summary strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 22px;
+}
+
+.checkbox-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.checkbox-inline input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+}
+
+.ecommerce-asig-bulk {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 14px;
+}
+
+.ecommerce-tn-toolbar .client-inline,
+.ecommerce-asig-bulk .client-inline {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ecommerce-tn-toolbar .client-inline > span,
+.ecommerce-asig-bulk .client-inline > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ecommerce-tn-toolbar select,
+.ecommerce-tn-toolbar input[type='search'],
+.ecommerce-tn-toolbar input[type='date'],
+.ecommerce-asig-bulk select,
+.ecommerce-asig-row-vendedora {
+  height: 38px;
+  min-width: 170px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 8px 34px 8px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.ecommerce-tn-toolbar select,
+.ecommerce-asig-bulk select,
+.ecommerce-asig-row-vendedora {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 16px,
+    calc(100% - 11px) 16px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.ecommerce-tn-toolbar select:focus,
+.ecommerce-tn-toolbar input[type='search']:focus,
+.ecommerce-tn-toolbar input[type='date']:focus,
+.ecommerce-asig-bulk select:focus,
+.ecommerce-asig-row-vendedora:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+}
+
+.ecommerce-tn-toolbar select:disabled {
+  cursor: default;
+  opacity: 1;
+  color: var(--text);
+}
+
+.ecommerce-tn-toolbar input[type='search'] {
+  min-width: 240px;
+}
+
+.ecommerce-asig-row-vendedora {
+  min-width: 150px;
+  width: 100%;
+  max-width: 210px;
+}
+
+.ecommerce-tn-row-error {
+  background: rgba(255, 91, 91, 0.08);
 }
 
 .ecommerce-panel-detail-select {
@@ -5312,19 +5446,31 @@ body.theme-light .perm-subitem {
   padding-left: 12px;
 }
 
-.side-menu.expanded .menu-group.open .submenu,
-.side-menu.open .menu-group.open .submenu {
+.side-menu.expanded .menu-group.open > .submenu,
+.side-menu.open .menu-group.open > .submenu {
   display: flex;
 }
 
-.side-menu.expanded .menu-group.open .menu-parent .caret,
-.side-menu.open .menu-group.open .menu-parent .caret {
+.side-menu.expanded .menu-group.open > .menu-parent .caret,
+.side-menu.open .menu-group.open > .menu-parent .caret {
   transform: rotate(90deg);
 }
 
 .submenu .menu-item {
   padding-left: 14px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.submenu .submenu-group {
+  gap: 6px;
+}
+
+.submenu .nested-submenu {
+  padding-left: 12px;
+}
+
+.submenu .nested-submenu .menu-item {
+  padding-left: 18px;
 }
 
 .factura-select {

@@ -354,6 +354,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function enrichTnubeNetworkError(error, url) {
+  if (!error || error.status) return error;
+  const cause = error.cause || {};
+  const code = cause.code || cause.errno || '';
+  const detail = [code, cause.message].filter(Boolean).join(' - ');
+  const message = detail
+    ? `No se pudo conectar con TiendaNube (${detail})`
+    : `No se pudo conectar con TiendaNube (${error.message || 'fetch failed'})`;
+  const enriched = new Error(message);
+  enriched.url = url;
+  enriched.cause = cause;
+  enriched.originalMessage = error.message;
+  return enriched;
+}
+
 // Envoltorio simple para llamadas a la API de Tienda Nube (headers + JSON).
 async function tnubeJsonRequest(storeId, token, appName, method, pathUrl, payload) {
   const url = `${TNUBE_BASE_URL}/${storeId}/${pathUrl.replace(/^\/+/, '')}`;
@@ -382,7 +397,7 @@ async function tnubeJsonRequest(storeId, token, appName, method, pathUrl, payloa
       const body = response.status === 204 ? null : await response.json().catch(() => null);
       return { body, headers: response.headers, status: response.status };
     } catch (error) {
-      lastError = error;
+      lastError = enrichTnubeNetworkError(error, url);
       const status = Number(error?.status) || 0;
       const retryable = !status || status === 429 || status >= 500;
       if (!retryable || attempt >= TNUBE_REQUEST_RETRIES) break;
@@ -413,6 +428,272 @@ function formatTnubeSyncError(error, fallback = 'Error al sincronizar con Tienda
     }
   }
   return raw.length > 450 ? `${raw.slice(0, 447)}...` : raw;
+}
+
+function validateReplicaTnDate(value, fieldName) {
+  const text = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new Error(`${fieldName} debe tener formato YYYY-MM-DD`);
+  }
+  const date = new Date(`${text}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`${fieldName} invalida`);
+  }
+  return text;
+}
+
+function buildReplicaTnDateRange(fechaMin, fechaMax) {
+  return {
+    createdAtMin: `${fechaMin}T00:00:00-03:00`,
+    createdAtMax: `${fechaMax}T23:59:59-03:00`,
+  };
+}
+
+function normalizeLocalName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+function splitReplicaTnName(name) {
+  const fullName = String(name || '').trim().replace(/\s+/g, ' ');
+  if (!fullName) return { nombre: 'Cliente', apellido: 'TiendaNube' };
+  const parts = fullName.split(' ');
+  if (parts.length === 1) return { nombre: parts[0], apellido: 'TiendaNube' };
+  return {
+    nombre: parts.slice(0, -1).join(' '),
+    apellido: parts.slice(-1)[0],
+  };
+}
+
+function normalizeReplicaTnOrder(order, tienda, existingOrderNumbers = new Set()) {
+  const customer = order?.customer || {};
+  const defaultAddress = customer.default_address || {};
+  const nameParts = splitReplicaTnName(customer.name || order?.contact_name || '');
+  const locality = defaultAddress.locality || defaultAddress.city || customer.billing_city || order?.billing_city || '';
+  const province = customer.billing_province || defaultAddress.province || order?.billing_province || '';
+  const addressText = [defaultAddress.address || order?.billing_address || '', defaultAddress.number || '']
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  const ordenWeb = Number(order?.number || order?.id) || 0;
+  const createdAt = order?.created_at ? new Date(order.created_at) : null;
+  const fechaProveedor = createdAt && !Number.isNaN(createdAt.getTime()) ? formatDateTimeLocal(createdAt) : null;
+  const items = Array.isArray(order?.products)
+    ? order.products.map((item) => ({
+        articulo: String(item?.sku || '').trim(),
+        detalle: String(item?.name || '').trim(),
+        precio: Number(item?.price) || 0,
+        cantidad: Number(item?.quantity) || 0,
+      }))
+    : [];
+  const mail = String(customer.email || order?.contact_email || '').trim();
+  return {
+    ordenWeb,
+    tienda,
+    nombre: nameParts.nombre,
+    apellido: nameParts.apellido,
+    mail,
+    direccion: addressText,
+    telefono: String(customer.phone || order?.contact_phone || '').trim(),
+    cuit: String(customer.identification || order?.billing_customer_document || '').trim(),
+    provincia: province,
+    localidad: locality,
+    codigoPostal: String(order?.billing_zipcode || defaultAddress.zipcode || '').trim(),
+    totalWeb: Number(order?.total) || 0,
+    fechaProveedor,
+    items,
+    itemsCount: items.length,
+    duplicated: existingOrderNumbers.has(String(ordenWeb)),
+    warnings: [
+      !mail ? 'Sin mail: se usara cliente generico' : '',
+      !items.length ? 'Sin articulos' : '',
+    ].filter(Boolean),
+  };
+}
+
+async function fetchReplicaTnOrders(tnubeConnection, fechaMin, fechaMax) {
+  const perPage = 50;
+  const dateRange = buildReplicaTnDateRange(fechaMin, fechaMax);
+  const firstQuery = buildTnubeQuery({
+    page: 1,
+    per_page: perPage,
+    status: 'open',
+    created_at_min: dateRange.createdAtMin,
+    created_at_max: dateRange.createdAtMax,
+  });
+  let firstResponse;
+  try {
+    firstResponse = await tnubeJsonRequest(
+      tnubeConnection.storeId,
+      tnubeConnection.accessToken,
+      tnubeConnection.appName,
+      'GET',
+      `orders${firstQuery}`
+    );
+  } catch (error) {
+    const raw = String(error?.body || error?.message || '');
+    if (Number(error?.status) === 404 && raw.includes('Last page is 0')) {
+      return [];
+    }
+    throw error;
+  }
+  const total = Number(firstResponse.headers.get('x-total-count')) || (Array.isArray(firstResponse.body) ? firstResponse.body.length : 0);
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const orders = Array.isArray(firstResponse.body) ? [...firstResponse.body] : [];
+  for (let page = 2; page <= pages; page += 1) {
+    const query = buildTnubeQuery({
+      page,
+      per_page: perPage,
+      status: 'open',
+      created_at_min: dateRange.createdAtMin,
+      created_at_max: dateRange.createdAtMax,
+    });
+    const response = await tnubeJsonRequest(
+      tnubeConnection.storeId,
+      tnubeConnection.accessToken,
+      tnubeConnection.appName,
+      'GET',
+      `orders${query}`
+    );
+    if (Array.isArray(response.body)) orders.push(...response.body);
+  }
+  return orders;
+}
+
+async function getReplicaTnProvinciaId(conn, provincia) {
+  const nombre = String(provincia || '').trim();
+  if (!nombre) return 1;
+  const [[row]] = await conn.query(
+    `SELECT id FROM ${DB_NAME}.provincias WHERE nombre = ? LIMIT 1`,
+    [nombre]
+  );
+  return Number(row?.id) || 1;
+}
+
+function limitReplicaTnText(value, maxLength) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function normalizeReplicaTnCuit(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const number = Number(digits);
+  if (!Number.isSafeInteger(number) || number > 2147483647) return null;
+  return number;
+}
+
+async function getOrCreateReplicaTnCliente(conn, order) {
+  const mail = limitReplicaTnText(order.mail, 45);
+  if (!mail) return { id: 1, created: false, generic: true };
+  const [[existing]] = await conn.query(
+    `SELECT id_clientes FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
+    [mail]
+  );
+  if (existing?.id_clientes) {
+    return { id: Number(existing.id_clientes), created: false, generic: false };
+  }
+  const provinciaId = await getReplicaTnProvinciaId(conn, order.provincia);
+  const [result] = await conn.query(
+    `INSERT INTO ${DB_NAME}.clientes
+     (nombre, apellido, apodo, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta, created_at, updated_at)
+     VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, 'Ninguna', NOW(), NOW())`,
+    [
+      limitReplicaTnText(order.nombre || 'Cliente', 45),
+      limitReplicaTnText(order.apellido || 'TiendaNube', 45),
+      limitReplicaTnText(order.direccion, 45),
+      mail,
+      limitReplicaTnText(order.telefono, 45),
+      normalizeReplicaTnCuit(order.cuit),
+      limitReplicaTnText(order.localidad, 45),
+      limitReplicaTnText(order.codigoPostal, 10),
+      provinciaId,
+    ]
+  );
+  return { id: Number(result.insertId) || 1, created: true, generic: false };
+}
+
+async function reserveReplicaTnPedidoNumber(conn) {
+  const [[row]] = await conn.query(
+    `SELECT Nropedido FROM ${DB_NAME}.nropedido LIMIT 1 FOR UPDATE`
+  );
+  let nroPedido = (Number(row?.Nropedido) || 0) + 1;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const [[existsRow]] = await conn.query(
+      `SELECT 1 FROM ${DB_NAME}.controlpedidos WHERE nropedido = ? LIMIT 1`,
+      [nroPedido]
+    );
+    if (!existsRow) {
+      await conn.query(`UPDATE ${DB_NAME}.nropedido SET Nropedido = ?`, [nroPedido]);
+      return nroPedido;
+    }
+    nroPedido += 1;
+  }
+  throw new Error('No se pudo reservar un nroPedido libre');
+}
+
+async function createReplicaTnPedido(conn, rawOrder, tnubeConnection) {
+  const order = {
+    ...rawOrder,
+    tienda: tnubeConnection.tienda,
+    ordenWeb: Number(rawOrder?.ordenWeb) || 0,
+    totalWeb: Number(rawOrder?.totalWeb) || 0,
+    items: Array.isArray(rawOrder?.items) ? rawOrder.items : [],
+  };
+  if (!order.ordenWeb) throw new Error('OrdenWeb invalida');
+  if (!order.items.length) throw new Error(`La orden ${order.ordenWeb} no tiene articulos`);
+  await conn.query(`SELECT Nropedido FROM ${DB_NAME}.nropedido LIMIT 1 FOR UPDATE`);
+  const [[duplicate]] = await conn.query(
+    `SELECT id, nropedido
+     FROM ${DB_NAME}.controlpedidos
+     WHERE ordenWeb = ? AND local = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [order.ordenWeb, tnubeConnection.tienda]
+  );
+  if (duplicate) {
+    return {
+      status: 'duplicated',
+      ordenWeb: order.ordenWeb,
+      nroPedido: Number(duplicate.nropedido) || 0,
+      message: 'La orden ya existe en el sistema',
+    };
+  }
+  const cliente = await getOrCreateReplicaTnCliente(conn, order);
+  const nroPedido = await reserveReplicaTnPedidoNumber(conn);
+  const fecha = formatDateTimeLocal(new Date());
+  const fechaProveedor = order.fechaProveedor || null;
+  const [pedidoResult] = await conn.query(
+    `INSERT INTO ${DB_NAME}.controlpedidos
+     (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, totalweb, local, fecha_proveedor)
+     VALUES (?, ?, 'PAGINA', 'ReplicaTN', ?, 1, 0, ?, 0, ?, ?, ?)`,
+    [cliente.id, nroPedido, fecha, order.ordenWeb, order.totalWeb, tnubeConnection.tienda, fechaProveedor]
+  );
+  const pedidoId = Number(pedidoResult.insertId) || 0;
+  for (const item of order.items) {
+    const articulo = limitReplicaTnText(item?.articulo, 255);
+    const detalle = limitReplicaTnText(item?.detalle, 255);
+    const precio = Number(item?.precio) || 0;
+    const cantidad = Number(item?.cantidad) || 0;
+    if (!articulo && !detalle) continue;
+    if (cantidad <= 0) continue;
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.ordenesarticulos
+       (articulo, detalle, precio, cantidad, id_controlPedidos)
+       VALUES (?, ?, ?, ?, ?)`,
+      [articulo, detalle, precio, cantidad, pedidoId]
+    );
+  }
+  return {
+    status: 'created',
+    ordenWeb: order.ordenWeb,
+    nroPedido,
+    clienteId: cliente.id,
+    clienteCreado: cliente.created,
+    clienteGenerico: cliente.generic,
+    message: cliente.generic ? 'Pedido creado con cliente generico' : 'Pedido creado',
+  };
 }
 
 function isTnPublicacionesDebugEnabled() {
@@ -1567,6 +1848,8 @@ const ROLE_PERMISSIONS = [
   'ecommerce-imagenweb',
   'ecommerce-panel',
   'ecommerce-publicaciones',
+  'ecommerce-ordenes-tn',
+  'ecommerce-asignacion-pedidos',
   'cajas',
   'cajas-cierre',
   'cajas-nueva-factura',
@@ -1588,6 +1871,8 @@ const ECOMMERCE_SUB_PERMISSIONS = [
   'ecommerce-imagenweb',
   'ecommerce-panel',
   'ecommerce-publicaciones',
+  'ecommerce-ordenes-tn',
+  'ecommerce-asignacion-pedidos',
 ];
 
 function normalizeDashboardPermissions(permissions = {}, hasDashboardSubPerms = true) {
@@ -5388,6 +5673,7 @@ app.get('/api/me', (req, res) => {
       user: { id: payload.id, name: payload.name, email: payload.email, role },
       permissions,
       local,
+      tnubeStoreId: TNUBE_STORE_ID,
       sessionIdleMinutes: SESSION_MAX_IDLE_MINUTES,
     });
   })();
@@ -14875,6 +15161,281 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       if (conn) conn.release();
     }
   });
+
+  app.get('/api/ecommerce/ordenes-tn/preview', requirePermission('ecommerce-ordenes-tn'), async (req, res) => {
+  try {
+    const fechaMin = validateReplicaTnDate(req.query.fecha_min, 'fecha_min');
+    const fechaMax = validateReplicaTnDate(req.query.fecha_max, 'fecha_max');
+    if (fechaMin > fechaMax) {
+      return res.status(400).json({ message: 'fecha_min no puede ser mayor a fecha_max' });
+    }
+    const tnubeConnection = getTnubeConnection(req.query.store_id);
+    const orders = await fetchReplicaTnOrders(tnubeConnection, fechaMin, fechaMax);
+    const orderNumbers = orders.map((order) => Number(order?.number || order?.id) || 0).filter(Boolean);
+    const existingOrderNumbers = new Set();
+    if (orderNumbers.length) {
+      const placeholders = orderNumbers.map(() => '?').join(',');
+      const [existingRows] = await pool.query(
+        `SELECT ordenWeb
+         FROM ${DB_NAME}.controlpedidos
+         WHERE local = ?
+           AND ordenWeb IN (${placeholders})`,
+        [tnubeConnection.tienda, ...orderNumbers]
+      );
+      (existingRows || []).forEach((row) => existingOrderNumbers.add(String(Number(row.ordenWeb) || 0)));
+    }
+    const data = orders.map((order) => normalizeReplicaTnOrder(order, tnubeConnection.tienda, existingOrderNumbers));
+    const resumen = data.reduce(
+      (acc, row) => {
+        acc.total += 1;
+        if (row.duplicated) acc.duplicadas += 1;
+        else acc.pendientes += 1;
+        if (row.warnings?.length) acc.conAdvertencias += 1;
+        return acc;
+      },
+      { total: 0, pendientes: 0, duplicadas: 0, conAdvertencias: 0 }
+    );
+    return res.json({
+      data,
+      resumen,
+      meta: {
+        tienda: tnubeConnection.tienda,
+        storeId: tnubeConnection.storeId,
+        fechaMin,
+        fechaMax,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Error al verificar ordenes TiendaNube',
+      error: error.message,
+      status: error.status || null,
+      url: error.url || null,
+      cause: error.cause?.code || error.cause?.message || null,
+    });
+  }
+});
+
+  app.post(
+  '/api/ecommerce/ordenes-tn/replicar',
+  requirePermission('ecommerce-ordenes-tn'),
+  express.json({ limit: '5mb' }),
+  async (req, res) => {
+    const orders = Array.isArray(req.body?.ordenes) ? req.body.ordenes : [];
+    if (!orders.length) {
+      return res.status(400).json({ message: 'No hay ordenes para replicar' });
+    }
+    let tnubeConnection;
+    try {
+      tnubeConnection = getTnubeConnection(req.body?.store_id);
+    } catch (error) {
+      return res.status(500).json({ message: 'Conexion TiendaNube no configurada', error: error.message });
+    }
+    const results = [];
+    for (const order of orders) {
+      let conn;
+      try {
+        conn = await pool.getConnection();
+        await conn.beginTransaction();
+        const result = await createReplicaTnPedido(conn, order, tnubeConnection);
+        await conn.commit();
+        results.push(result);
+      } catch (error) {
+        if (conn) {
+          try {
+            await conn.rollback();
+          } catch (_err) {
+            /* ignore */
+          }
+        }
+        results.push({
+          status: 'error',
+          ordenWeb: Number(order?.ordenWeb) || 0,
+          message: error.message || 'No se pudo crear el pedido',
+        });
+      } finally {
+        if (conn) conn.release();
+      }
+    }
+    const resumen = results.reduce(
+      (acc, row) => {
+        if (row.status === 'created') acc.creadas += 1;
+        else if (row.status === 'duplicated') acc.duplicadas += 1;
+        else acc.errores += 1;
+        return acc;
+      },
+      { creadas: 0, duplicadas: 0, errores: 0 }
+    );
+    return res.json({ ok: resumen.errores === 0, data: results, resumen });
+  }
+);
+
+  app.get('/api/ecommerce/ordenes-tn/asignacion', requirePermission('ecommerce-asignacion-pedidos'), async (req, res) => {
+  try {
+    const mostrarTodos =
+      req.query.mostrar_todos === '1' ||
+      req.query.mostrar_todos === 1 ||
+      req.query.mostrar_todos === true ||
+      req.query.mostrar_todos === 'true';
+    const local = normalizeLocalName(req.query.local);
+    const filters = [
+      'ctrl.estado = 1',
+      'COALESCE(ctrl.ordenWeb, 0) > 0',
+    ];
+    const params = [];
+    if (!mostrarTodos) {
+      filters.push("(ctrl.vendedora IS NULL OR TRIM(ctrl.vendedora) = '' OR UPPER(TRIM(ctrl.vendedora)) = 'PAGINA')");
+    }
+    if (local) {
+      filters.push("LOWER(REPLACE(TRIM(COALESCE(ctrl.local, '')), ' ', '')) = ?");
+      params.push(local);
+    }
+    const [rows] = await pool.query(
+      `SELECT
+         ctrl.id,
+         ctrl.nropedido,
+         ctrl.ordenWeb,
+         ctrl.fecha,
+         ctrl.vendedora,
+         ctrl.totalweb,
+         ctrl.local,
+         c.nombre,
+         c.apellido,
+         c.mail,
+         COALESCE(comentarios.total, 0) AS notas_count
+       FROM ${DB_NAME}.controlpedidos ctrl
+       INNER JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
+       LEFT JOIN (
+         SELECT controlpedidos_id, COUNT(*) AS total
+         FROM ${DB_NAME}.comentariospedidos
+         GROUP BY controlpedidos_id
+       ) AS comentarios ON comentarios.controlpedidos_id = ctrl.id
+       WHERE ${filters.join('\n         AND ')}
+       ORDER BY ctrl.nropedido DESC`,
+      params
+    );
+    const data = (rows || []).map((row) => ({
+      id: Number(row.id) || 0,
+      nropedido: Number(row.nropedido) || 0,
+      ordenWeb: Number(row.ordenWeb) || 0,
+      cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
+      mail: row.mail || '',
+      vendedora: row.vendedora || '',
+      totalweb: Number(row.totalweb) || 0,
+      local: row.local || '',
+      fecha: row.fecha || null,
+      notas_count: Number(row.notas_count) || 0,
+      sinAsignar: !String(row.vendedora || '').trim() || String(row.vendedora || '').trim().toUpperCase() === 'PAGINA',
+    }));
+    const resumen = data.reduce(
+      (acc, row) => {
+        acc.total += 1;
+        if (row.sinAsignar) acc.sinAsignar += 1;
+        else acc.asignados += 1;
+        return acc;
+      },
+      { total: 0, sinAsignar: 0, asignados: 0 }
+    );
+    return res.json({ data, resumen });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error al cargar asignacion de pedidos', error: error.message });
+  }
+});
+
+  app.patch(
+  '/api/ecommerce/ordenes-tn/asignacion',
+  requirePermission('ecommerce-asignacion-pedidos'),
+  express.json({ limit: '1mb' }),
+  async (req, res) => {
+    const pedidoIds = Array.from(
+      new Set((Array.isArray(req.body?.pedido_ids) ? req.body.pedido_ids : []).map((id) => Number(id)).filter(Boolean))
+    ).slice(0, 200);
+    const vendedora = String(req.body?.vendedora || '').trim();
+    if (!pedidoIds.length) {
+      return res.status(400).json({ message: 'Selecciona al menos un pedido' });
+    }
+    if (!vendedora) {
+      return res.status(400).json({ message: 'Selecciona una vendedora' });
+    }
+    let conn;
+    try {
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+      const [[seller]] = await conn.query(
+        `SELECT Id, Nombre
+         FROM ${DB_NAME}.vendedores
+         WHERE Nombre = ? AND Tipo <> 0
+         LIMIT 1`,
+        [vendedora]
+      );
+      if (!seller) {
+        await conn.rollback();
+        return res.status(400).json({ message: 'Vendedora invalida' });
+      }
+      const placeholders = pedidoIds.map(() => '?').join(',');
+      const [pedidos] = await conn.query(
+        `SELECT id, nropedido, vendedora
+         FROM ${DB_NAME}.controlpedidos
+         WHERE id IN (${placeholders})
+           AND estado = 1
+           AND COALESCE(ordenWeb, 0) > 0
+         FOR UPDATE`,
+        pedidoIds
+      );
+      const toUpdate = (pedidos || []).filter((row) => String(row.vendedora || '').trim() !== seller.Nombre);
+      if (toUpdate.length) {
+        await conn.query(
+          `UPDATE ${DB_NAME}.controlpedidos
+           SET vendedora = ?
+           WHERE id IN (${toUpdate.map(() => '?').join(',')})
+             AND estado = 1
+             AND COALESCE(ordenWeb, 0) > 0`,
+          [seller.Nombre, ...toUpdate.map((row) => row.id)]
+        );
+        const [users] = await conn.query(
+          `SELECT id
+           FROM ${DB_NAME}.users
+           WHERE id_vendedoras = ?`,
+          [seller.Id]
+        );
+        if (users?.length) {
+          const fecha = formatDateTimeLocal(new Date());
+          const values = [];
+          toUpdate.forEach((pedido) => {
+            users.forEach((user) => {
+              values.push([user.id, `Se le asigno el Pedido Nro: ${pedido.nropedido}`, fecha, 0]);
+            });
+          });
+          if (values.length) {
+            await conn.query(
+              `INSERT INTO ${DB_NAME}.notificaciones (id_users, tipo, fecha, lectura)
+               VALUES ?`,
+              [values]
+            );
+          }
+        }
+      }
+      await conn.commit();
+      return res.json({
+        ok: true,
+        actualizados: toUpdate.length,
+        omitidos: pedidoIds.length - toUpdate.length,
+        vendedora: seller.Nombre,
+      });
+    } catch (error) {
+      if (conn) {
+        try {
+          await conn.rollback();
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      return res.status(500).json({ message: 'Error al asignar pedidos', error: error.message });
+    } finally {
+      if (conn) conn.release();
+    }
+  }
+);
 
   app.post('/api/ecommerce/panel/import', requireAuth, async (req, res) => {
   try {
