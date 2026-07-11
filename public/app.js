@@ -9351,7 +9351,15 @@ async function loadAbmDataTable(force = false) {
           columns: [
             { data: 'articulo' },
             { data: 'detalle' },
-            { data: 'proveedorSku' },
+            {
+              data: 'proveedorSku',
+              render: (data, type) => {
+                const value = data || '';
+                if (type !== 'display') return value;
+                const safeValue = escapeAttr(value);
+                return `<span class="abm-sku-truncate" title="${safeValue}">${safeValue}</span>`;
+              },
+            },
             { data: 'cantidad' },
             {
               data: 'enPedido',

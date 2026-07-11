@@ -3065,6 +3065,42 @@ body.theme-light .row-alert td {
   white-space: nowrap;
 }
 
+#abm-table td:nth-child(3) {
+  position: relative;
+}
+
+.abm-sku-truncate {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.abm-sku-truncate:hover,
+.abm-sku-truncate:focus {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  z-index: 10;
+  width: max-content;
+  max-width: min(56ch, 60vw);
+  padding: 6px 8px;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  transform: translateY(-50%);
+}
+
+body.theme-light .abm-sku-truncate:hover,
+body.theme-light .abm-sku-truncate:focus {
+  background: #ffffff;
+}
+
 #pedido-items-table th:nth-child(1),
 #pedido-items-table td:nth-child(1) {
   width: 14ch;
