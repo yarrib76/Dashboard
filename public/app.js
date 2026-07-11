@@ -1232,6 +1232,7 @@ const abmBatchAdd = document.getElementById('abm-batch-add');
 const abmBatchSubmit = document.getElementById('abm-batch-submit');
 const abmBatchArticuloInput = document.getElementById('abm-batch-articulo');
 const abmBatchDetalleInput = document.getElementById('abm-batch-detalle');
+const abmBatchProveedorSkuInput = document.getElementById('abm-batch-proveedor-sku');
 const abmBatchCantidadActualInput = document.getElementById('abm-batch-cantidad-actual');
 const abmBatchRestaInput = document.getElementById('abm-batch-resta');
 const abmBatchCantidadInput = document.getElementById('abm-batch-cantidad');
@@ -5400,6 +5401,7 @@ function setAbmCreateModo(opcion) {
 function clearAbmBatchForm() {
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = '';
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = '';
+  if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = '';
   if (abmBatchCantidadInput) abmBatchCantidadInput.value = '';
   if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = '';
@@ -5949,6 +5951,7 @@ function setBatchFormFromArticulo(row) {
   abmBatchCurrentArticulo = row.Articulo || row.articulo || '';
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = row.Articulo || row.articulo || '';
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = row.Detalle || row.detalle || '';
+  if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = row.ProveedorSKU || row.proveedorSku || '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
   if (abmBatchCantidadInput) abmBatchCantidadInput.value = '';
   if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = row.PrecioOrigen ?? row.precioOrigen ?? '';
@@ -5980,6 +5983,7 @@ function setBatchFormFromItem(item) {
   abmBatchCurrentArticulo = item.articulo || '';
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = item.articulo || '';
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = item.detalle || '';
+  if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = item.proveedorSku || '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = item.cantidadActual ?? '';
   if (abmBatchCantidadInput) abmBatchCantidadInput.value = item.cantidadDelta ?? 0;
   if (abmBatchPrecioOrigenInput) abmBatchPrecioOrigenInput.value = item.precioOrigen ?? '';
@@ -6112,6 +6116,7 @@ function renderBatchTable() {
         { data: 'precioOrigen' },
         { data: 'precioDisplay' },
         { data: 'proveedor' },
+        { data: 'proveedorSku' },
         {
           data: null,
           orderable: false,
@@ -9968,6 +9973,7 @@ function initAbm() {
       const item = {
         articulo: abmBatchCurrentArticulo,
         detalle: abmBatchDetalleInput?.value || '',
+        proveedorSku: abmBatchProveedorSkuInput?.value || '',
         cantidadActual: Number(abmBatchCantidadActualInput?.value) || 0,
         cantidadDelta: Number(abmBatchCantidadInput?.value) || 0,
         resta: !!abmBatchRestaInput?.checked,

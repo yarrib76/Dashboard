@@ -192,7 +192,7 @@ test('ABM batch integration', async (t) => {
     try {
       await conn.beginTransaction();
       const [[row]] = await conn.query(
-        `SELECT Articulo, Detalle, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
+        `SELECT Articulo, Detalle, ProveedorSKU, Cantidad, PrecioOrigen, PrecioConvertido, Moneda, PrecioManual, Gastos, Ganancia, Proveedor, Observaciones
          FROM articulos
          ORDER BY Articulo
          LIMIT 1`
@@ -202,11 +202,19 @@ test('ABM batch integration', async (t) => {
         return;
       }
       const ordenCompra = 920000;
-      const item = buildItemFromRow(row, 1, { ordenCompra, cantidadDelta: 2, resta: true });
+      const item = buildItemFromRow(row, 1, {
+        ordenCompra,
+        cantidadDelta: 2,
+        resta: true,
+        proveedorSku: 'UTEST-BATCH-SKU',
+      });
       await processAbmBatch(conn, ordenCompra, [item]);
-      const [[after]] = await conn.query('SELECT Cantidad FROM articulos WHERE Articulo = ? LIMIT 1', [row.Articulo]);
+      const [[after]] = await conn.query('SELECT Cantidad, ProveedorSKU FROM articulos WHERE Articulo = ? LIMIT 1', [
+        row.Articulo,
+      ]);
       const expected = computeNuevaCantidad(item.baseCantidad, item.cantidadDelta, true);
       assert.equal(Number(after?.Cantidad) || 0, expected);
+      assert.equal(after?.ProveedorSKU || '', item.proveedorSku);
       await conn.rollback();
     } finally {
       conn.release();
