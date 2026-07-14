@@ -3552,9 +3552,10 @@
             <div class="roles-header">
               <h3>Tareas</h3>
             </div>
-            <button type="button" class="role-item active">BajadaTN</button>
+            <button type="button" class="role-item active" data-task-panel="import">BajadaTN</button>
+            <button type="button" class="role-item" data-task-panel="cleanup">EliminarBajadaTN</button>
           </div>
-          <div class="roles-perms">
+          <div class="roles-perms task-schedule-panel active" id="task-panel-import">
             <div class="roles-header">
               <h3>Bajada Tienda Nube</h3>
               <button type="button" id="task-schedule-save">Guardar</button>
@@ -3594,6 +3595,44 @@
               </div>
             </div>
             <p class="status" id="task-schedule-status"></p>
+          </div>
+          <div class="roles-perms task-schedule-panel hidden" id="task-panel-cleanup">
+            <div class="roles-header">
+              <h3>Eliminar Bajadas Tienda Nube</h3>
+              <button type="button" id="cleanup-schedule-save">Guardar</button>
+            </div>
+            <div class="task-schedule-grid">
+              <label class="task-schedule-toggle">
+                <input type="checkbox" id="cleanup-schedule-enabled" />
+                <span>Activa</span>
+              </label>
+              <label>
+                <span>Mantener ultimas</span>
+                <input type="number" id="cleanup-schedule-keep" min="1" max="500" step="1" value="5" />
+              </label>
+              <label>
+                <span>Hora</span>
+                <input type="time" id="cleanup-schedule-time" />
+              </label>
+              <div class="task-schedule-days">
+                <span>Dias de ejecucion</span>
+                <div class="task-schedule-day-grid cleanup-schedule-day-grid">
+                  <label><input type="checkbox" value="1" /> Lun</label>
+                  <label><input type="checkbox" value="2" /> Mar</label>
+                  <label><input type="checkbox" value="3" /> Mie</label>
+                  <label><input type="checkbox" value="4" /> Jue</label>
+                  <label><input type="checkbox" value="5" /> Vie</label>
+                  <label><input type="checkbox" value="6" /> Sab</label>
+                  <label><input type="checkbox" value="0" /> Dom</label>
+                </div>
+              </div>
+              <div class="task-schedule-summary">
+                <p><strong>Ultima ejecucion:</strong> <span id="cleanup-schedule-last-run">-</span></p>
+                <p><strong>Ultimo estado:</strong> <span id="cleanup-schedule-last-status">-</span></p>
+                <p><strong>Ultimo mensaje:</strong> <span id="cleanup-schedule-last-message">-</span></p>
+              </div>
+            </div>
+            <p class="status" id="cleanup-schedule-status"></p>
           </div>
         </div>
       </div>

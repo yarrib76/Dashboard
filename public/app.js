@@ -150,6 +150,16 @@ const taskScheduleStatus = document.getElementById('task-schedule-status');
 const taskScheduleLastRun = document.getElementById('task-schedule-last-run');
 const taskScheduleLastStatus = document.getElementById('task-schedule-last-status');
 const taskScheduleLastMessage = document.getElementById('task-schedule-last-message');
+const taskScheduleNavItems = document.querySelectorAll('[data-task-panel]');
+const taskSchedulePanels = document.querySelectorAll('.task-schedule-panel');
+const cleanupScheduleEnabled = document.getElementById('cleanup-schedule-enabled');
+const cleanupScheduleKeep = document.getElementById('cleanup-schedule-keep');
+const cleanupScheduleTime = document.getElementById('cleanup-schedule-time');
+const cleanupScheduleSave = document.getElementById('cleanup-schedule-save');
+const cleanupScheduleStatus = document.getElementById('cleanup-schedule-status');
+const cleanupScheduleLastRun = document.getElementById('cleanup-schedule-last-run');
+const cleanupScheduleLastStatus = document.getElementById('cleanup-schedule-last-status');
+const cleanupScheduleLastMessage = document.getElementById('cleanup-schedule-last-message');
 const usersList = document.getElementById('users-list');
 const usersTitle = document.getElementById('users-title');
 const usersStatus = document.getElementById('users-status');
@@ -17513,6 +17523,7 @@ let usersPage = 1;
 let promptTnLoaded = false;
 let taskScheduleLoaded = false;
 let taskSchedulePollTimer = null;
+let cleanupScheduleLoaded = false;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
 const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
@@ -17934,6 +17945,78 @@ async function saveTaskSchedule() {
   }
 }
 
+function getCleanupScheduleDayInputs() {
+  return Array.from(document.querySelectorAll('.cleanup-schedule-day-grid input[type="checkbox"]'));
+}
+
+function fillCleanupSchedule(data = {}) {
+  if (cleanupScheduleEnabled) cleanupScheduleEnabled.checked = !!data.enabled;
+  if (cleanupScheduleKeep) cleanupScheduleKeep.value = data.mantenerUltimas || 5;
+  if (cleanupScheduleTime) cleanupScheduleTime.value = data.hora || '03:30';
+  const days = String(data.diasSemana || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  getCleanupScheduleDayInputs().forEach((input) => {
+    input.checked = days.includes(String(input.value));
+  });
+  if (cleanupScheduleLastRun) cleanupScheduleLastRun.textContent = data.ultimaEjecucion || '-';
+  if (cleanupScheduleLastStatus) cleanupScheduleLastStatus.textContent = data.ultimoEstado || '-';
+  if (cleanupScheduleLastMessage) cleanupScheduleLastMessage.textContent = data.ultimoMensaje || '-';
+}
+
+async function loadCleanupSchedule(force = false) {
+  if (!cleanupScheduleTime || (!force && cleanupScheduleLoaded)) return;
+  try {
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = 'Cargando programacion...';
+    const res = await fetchJSON('/api/config/ecommerce-cleanup-schedule');
+    fillCleanupSchedule(res.data || {});
+    cleanupScheduleLoaded = true;
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = '';
+  } catch (error) {
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = error.message || 'No se pudo cargar la programacion.';
+  }
+}
+
+async function saveCleanupSchedule() {
+  if (!cleanupScheduleTime || !cleanupScheduleKeep) return;
+  const diasSemana = getCleanupScheduleDayInputs()
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+  try {
+    if (cleanupScheduleSave) cleanupScheduleSave.disabled = true;
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = 'Guardando programacion...';
+    const res = await fetchJSON('/api/config/ecommerce-cleanup-schedule', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: !!cleanupScheduleEnabled?.checked,
+        mantenerUltimas: Number.parseInt(cleanupScheduleKeep.value, 10) || 5,
+        hora: cleanupScheduleTime.value || '03:30',
+        diasSemana,
+      }),
+    });
+    fillCleanupSchedule(res.data || {});
+    cleanupScheduleLoaded = true;
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = 'Programacion guardada.';
+  } catch (error) {
+    if (cleanupScheduleStatus) cleanupScheduleStatus.textContent = error.message || 'No se pudo guardar la programacion.';
+  } finally {
+    if (cleanupScheduleSave) cleanupScheduleSave.disabled = false;
+  }
+}
+
+function showTaskSchedulePanel(panelKey) {
+  taskScheduleNavItems.forEach((item) => {
+    item.classList.toggle('active', item.dataset.taskPanel === panelKey);
+  });
+  taskSchedulePanels.forEach((panel) => {
+    panel.classList.toggle('hidden', panel.id !== `task-panel-${panelKey}`);
+  });
+  if (panelKey === 'import') loadTaskSchedule();
+  if (panelKey === 'cleanup') loadCleanupSchedule();
+}
+
 function initConfigTabs() {
   const tabs = document.querySelectorAll('#config-tabs .tab');
   const panels = document.querySelectorAll('.tab-panel');
@@ -17952,6 +18035,10 @@ function initConfigTabs() {
   });
   if (promptTnSave) promptTnSave.addEventListener('click', savePromptTn);
   if (taskScheduleSave) taskScheduleSave.addEventListener('click', saveTaskSchedule);
+  if (cleanupScheduleSave) cleanupScheduleSave.addEventListener('click', saveCleanupSchedule);
+  taskScheduleNavItems.forEach((item) => {
+    item.addEventListener('click', () => showTaskSchedulePanel(item.dataset.taskPanel || 'import'));
+  });
 }
 
 async function loadUsers() {

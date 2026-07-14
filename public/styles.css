@@ -5394,7 +5394,8 @@ body.theme-light .prompt-tn-editor textarea {
 }
 
 .task-schedule-grid select,
-.task-schedule-grid input[type='time'] {
+.task-schedule-grid input[type='time'],
+.task-schedule-grid input[type='number'] {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
@@ -5448,6 +5449,10 @@ body.theme-light .prompt-tn-editor textarea {
   margin: 0;
   color: var(--text);
   font-size: 13px;
+}
+
+.task-schedule-panel.hidden {
+  display: none;
 }
 
 .perm-group h4 {

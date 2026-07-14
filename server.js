@@ -5963,17 +5963,32 @@ app.put('/api/config/tiendanube-prompt', requireAuth, async (req, res) => {
   }
 });
 
-function normalizeImportScheduleRow(row = {}) {
-  const horaRaw = String(row.hora || '03:00:00');
-  const hora = horaRaw.match(/^\d{2}:\d{2}/) ? horaRaw.slice(0, 5) : '03:00';
+const TASK_BAJADA_TN = 'BajadaTN';
+const TASK_ELIMINAR_BAJADA_TN = 'EliminarBajadaTN';
+
+function parseScheduledTaskConfig(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function normalizeScheduledTaskRow(row = {}, defaults = {}) {
+  const horaRaw = String(row.hora || defaults.hora || '03:00:00');
+  const hora = horaRaw.match(/^\d{2}:\d{2}/) ? horaRaw.slice(0, 5) : String(defaults.hora || '03:00').slice(0, 5);
   return {
-    id: Number(row.id) || 1,
+    id: Number(row.id) || 0,
+    taskKey: row.task_key || defaults.taskKey || '',
+    taskName: row.task_name || defaults.taskName || defaults.taskKey || '',
+    taskType: row.task_type || defaults.taskType || '',
     enabled: Number(row.enabled) === 1,
-    tipoBajada: ['todo', 'visible'].includes(String(row.tipo_bajada || '').trim())
-      ? String(row.tipo_bajada).trim()
-      : 'todo',
     hora,
     diasSemana: String(row.dias_semana || '').trim(),
+    config: { ...(defaults.config || {}), ...parseScheduledTaskConfig(row.config_json) },
     ultimaEjecucion: row.ultima_ejecucion || null,
     ultimoJobId: row.ultimo_job_id || '',
     ultimoEstado: row.ultimo_estado || '',
@@ -5982,32 +5997,77 @@ function normalizeImportScheduleRow(row = {}) {
   };
 }
 
-async function getEcommerceImportScheduleConfig() {
+async function getScheduledTaskConfig(taskKey, defaults = {}) {
   const [[row]] = await pool.query(
-    `SELECT id, enabled, tipo_bajada, hora, dias_semana, ultima_ejecucion,
-            ultimo_job_id, ultimo_estado, ultimo_mensaje, actualizado_en
-     FROM ${DB_NAME}.ecommerce_import_schedule
-     ORDER BY id
+    `SELECT id, task_key, task_name, task_type, enabled, hora, dias_semana, config_json,
+            ultima_ejecucion, ultimo_job_id, ultimo_estado, ultimo_mensaje, actualizado_en
+     FROM ${DB_NAME}.scheduled_tasks
+     WHERE task_key = ?
      LIMIT 1`
+    ,
+    [taskKey]
   );
-  if (row) return normalizeImportScheduleRow(row);
-  await pool.query(
-    `INSERT INTO ${DB_NAME}.ecommerce_import_schedule
-       (enabled, tipo_bajada, hora, dias_semana)
-     VALUES (0, 'todo', '03:00:00', NULL)`
-  );
-  return {
-    id: 1,
-    enabled: false,
-    tipoBajada: 'todo',
+  const normalizedDefaults = {
+    taskKey,
+    taskName: taskKey,
+    taskType: '',
+    enabled: 0,
     hora: '03:00',
-    diasSemana: '',
-    ultimaEjecucion: null,
-    ultimoJobId: '',
-    ultimoEstado: '',
-    ultimoMensaje: '',
-    actualizadoEn: null,
+    diasSemana: null,
+    config: {},
+    ...defaults,
   };
+  if (row) return normalizeScheduledTaskRow(row, normalizedDefaults);
+  await pool.query(
+    `INSERT INTO ${DB_NAME}.scheduled_tasks
+       (task_key, task_name, task_type, enabled, hora, dias_semana, config_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      taskKey,
+      normalizedDefaults.taskName,
+      normalizedDefaults.taskType,
+      normalizedDefaults.enabled ? 1 : 0,
+      `${String(normalizedDefaults.hora || '03:00').slice(0, 5)}:00`,
+      normalizedDefaults.diasSemana || null,
+      JSON.stringify(normalizedDefaults.config || {}),
+    ]
+  );
+  const [[created]] = await pool.query(
+    `SELECT id, task_key, task_name, task_type, enabled, hora, dias_semana, config_json,
+            ultima_ejecucion, ultimo_job_id, ultimo_estado, ultimo_mensaje, actualizado_en
+     FROM ${DB_NAME}.scheduled_tasks
+     WHERE task_key = ?
+     LIMIT 1`,
+    [taskKey]
+  );
+  return normalizeScheduledTaskRow(created, normalizedDefaults);
+}
+
+function normalizeImportScheduleConfig(task = {}) {
+  const tipoBajada = String(task.config?.tipoBajada || 'todo').trim();
+  return {
+    id: task.id,
+    taskKey: task.taskKey,
+    enabled: task.enabled,
+    tipoBajada: ['todo', 'visible'].includes(tipoBajada) ? tipoBajada : 'todo',
+    hora: task.hora || '03:00',
+    diasSemana: task.diasSemana || '',
+    ultimaEjecucion: task.ultimaEjecucion || null,
+    ultimoJobId: task.ultimoJobId || '',
+    ultimoEstado: task.ultimoEstado || '',
+    ultimoMensaje: task.ultimoMensaje || '',
+    actualizadoEn: task.actualizadoEn || null,
+  };
+}
+
+async function getEcommerceImportScheduleConfig() {
+  const task = await getScheduledTaskConfig(TASK_BAJADA_TN, {
+    taskName: 'BajadaTN',
+    taskType: 'ecommerce_import',
+    hora: '03:00',
+    config: { tipoBajada: 'todo' },
+  });
+  return normalizeImportScheduleConfig(task);
 }
 
 function normalizeScheduleDays(value) {
@@ -6030,12 +6090,87 @@ function hasImportJobRunning() {
   return Array.from(ecommerceImportJobs.values()).some((job) => job?.status === 'running');
 }
 
+function hasSyncJobRunning() {
+  return Array.from(ecommerceSyncJobs.values()).some((job) => job?.status === 'running');
+}
+
 app.get('/api/config/ecommerce-import-schedule', requireAuth, async (_req, res) => {
   try {
     const data = await getEcommerceImportScheduleConfig();
     res.json({ data });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar programacion de tareas', error: error.message });
+  }
+});
+
+function normalizeCleanupScheduleConfig(task = {}) {
+  const mantenerUltimas = Number.parseInt(task.config?.mantenerUltimas, 10);
+  return {
+    id: task.id,
+    taskKey: task.taskKey,
+    enabled: task.enabled,
+    mantenerUltimas: Math.max(1, mantenerUltimas || 5),
+    hora: task.hora || '03:30',
+    diasSemana: task.diasSemana || '',
+    ultimaEjecucion: task.ultimaEjecucion || null,
+    ultimoEstado: task.ultimoEstado || '',
+    ultimoMensaje: task.ultimoMensaje || '',
+    actualizadoEn: task.actualizadoEn || null,
+  };
+}
+
+async function getEcommerceCleanupScheduleConfig() {
+  const task = await getScheduledTaskConfig(TASK_ELIMINAR_BAJADA_TN, {
+    taskName: 'EliminarBajadaTN',
+    taskType: 'ecommerce_cleanup',
+    hora: '03:30',
+    config: { mantenerUltimas: 5 },
+  });
+  return normalizeCleanupScheduleConfig(task);
+}
+
+app.get('/api/config/ecommerce-cleanup-schedule', requireAuth, async (_req, res) => {
+  try {
+    const data = await getEcommerceCleanupScheduleConfig();
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar programacion de limpieza', error: error.message });
+  }
+});
+
+app.put('/api/config/ecommerce-cleanup-schedule', requireAuth, async (req, res) => {
+  try {
+    const enabled = req.body?.enabled === true || req.body?.enabled === 1 || req.body?.enabled === '1' ? 1 : 0;
+    const mantenerUltimas = Number.parseInt(req.body?.mantenerUltimas ?? req.body?.mantener_ultimas ?? 5, 10);
+    if (!Number.isInteger(mantenerUltimas) || mantenerUltimas < 1 || mantenerUltimas > 500) {
+      return res.status(400).json({ message: 'Mantener ultimas debe estar entre 1 y 500' });
+    }
+    const hora = String(req.body?.hora || '03:30').trim();
+    if (!/^\d{2}:\d{2}$/.test(hora)) {
+      return res.status(400).json({ message: 'Hora invalida' });
+    }
+    const [hour, minute] = hora.split(':').map((item) => Number.parseInt(item, 10));
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return res.status(400).json({ message: 'Hora invalida' });
+    }
+    const diasSemana = normalizeScheduleDays(req.body?.diasSemana ?? req.body?.dias_semana);
+    await getEcommerceCleanupScheduleConfig();
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET enabled = ?, hora = ?, dias_semana = ?, config_json = ?
+       WHERE task_key = ?`,
+      [
+        enabled,
+        `${hora}:00`,
+        diasSemana,
+        JSON.stringify({ mantenerUltimas }),
+        TASK_ELIMINAR_BAJADA_TN,
+      ]
+    );
+    const data = await getEcommerceCleanupScheduleConfig();
+    res.json({ ok: true, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar programacion de limpieza', error: error.message });
   }
 });
 
@@ -6055,12 +6190,12 @@ app.put('/api/config/ecommerce-import-schedule', requireAuth, async (req, res) =
       return res.status(400).json({ message: 'Hora invalida' });
     }
     const diasSemana = normalizeScheduleDays(req.body?.diasSemana ?? req.body?.dias_semana);
-    const current = await getEcommerceImportScheduleConfig();
+    await getEcommerceImportScheduleConfig();
     await pool.query(
-      `UPDATE ${DB_NAME}.ecommerce_import_schedule
-       SET enabled = ?, tipo_bajada = ?, hora = ?, dias_semana = ?
-       WHERE id = ?`,
-      [enabled, tipoBajada, `${hora}:00`, diasSemana, current.id]
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET enabled = ?, hora = ?, dias_semana = ?, config_json = ?
+       WHERE task_key = ?`,
+      [enabled, `${hora}:00`, diasSemana, JSON.stringify({ tipoBajada }), TASK_BAJADA_TN]
     );
     const data = await getEcommerceImportScheduleConfig();
     res.json({ ok: true, data });
@@ -16004,6 +16139,8 @@ app.get('*', (req, res) => {
 
 let ecommerceImportScheduleRunning = false;
 let ecommerceImportScheduleLastCheckMinute = '';
+let ecommerceCleanupScheduleRunning = false;
+let ecommerceCleanupScheduleLastCheckMinute = '';
 
 function sameLocalDate(a, b) {
   if (!a || !b) return false;
@@ -16061,7 +16198,7 @@ async function runScheduledEcommerceImport(config) {
     if (!userId) throw new Error('No hay usuario disponible para registrar la bajada automatica');
     job = createEcommerceImportJob(config.tipoBajada || 'todo', userId);
     await pool.query(
-      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+      `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultima_ejecucion = ?, ultimo_job_id = ?, ultimo_estado = 'running', ultimo_mensaje = ?
        WHERE id = ?`,
       [
@@ -16073,14 +16210,14 @@ async function runScheduledEcommerceImport(config) {
     );
     await runEcommerceImportJob(job);
     await pool.query(
-      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+      `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultimo_estado = ?, ultimo_mensaje = ?
        WHERE id = ?`,
       [job.status || 'done', job.message || job.error || '', config.id]
     );
   } catch (error) {
     await pool.query(
-      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+      `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultimo_estado = 'error', ultimo_mensaje = ?
        WHERE id = ?`,
       [String(error.message || 'Error en bajada automatica').slice(0, 255), config.id]
@@ -16090,12 +16227,96 @@ async function runScheduledEcommerceImport(config) {
   }
 }
 
+async function cleanupOldEcommerceRuns(mantenerUltimas) {
+  let conn;
+  const keep = Math.max(1, Number.parseInt(mantenerUltimas, 10) || 5);
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [runs] = await conn.query(
+      `SELECT id
+       FROM ${DB_NAME}.provecomerce
+       ORDER BY id DESC`
+    );
+    const idsToDelete = runs.slice(keep).map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+    if (!idsToDelete.length) {
+      await conn.commit();
+      return { corridas: 0, items: 0, mantenidas: runs.length };
+    }
+
+    let deletedItems = 0;
+    let deletedRuns = 0;
+    for (let offset = 0; offset < idsToDelete.length; offset += 500) {
+      const chunk = idsToDelete.slice(offset, offset + 500);
+      const placeholders = chunk.map(() => '?').join(',');
+      const [childResult] = await conn.query(
+        `DELETE FROM ${DB_NAME}.statusecomercesincro WHERE id_provecomerce IN (${placeholders})`,
+        chunk
+      );
+      const [parentResult] = await conn.query(
+        `DELETE FROM ${DB_NAME}.provecomerce WHERE id IN (${placeholders})`,
+        chunk
+      );
+      deletedItems += Number(childResult.affectedRows) || 0;
+      deletedRuns += Number(parentResult.affectedRows) || 0;
+    }
+    await conn.commit();
+    return { corridas: deletedRuns, items: deletedItems, mantenidas: Math.min(keep, runs.length) };
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    throw error;
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+async function runScheduledEcommerceCleanup(config) {
+  ecommerceCleanupScheduleRunning = true;
+  try {
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET ultima_ejecucion = ?, ultimo_estado = 'running', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [
+        formatDateTimeLocal(new Date()),
+        `Limpieza iniciada. Mantener ultimas ${config.mantenerUltimas || 5} corridas`,
+        config.id,
+      ]
+    );
+    const result = await cleanupOldEcommerceRuns(config.mantenerUltimas || 5);
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET ultimo_estado = 'done', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [
+        `Eliminadas ${result.corridas} corridas y ${result.items} articulos. Conservadas ${result.mantenidas}.`,
+        config.id,
+      ]
+    );
+  } catch (error) {
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET ultimo_estado = 'error', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [String(error.message || 'Error en limpieza automatica').slice(0, 255), config.id]
+    ).catch(() => {});
+  } finally {
+    ecommerceCleanupScheduleRunning = false;
+  }
+}
+
 async function checkEcommerceImportSchedule() {
   const now = new Date();
   const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
   if (minuteKey === ecommerceImportScheduleLastCheckMinute) return;
   ecommerceImportScheduleLastCheckMinute = minuteKey;
-  if (ecommerceImportScheduleRunning || hasImportJobRunning()) return;
+  if (ecommerceImportScheduleRunning || ecommerceCleanupScheduleRunning || hasImportJobRunning()) return;
   let config;
   try {
     config = await getEcommerceImportScheduleConfig();
@@ -16110,14 +16331,43 @@ async function checkEcommerceImportSchedule() {
   runScheduledEcommerceImport(config);
 }
 
+async function checkEcommerceCleanupSchedule() {
+  const now = new Date();
+  const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
+  if (minuteKey === ecommerceCleanupScheduleLastCheckMinute) return;
+  ecommerceCleanupScheduleLastCheckMinute = minuteKey;
+  if (
+    ecommerceCleanupScheduleRunning ||
+    ecommerceImportScheduleRunning ||
+    hasImportJobRunning() ||
+    hasSyncJobRunning()
+  ) {
+    return;
+  }
+  let config;
+  try {
+    config = await getEcommerceCleanupScheduleConfig();
+  } catch (_error) {
+    return;
+  }
+  if (!config.enabled) return;
+  if (!isScheduleDayEnabled(config.diasSemana, now)) return;
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (currentTime !== config.hora) return;
+  if (sameLocalDate(config.ultimaEjecucion, now) && !wasScheduleChangedAfterLastRun(config)) return;
+  runScheduledEcommerceCleanup(config);
+}
+
 ensureFacturasErrorLogInitialized();
 ensurePedidosErrorLogInitialized();
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
   setInterval(() => {
     checkEcommerceImportSchedule();
+    checkEcommerceCleanupSchedule();
   }, 60 * 1000);
   checkEcommerceImportSchedule();
+  checkEcommerceCleanupSchedule();
 });
 // cerrar último bloque
 
