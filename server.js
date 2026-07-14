@@ -1065,6 +1065,14 @@ function createEcommerceSyncJob(params, userId) {
   return job;
 }
 
+function findRunningEcommerceSyncJob(idCorrida) {
+  const targetCorrida = String(idCorrida || '').trim();
+  if (!targetCorrida) return null;
+  return Array.from(ecommerceSyncJobs.values()).find((job) => {
+    return job?.status === 'running' && String(job?.params?.idCorrida || '').trim() === targetCorrida;
+  }) || null;
+}
+
 function updateEcommerceSyncJob(job, patch) {
   Object.assign(job, patch, { updatedAt: new Date().toISOString() });
   persistEcommerceJob(job);
@@ -1342,6 +1350,7 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
   let countCheck = 0;
   const processedProductIds = new Set();
   const productsWithErrors = new Set();
+  const productsWithExclusions = new Set();
   const publishedProducts = new Set();
   const stockByStatusId = await getEcommerceStockPlan(conn, rows, options.artiCant);
   const variantVisibilityPlan = buildEcommerceProductVariantPlan(rows, stockByStatusId);
@@ -1405,11 +1414,14 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       const hasStock = hasEcommerceStock(cantidad, options.artiCant);
       const variantStock = verificoStock(cantidad, options.artiCant);
       const productId = String(row.product_id || '').trim();
+      const isExcluded = Number(articuloLocal.Web) !== 1;
       if (productId) processedProductIds.add(productId);
+      if (productId && isExcluded) productsWithExclusions.add(productId);
 
       if (
         options.conOrden &&
         productId &&
+        !productsWithExclusions.has(productId) &&
         !publishedProducts.has(productId) &&
         Number(row.images) === 1 &&
         hasStock
@@ -1427,7 +1439,7 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
         await updateEcommerceProductSnapshot(conn, row.id_provecomerce, productId, true);
       }
 
-      if (Number(articuloLocal.Web) === 1) {
+      if (!isExcluded) {
         onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock/visible ${row.articulo || ''}` });
         const precioVenta = await computePrecioVenta(conn, articuloLocal);
         const variantVisible = variantVisibilityPlan.has(Number(row.e_id))
@@ -1467,7 +1479,9 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
   }
 
   if (!options.conOrden) {
-    const productIdsToSync = Array.from(processedProductIds).filter((productId) => !productsWithErrors.has(productId));
+    const productIdsToSync = Array.from(processedProductIds).filter(
+      (productId) => !productsWithErrors.has(productId) && !productsWithExclusions.has(productId)
+    );
     if (productIdsToSync.length) {
       onProgress?.({
         processed: rows.length,
@@ -16126,6 +16140,15 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       return res.status(400).json({ message: 'id_corrida y store_id requeridos' });
     }
     getTnubeConnection(storeId);
+    const runningJob = findRunningEcommerceSyncJob(idCorrida);
+    if (runningJob) {
+      return res.json({
+        ok: true,
+        reused: true,
+        job: serializeEcommerceSyncJob(runningJob),
+        jobToken: signEcommerceJobToken(runningJob.id, { type: 'sync', idCorrida }),
+      });
+    }
     const job = createEcommerceSyncJob({ idCorrida, storeId, conOrden, ordenCant, artiCant }, req.user?.id || null);
     runEcommerceSyncJob(job);
     return res.json({

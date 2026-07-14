@@ -7515,6 +7515,7 @@ function initEcommercePanel() {
 
 // Panel detalle: sincroniza en Tienda Nube y muestra modal de progreso/resultado.
 function initEcommercePanelDetail() {
+  let syncJobRunning = false;
   const formatProgressPercent = (value) => {
     const pct = Number(value) || 0;
     if (pct > 0 && pct < 10) return pct.toFixed(1);
@@ -7550,6 +7551,7 @@ function initEcommercePanelDetail() {
   }
   if (ecommercePanelDetailSync) {
     ecommercePanelDetailSync.addEventListener('click', async () => {
+      if (syncJobRunning) return;
       const ctx = ecommercePanelDetailContext || getEcommerceDetailParams();
       if (!ctx.idCorrida || !ctx.idCliente) {
         if (ecommercePanelDetailStatus) {
@@ -7561,6 +7563,8 @@ function initEcommercePanelDetail() {
       const ordenCant = ecommercePanelDetailOrdenCant?.value || '5';
       const artiCant = ecommercePanelDetailArtiCant?.value || '10';
       try {
+        syncJobRunning = true;
+        ecommercePanelDetailSync.disabled = true;
         if (ecommerceSyncProgress) ecommerceSyncProgress.textContent = 'Sincronizando: 0% | Iniciando';
         openOverlay(ecommerceSyncLoading);
         const start = await fetchJSON('/api/tiendanubesincroArticulos/job', {
@@ -7590,6 +7594,9 @@ function initEcommercePanelDetail() {
               : error.message || 'No se pudo completar la sincronizacion.';
         }
         openOverlay(ecommerceSyncErrorModal);
+      } finally {
+        syncJobRunning = false;
+        ecommercePanelDetailSync.disabled = false;
       }
     });
   }
