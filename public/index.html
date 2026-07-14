@@ -3409,6 +3409,7 @@
         <button class="tab" data-tab="usuarios">Usuarios</button>
         <button class="tab" data-tab="perfiles">Perfiles</button>
         <button class="tab" data-tab="prompt-tn">Prompt TN</button>
+        <button class="tab" data-tab="programar-tareas">Programar Tareas</button>
       </div>
       <div class="tab-panel active" id="tab-roles">
         <div class="roles-layout">
@@ -3542,6 +3543,57 @@
               <textarea id="prompt-tn-text" rows="14" placeholder="Escribi el prompt que se usara para generar textos de Tienda Nube"></textarea>
             </label>
             <p class="status" id="prompt-tn-status"></p>
+          </div>
+        </div>
+      </div>
+      <div class="tab-panel" id="tab-programar-tareas">
+        <div class="prompt-tn-layout">
+          <div class="roles-list">
+            <div class="roles-header">
+              <h3>Tareas</h3>
+            </div>
+            <button type="button" class="role-item active">BajadaTN</button>
+          </div>
+          <div class="roles-perms">
+            <div class="roles-header">
+              <h3>Bajada Tienda Nube</h3>
+              <button type="button" id="task-schedule-save">Guardar</button>
+            </div>
+            <div class="task-schedule-grid">
+              <label class="task-schedule-toggle">
+                <input type="checkbox" id="task-schedule-enabled" />
+                <span>Activa</span>
+              </label>
+              <label>
+                <span>Tipo de bajada</span>
+                <select id="task-schedule-type">
+                  <option value="todo">Completa</option>
+                  <option value="visible">Visible</option>
+                </select>
+              </label>
+              <label>
+                <span>Hora</span>
+                <input type="time" id="task-schedule-time" />
+              </label>
+              <div class="task-schedule-days">
+                <span>Dias de ejecucion</span>
+                <div class="task-schedule-day-grid">
+                  <label><input type="checkbox" value="1" /> Lun</label>
+                  <label><input type="checkbox" value="2" /> Mar</label>
+                  <label><input type="checkbox" value="3" /> Mie</label>
+                  <label><input type="checkbox" value="4" /> Jue</label>
+                  <label><input type="checkbox" value="5" /> Vie</label>
+                  <label><input type="checkbox" value="6" /> Sab</label>
+                  <label><input type="checkbox" value="0" /> Dom</label>
+                </div>
+              </div>
+              <div class="task-schedule-summary">
+                <p><strong>Ultima ejecucion:</strong> <span id="task-schedule-last-run">-</span></p>
+                <p><strong>Ultimo estado:</strong> <span id="task-schedule-last-status">-</span></p>
+                <p><strong>Ultimo mensaje:</strong> <span id="task-schedule-last-message">-</span></p>
+              </div>
+            </div>
+            <p class="status" id="task-schedule-status"></p>
           </div>
         </div>
       </div>

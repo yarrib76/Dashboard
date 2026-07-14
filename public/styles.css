@@ -5373,6 +5373,83 @@ body.theme-light .prompt-tn-editor textarea {
   color: #1a1a1a;
 }
 
+.task-schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.task-schedule-grid label,
+.task-schedule-days,
+.task-schedule-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-schedule-grid span,
+.task-schedule-days > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.task-schedule-grid select,
+.task-schedule-grid input[type='time'] {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.task-schedule-toggle {
+  justify-content: center;
+  flex-direction: row !important;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+}
+
+.task-schedule-day-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(70px, 1fr));
+  gap: 8px;
+}
+
+.task-schedule-day-grid label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+}
+
+.task-schedule-days,
+.task-schedule-summary {
+  grid-column: 1 / -1;
+}
+
+.task-schedule-summary {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+}
+
+.task-schedule-summary p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .perm-group h4 {
   margin: 0 0 10px;
   font-size: 14px;

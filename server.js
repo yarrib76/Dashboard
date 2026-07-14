@@ -830,6 +830,11 @@ function buildTnubeStatusRows(products) {
     const imageSrc = Array.isArray(product?.images) && product.images[0]?.src ? String(product.images[0].src) : '';
     const hasImages = imageSrc || (Array.isArray(product?.images) && product.images.length > 0) ? 1 : 0;
     variants.forEach((variant) => {
+      const variantValues = Array.isArray(variant?.values) ? variant.values : [];
+      const variantValue = variantValues
+        .map((item) => item?.es || item?.pt || item?.en || Object.values(item || {})[0] || '')
+        .filter(Boolean)
+        .join(' / ');
       rows.push({
         articulo: variant?.sku == null ? '' : String(variant.sku),
         productId: variant?.product_id || product?.id || '',
@@ -837,6 +842,11 @@ function buildTnubeStatusRows(products) {
         visible: product?.published ? 1 : 0,
         images: hasImages,
         imagessrc: imageSrc,
+        valorVariante: variantValue,
+        publishedPadre: product?.published ? 1 : 0,
+        visibleVariante: variant?.visible ? 1 : 0,
+        stockTn: variant?.stock == null ? null : Number(variant.stock),
+        positionVariante: variant?.position == null ? null : Number(variant.position),
       });
     });
   });
@@ -944,15 +954,22 @@ async function insertTnubeStatusRows(conn, idProvecomerce, rows, onProgress) {
           row.productId,
           row.articuloId,
           row.visible,
+          row.visibleVariante,
+          row.publishedPadre,
+          row.stockTn,
+          row.positionVariante,
+          row.valorVariante,
           row.images,
           row.imagessrc
         );
-        return '(?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        return '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
       })
       .join(', ');
     await conn.query(
       `INSERT INTO ${DB_NAME}.statusecomercesincro
-       (id_provecomerce, status, fecha, articulo, product_id, articulo_id, visible, images, imagessrc)
+       (id_provecomerce, status, fecha, articulo, product_id, articulo_id, visible,
+        visible_variante, published_padre, stock_tn, position_variante, valor_variante,
+        images, imagessrc)
        VALUES ${placeholders}`,
       values
     );
@@ -1127,6 +1144,8 @@ async function getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant) {
         StatusEComerce.product_id,
         StatusEComerce.articulo_id,
         StatusEComerce.visible,
+        StatusEComerce.visible_variante,
+        StatusEComerce.published_padre,
         StatusEComerce.images
       FROM ${DB_NAME}.compras AS OrdenCompras
       INNER JOIN ${DB_NAME}.statusecomercesincro AS StatusEComerce
@@ -1151,11 +1170,15 @@ async function getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant) {
   const sql = `
     SELECT
       statusecomerce.id AS e_id,
+      statusecomerce.id_provecomerce,
       statusecomerce.articulo,
       statusecomerce.status,
       statusecomerce.fecha,
       statusecomerce.product_id,
       statusecomerce.articulo_id,
+      statusecomerce.visible,
+      statusecomerce.visible_variante,
+      statusecomerce.published_padre,
       statusecomerce.images
     FROM ${DB_NAME}.statusecomercesincro AS statusecomerce
     WHERE statusecomerce.id_provecomerce = ?
@@ -1165,11 +1188,97 @@ async function getEcommerceSyncRows(conn, idCorrida, conOrden, ordenCant) {
   return rows;
 }
 
+function hasEcommerceStock(cantidad, artiCant) {
+  return Number(cantidad) >= Number(artiCant);
+}
+
+async function updateEcommerceVariantSnapshot(conn, id, stock, visible) {
+  await conn.query(
+    `UPDATE ${DB_NAME}.statusecomercesincro
+     SET stock_tn = ?, visible_variante = ?
+     WHERE id = ?`,
+    [stock, visible ? 1 : 0, id]
+  );
+}
+
+async function updateEcommerceProductSnapshot(conn, idCorrida, productId, published) {
+  await conn.query(
+    `UPDATE ${DB_NAME}.statusecomercesincro
+     SET visible = ?, published_padre = ?
+     WHERE id_provecomerce = ? AND product_id = ?`,
+    [published ? 1 : 0, published ? 1 : 0, idCorrida, productId]
+  );
+}
+
+async function getEcommerceProductAvailability(conn, idCorrida, productIds, artiCant) {
+  const cleanProductIds = Array.from(new Set((productIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+  if (!cleanProductIds.length) return [];
+  const placeholders = cleanProductIds.map(() => '?').join(',');
+  const sql = `
+    SELECT
+      StatusEComerce.product_id,
+      MAX(COALESCE(StatusEComerce.images, 0)) AS has_images,
+      MAX(COALESCE(StatusEComerce.published_padre, StatusEComerce.visible, 0)) AS current_published,
+      SUM(
+        CASE
+          WHEN COALESCE(articulos.Web, 0) = 1
+           AND (COALESCE(articulos.Cantidad, 0) - COALESCE(pedidos.Cantidad, 0)) >= ?
+          THEN 1
+          ELSE 0
+        END
+      ) AS available_variants
+    FROM ${DB_NAME}.statusecomercesincro AS StatusEComerce
+    LEFT JOIN ${DB_NAME}.articulos AS articulos
+      ON articulos.Articulo = StatusEComerce.articulo
+    LEFT JOIN (
+      SELECT pedtemp.Articulo, SUM(pedtemp.cantidad) AS Cantidad
+      FROM ${DB_NAME}.pedidotemp AS pedtemp
+      INNER JOIN ${DB_NAME}.controlpedidos AS control ON pedtemp.NroPedido = control.nropedido
+      WHERE control.estado = 1
+      GROUP BY pedtemp.Articulo
+    ) AS pedidos
+      ON pedidos.Articulo = StatusEComerce.articulo
+    WHERE StatusEComerce.id_provecomerce = ?
+      AND StatusEComerce.product_id IN (${placeholders})
+    GROUP BY StatusEComerce.product_id
+  `;
+  const [rows] = await conn.query(sql, [artiCant, idCorrida, ...cleanProductIds]);
+  return rows || [];
+}
+
+async function syncEcommerceParentPublishedStates(conn, idCorrida, productIds, tnubeConnection, artiCant, onProgress) {
+  const availabilityRows = await getEcommerceProductAvailability(conn, idCorrida, productIds, artiCant);
+  for (let index = 0; index < availabilityRows.length; index += 1) {
+    const row = availabilityRows[index];
+    const productId = row.product_id;
+    const published = Number(row.available_variants) > 0;
+    const currentPublished = Number(row.current_published) === 1;
+    onProgress?.({
+      phase: `Padres ${index + 1}/${availabilityRows.length} | ${published ? 'Publicando' : 'Ocultando'} ${productId}`,
+    });
+    if (currentPublished === published) {
+      continue;
+    }
+    await tnubeRequest(
+      tnubeConnection.storeId,
+      tnubeConnection.accessToken,
+      tnubeConnection.appName,
+      'PUT',
+      `products/${productId}`,
+      { published }
+    );
+    await updateEcommerceProductSnapshot(conn, idCorrida, productId, published);
+  }
+}
+
 async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, onProgress) {
   const statusOk = 'OK';
   let countOk = 0;
   let countError = 0;
   let countCheck = 0;
+  const processedProductIds = new Set();
+  const productsWithErrors = new Set();
+  const publishedProducts = new Set();
 
   const updateStatus = async (id, status) => {
     const fecha = formatDateTimeLocal(new Date());
@@ -1227,7 +1336,18 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       const pedidoCantidad = Number(pedidoRows[0]?.Cantidad) || 0;
       if (pedidoCantidad) cantidad -= pedidoCantidad;
 
-      if (options.conOrden && Number(row.images) === 1 && cantidad >= options.artiCant) {
+      const hasStock = hasEcommerceStock(cantidad, options.artiCant);
+      const variantStock = verificoStock(cantidad, options.artiCant);
+      const productId = String(row.product_id || '').trim();
+      if (productId) processedProductIds.add(productId);
+
+      if (
+        options.conOrden &&
+        productId &&
+        !publishedProducts.has(productId) &&
+        Number(row.images) === 1 &&
+        hasStock
+      ) {
         onProgress?.({ ...baseProgress, phase: `Publicando ${row.articulo || ''}` });
         await tnubeRequest(
           tnubeConnection.storeId,
@@ -1237,22 +1357,27 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
           `products/${row.product_id}`,
           { published: true }
         );
+        publishedProducts.add(productId);
+        await updateEcommerceProductSnapshot(conn, row.id_provecomerce, productId, true);
       }
 
       if (Number(articuloLocal.Web) === 1) {
-        onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock ${row.articulo || ''}` });
+        onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock/visible ${row.articulo || ''}` });
         const precioVenta = await computePrecioVenta(conn, articuloLocal);
         await tnubeRequest(
           tnubeConnection.storeId,
           tnubeConnection.accessToken,
           tnubeConnection.appName,
-          'PUT',
-          `products/${row.product_id}/variants/${row.articulo_id}`,
-          {
+          'PATCH',
+          `products/${row.product_id}/variants`,
+          [{
+            id: Number(row.articulo_id),
             price: precioVenta ?? 0,
-            stock: verificoStock(cantidad, options.artiCant),
-          }
+            stock: variantStock,
+            visible: hasStock,
+          }]
         );
+        await updateEcommerceVariantSnapshot(conn, row.e_id, variantStock, hasStock);
         await updateStatus(row.e_id, 'OK');
         countOk += 1;
       } else {
@@ -1266,8 +1391,44 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       } catch (_updateErr) {
         /* ignore */
       }
+      if (row.product_id) productsWithErrors.add(String(row.product_id).trim());
       countError += 1;
       onProgress?.({ ...baseProgress, phase: 'ErrorAPI', ok: countOk, error: countError, noRequiere: countCheck });
+    }
+  }
+
+  if (!options.conOrden) {
+    const productIdsToSync = Array.from(processedProductIds).filter((productId) => !productsWithErrors.has(productId));
+    if (productIdsToSync.length) {
+      onProgress?.({
+        processed: rows.length,
+        total: rows.length,
+        percent: 99,
+        phase: 'Actualizando padres',
+        ok: countOk,
+        error: countError,
+        noRequiere: countCheck,
+      });
+      try {
+        await syncEcommerceParentPublishedStates(
+          conn,
+          rows[0]?.id_provecomerce,
+          productIdsToSync,
+          tnubeConnection,
+          options.artiCant,
+          (progress) => onProgress?.({
+            processed: rows.length,
+            total: rows.length,
+            percent: 99,
+            ok: countOk,
+            error: countError,
+            noRequiere: countCheck,
+            ...progress,
+          })
+        );
+      } catch (_err) {
+        countError += 1;
+      }
     }
   }
 
@@ -5799,6 +5960,112 @@ app.put('/api/config/tiendanube-prompt', requireAuth, async (req, res) => {
     res.json({ ok: true, data: { clave: 'publicaciones_descripcion_ia', prompt } });
   } catch (error) {
     res.status(500).json({ message: 'Error al guardar prompt TN', error: error.message });
+  }
+});
+
+function normalizeImportScheduleRow(row = {}) {
+  const horaRaw = String(row.hora || '03:00:00');
+  const hora = horaRaw.match(/^\d{2}:\d{2}/) ? horaRaw.slice(0, 5) : '03:00';
+  return {
+    id: Number(row.id) || 1,
+    enabled: Number(row.enabled) === 1,
+    tipoBajada: ['todo', 'visible'].includes(String(row.tipo_bajada || '').trim())
+      ? String(row.tipo_bajada).trim()
+      : 'todo',
+    hora,
+    diasSemana: String(row.dias_semana || '').trim(),
+    ultimaEjecucion: row.ultima_ejecucion || null,
+    ultimoJobId: row.ultimo_job_id || '',
+    ultimoEstado: row.ultimo_estado || '',
+    ultimoMensaje: row.ultimo_mensaje || '',
+    actualizadoEn: row.actualizado_en || null,
+  };
+}
+
+async function getEcommerceImportScheduleConfig() {
+  const [[row]] = await pool.query(
+    `SELECT id, enabled, tipo_bajada, hora, dias_semana, ultima_ejecucion,
+            ultimo_job_id, ultimo_estado, ultimo_mensaje, actualizado_en
+     FROM ${DB_NAME}.ecommerce_import_schedule
+     ORDER BY id
+     LIMIT 1`
+  );
+  if (row) return normalizeImportScheduleRow(row);
+  await pool.query(
+    `INSERT INTO ${DB_NAME}.ecommerce_import_schedule
+       (enabled, tipo_bajada, hora, dias_semana)
+     VALUES (0, 'todo', '03:00:00', NULL)`
+  );
+  return {
+    id: 1,
+    enabled: false,
+    tipoBajada: 'todo',
+    hora: '03:00',
+    diasSemana: '',
+    ultimaEjecucion: null,
+    ultimoJobId: '',
+    ultimoEstado: '',
+    ultimoMensaje: '',
+    actualizadoEn: null,
+  };
+}
+
+function normalizeScheduleDays(value) {
+  const days = Array.isArray(value)
+    ? value
+    : String(value || '')
+        .split(',')
+        .map((item) => item.trim());
+  const clean = Array.from(
+    new Set(
+      days
+        .map((item) => Number.parseInt(item, 10))
+        .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
+    )
+  ).sort((a, b) => a - b);
+  return clean.length ? clean.join(',') : null;
+}
+
+function hasImportJobRunning() {
+  return Array.from(ecommerceImportJobs.values()).some((job) => job?.status === 'running');
+}
+
+app.get('/api/config/ecommerce-import-schedule', requireAuth, async (_req, res) => {
+  try {
+    const data = await getEcommerceImportScheduleConfig();
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar programacion de tareas', error: error.message });
+  }
+});
+
+app.put('/api/config/ecommerce-import-schedule', requireAuth, async (req, res) => {
+  try {
+    const enabled = req.body?.enabled === true || req.body?.enabled === 1 || req.body?.enabled === '1' ? 1 : 0;
+    const tipoBajada = String(req.body?.tipoBajada || req.body?.tipo_bajada || 'todo').trim();
+    if (!['todo', 'visible'].includes(tipoBajada)) {
+      return res.status(400).json({ message: 'tipo_bajada debe ser todo o visible' });
+    }
+    const hora = String(req.body?.hora || '03:00').trim();
+    if (!/^\d{2}:\d{2}$/.test(hora)) {
+      return res.status(400).json({ message: 'Hora invalida' });
+    }
+    const [hour, minute] = hora.split(':').map((item) => Number.parseInt(item, 10));
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return res.status(400).json({ message: 'Hora invalida' });
+    }
+    const diasSemana = normalizeScheduleDays(req.body?.diasSemana ?? req.body?.dias_semana);
+    const current = await getEcommerceImportScheduleConfig();
+    await pool.query(
+      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+       SET enabled = ?, tipo_bajada = ?, hora = ?, dias_semana = ?
+       WHERE id = ?`,
+      [enabled, tipoBajada, `${hora}:00`, diasSemana, current.id]
+    );
+    const data = await getEcommerceImportScheduleConfig();
+    res.json({ ok: true, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar programacion de tareas', error: error.message });
   }
 });
 
@@ -15735,10 +16002,122 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+let ecommerceImportScheduleRunning = false;
+let ecommerceImportScheduleLastCheckMinute = '';
+
+function sameLocalDate(a, b) {
+  if (!a || !b) return false;
+  const dateA = new Date(a);
+  const dateB = new Date(b);
+  if (Number.isNaN(dateA.getTime()) || Number.isNaN(dateB.getTime())) return false;
+  return (
+    dateA.getFullYear() === dateB.getFullYear() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getDate() === dateB.getDate()
+  );
+}
+
+function wasScheduleChangedAfterLastRun(config) {
+  if (!config?.ultimaEjecucion || !config?.actualizadoEn) return false;
+  const lastRun = new Date(config.ultimaEjecucion);
+  const updated = new Date(config.actualizadoEn);
+  if (Number.isNaN(lastRun.getTime()) || Number.isNaN(updated.getTime())) return false;
+  return updated.getTime() > lastRun.getTime();
+}
+
+function isScheduleDayEnabled(diasSemana, date) {
+  const clean = String(diasSemana || '').trim();
+  if (!clean) return true;
+  const enabledDays = clean
+    .split(',')
+    .map((item) => Number.parseInt(item, 10))
+    .filter((item) => Number.isInteger(item));
+  return enabledDays.includes(date.getDay());
+}
+
+async function getScheduledEcommerceImportUserId() {
+  const [[adminUser]] = await pool.query(
+    `SELECT id
+     FROM ${DB_NAME}.users
+     WHERE id_roles = 1
+     ORDER BY id
+     LIMIT 1`
+  );
+  if (adminUser?.id) return adminUser.id;
+  const [[anyUser]] = await pool.query(
+    `SELECT id
+     FROM ${DB_NAME}.users
+     ORDER BY id
+     LIMIT 1`
+  );
+  return anyUser?.id || null;
+}
+
+async function runScheduledEcommerceImport(config) {
+  ecommerceImportScheduleRunning = true;
+  let job = null;
+  try {
+    const userId = await getScheduledEcommerceImportUserId();
+    if (!userId) throw new Error('No hay usuario disponible para registrar la bajada automatica');
+    job = createEcommerceImportJob(config.tipoBajada || 'todo', userId);
+    await pool.query(
+      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+       SET ultima_ejecucion = ?, ultimo_job_id = ?, ultimo_estado = 'running', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [
+        formatDateTimeLocal(new Date()),
+        job.id,
+        `Bajada ${config.tipoBajada || 'todo'} iniciada automaticamente`,
+        config.id,
+      ]
+    );
+    await runEcommerceImportJob(job);
+    await pool.query(
+      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+       SET ultimo_estado = ?, ultimo_mensaje = ?
+       WHERE id = ?`,
+      [job.status || 'done', job.message || job.error || '', config.id]
+    );
+  } catch (error) {
+    await pool.query(
+      `UPDATE ${DB_NAME}.ecommerce_import_schedule
+       SET ultimo_estado = 'error', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [String(error.message || 'Error en bajada automatica').slice(0, 255), config.id]
+    ).catch(() => {});
+  } finally {
+    ecommerceImportScheduleRunning = false;
+  }
+}
+
+async function checkEcommerceImportSchedule() {
+  const now = new Date();
+  const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
+  if (minuteKey === ecommerceImportScheduleLastCheckMinute) return;
+  ecommerceImportScheduleLastCheckMinute = minuteKey;
+  if (ecommerceImportScheduleRunning || hasImportJobRunning()) return;
+  let config;
+  try {
+    config = await getEcommerceImportScheduleConfig();
+  } catch (_error) {
+    return;
+  }
+  if (!config.enabled) return;
+  if (!isScheduleDayEnabled(config.diasSemana, now)) return;
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (currentTime !== config.hora) return;
+  if (sameLocalDate(config.ultimaEjecucion, now) && !wasScheduleChangedAfterLastRun(config)) return;
+  runScheduledEcommerceImport(config);
+}
+
 ensureFacturasErrorLogInitialized();
 ensurePedidosErrorLogInitialized();
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en http://0.0.0.0:${PORT}`);
+  setInterval(() => {
+    checkEcommerceImportSchedule();
+  }, 60 * 1000);
+  checkEcommerceImportSchedule();
 });
 // cerrar último bloque
 

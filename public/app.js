@@ -142,6 +142,14 @@ const rolesSave = document.getElementById('roles-save');
 const promptTnText = document.getElementById('prompt-tn-text');
 const promptTnSave = document.getElementById('prompt-tn-save');
 const promptTnStatus = document.getElementById('prompt-tn-status');
+const taskScheduleEnabled = document.getElementById('task-schedule-enabled');
+const taskScheduleType = document.getElementById('task-schedule-type');
+const taskScheduleTime = document.getElementById('task-schedule-time');
+const taskScheduleSave = document.getElementById('task-schedule-save');
+const taskScheduleStatus = document.getElementById('task-schedule-status');
+const taskScheduleLastRun = document.getElementById('task-schedule-last-run');
+const taskScheduleLastStatus = document.getElementById('task-schedule-last-status');
+const taskScheduleLastMessage = document.getElementById('task-schedule-last-message');
 const usersList = document.getElementById('users-list');
 const usersTitle = document.getElementById('users-title');
 const usersStatus = document.getElementById('users-status');
@@ -17503,6 +17511,8 @@ let vendedorasOptions = [];
 let usersSearchTerm = '';
 let usersPage = 1;
 let promptTnLoaded = false;
+let taskScheduleLoaded = false;
+let taskSchedulePollTimer = null;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
 const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
@@ -17823,6 +17833,107 @@ async function savePromptTn() {
   }
 }
 
+function getTaskScheduleDayInputs() {
+  return Array.from(document.querySelectorAll('.task-schedule-day-grid input[type="checkbox"]'));
+}
+
+function formatTaskScheduleProgress(job = {}) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(job.percent) || 0)));
+  const pages = Number(job.totalPages) > 0 ? ` | Paginas ${job.processedPages || 0}/${job.totalPages || 0}` : '';
+  const variants = Number(job.variantes) > 0 ? ` | Variantes ${job.variantes}` : '';
+  return `${pct}% | ${job.phase || 'Procesando'}${pages}${variants}`;
+}
+
+async function pollTaskScheduleJob(jobId) {
+  if (!jobId || !taskScheduleLastMessage) return;
+  try {
+    const result = await fetchJSON(`/api/ecommerce/panel/import/${encodeURIComponent(jobId)}`);
+    const job = result.job || {};
+    if (taskScheduleLastStatus) taskScheduleLastStatus.textContent = job.status || 'running';
+    taskScheduleLastMessage.textContent = formatTaskScheduleProgress(job);
+    if (job.status === 'done' || job.status === 'error') {
+      await loadTaskSchedule(true);
+      if (currentView === 'ecommerce-panel') {
+        ecommercePanelLoaded = false;
+        await loadEcommercePanel(true);
+      }
+      return;
+    }
+  } catch (_error) {
+    await loadTaskSchedule(true);
+    return;
+  }
+  taskSchedulePollTimer = window.setTimeout(() => pollTaskScheduleJob(jobId), 3000);
+}
+
+function startTaskSchedulePolling(data = {}) {
+  if (taskSchedulePollTimer) {
+    window.clearTimeout(taskSchedulePollTimer);
+    taskSchedulePollTimer = null;
+  }
+  if (data.ultimoEstado === 'running' && data.ultimoJobId) {
+    taskSchedulePollTimer = window.setTimeout(() => pollTaskScheduleJob(data.ultimoJobId), 1000);
+  }
+}
+
+function fillTaskSchedule(data = {}) {
+  if (taskScheduleEnabled) taskScheduleEnabled.checked = !!data.enabled;
+  if (taskScheduleType) taskScheduleType.value = data.tipoBajada || 'todo';
+  if (taskScheduleTime) taskScheduleTime.value = data.hora || '03:00';
+  const days = String(data.diasSemana || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  getTaskScheduleDayInputs().forEach((input) => {
+    input.checked = days.includes(String(input.value));
+  });
+  if (taskScheduleLastRun) taskScheduleLastRun.textContent = data.ultimaEjecucion || '-';
+  if (taskScheduleLastStatus) taskScheduleLastStatus.textContent = data.ultimoEstado || '-';
+  if (taskScheduleLastMessage) taskScheduleLastMessage.textContent = data.ultimoMensaje || '-';
+  startTaskSchedulePolling(data);
+}
+
+async function loadTaskSchedule(force = false) {
+  if (!taskScheduleType || (!force && taskScheduleLoaded)) return;
+  try {
+    if (taskScheduleStatus) taskScheduleStatus.textContent = 'Cargando programacion...';
+    const res = await fetchJSON('/api/config/ecommerce-import-schedule');
+    fillTaskSchedule(res.data || {});
+    taskScheduleLoaded = true;
+    if (taskScheduleStatus) taskScheduleStatus.textContent = '';
+  } catch (error) {
+    if (taskScheduleStatus) taskScheduleStatus.textContent = error.message || 'No se pudo cargar la programacion.';
+  }
+}
+
+async function saveTaskSchedule() {
+  if (!taskScheduleType || !taskScheduleTime) return;
+  const diasSemana = getTaskScheduleDayInputs()
+    .filter((input) => input.checked)
+    .map((input) => input.value);
+  try {
+    if (taskScheduleSave) taskScheduleSave.disabled = true;
+    if (taskScheduleStatus) taskScheduleStatus.textContent = 'Guardando programacion...';
+    const res = await fetchJSON('/api/config/ecommerce-import-schedule', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: !!taskScheduleEnabled?.checked,
+        tipoBajada: taskScheduleType.value || 'todo',
+        hora: taskScheduleTime.value || '03:00',
+        diasSemana,
+      }),
+    });
+    fillTaskSchedule(res.data || {});
+    taskScheduleLoaded = true;
+    if (taskScheduleStatus) taskScheduleStatus.textContent = 'Programacion guardada.';
+  } catch (error) {
+    if (taskScheduleStatus) taskScheduleStatus.textContent = error.message || 'No se pudo guardar la programacion.';
+  } finally {
+    if (taskScheduleSave) taskScheduleSave.disabled = false;
+  }
+}
+
 function initConfigTabs() {
   const tabs = document.querySelectorAll('#config-tabs .tab');
   const panels = document.querySelectorAll('.tab-panel');
@@ -17836,9 +17947,11 @@ function initConfigTabs() {
       const panel = document.getElementById(`tab-${target}`);
       if (panel) panel.classList.add('active');
       if (target === 'prompt-tn') loadPromptTn();
+      if (target === 'programar-tareas') loadTaskSchedule();
     });
   });
   if (promptTnSave) promptTnSave.addEventListener('click', savePromptTn);
+  if (taskScheduleSave) taskScheduleSave.addEventListener('click', saveTaskSchedule);
 }
 
 async function loadUsers() {
