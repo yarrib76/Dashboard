@@ -1192,6 +1192,70 @@ function hasEcommerceStock(cantidad, artiCant) {
   return Number(cantidad) >= Number(artiCant);
 }
 
+function buildEcommerceProductVariantPlan(rows, stockByStatusId) {
+  const groups = new Map();
+  (rows || []).forEach((row) => {
+    const productId = String(row.product_id || '').trim();
+    if (!productId) return;
+    if (!groups.has(productId)) groups.set(productId, []);
+    groups.get(productId).push(row);
+  });
+
+  const plan = new Map();
+  groups.forEach((productRows) => {
+    const availableRows = productRows.filter((row) => stockByStatusId.get(Number(row.e_id))?.hasStock === true);
+    if (availableRows.length) {
+      productRows.forEach((row) => {
+        plan.set(Number(row.e_id), stockByStatusId.get(Number(row.e_id))?.hasStock === true);
+      });
+      return;
+    }
+
+    const fallback =
+      productRows.find((row) => Number(row.visible_variante) === 1) ||
+      productRows.find((row) => Number.isFinite(Number(row.articulo_id))) ||
+      productRows[0];
+    productRows.forEach((row) => {
+      plan.set(Number(row.e_id), row === fallback);
+    });
+  });
+  return plan;
+}
+
+async function getEcommerceStockPlan(conn, rows, artiCant) {
+  const articulos = Array.from(new Set((rows || []).map((row) => String(row.articulo || '').trim()).filter(Boolean)));
+  if (!articulos.length) return new Map();
+  const placeholders = articulos.map(() => '?').join(',');
+  const [artRows] = await conn.query(
+    `SELECT Articulo, Cantidad, Web
+     FROM ${DB_NAME}.articulos
+     WHERE Articulo IN (${placeholders})`,
+    articulos
+  );
+  const [pedidoRows] = await conn.query(
+    `SELECT pedtemp.Articulo AS Articulo, SUM(pedtemp.cantidad) AS Cantidad
+     FROM ${DB_NAME}.pedidotemp AS pedtemp
+     INNER JOIN ${DB_NAME}.controlpedidos AS control ON pedtemp.NroPedido = control.nropedido
+     WHERE control.estado = 1
+       AND pedtemp.Articulo IN (${placeholders})
+     GROUP BY pedtemp.Articulo`,
+    articulos
+  );
+  const articuloMap = new Map((artRows || []).map((row) => [String(row.Articulo), row]));
+  const pedidoMap = new Map((pedidoRows || []).map((row) => [String(row.Articulo), Number(row.Cantidad) || 0]));
+  const stockPlan = new Map();
+  (rows || []).forEach((row) => {
+    const articuloLocal = articuloMap.get(String(row.articulo || ''));
+    if (!articuloLocal || Number(articuloLocal.Web) !== 1) return;
+    const cantidad = (Number(articuloLocal.Cantidad) || 0) - (pedidoMap.get(String(row.articulo || '')) || 0);
+    stockPlan.set(Number(row.e_id), {
+      hasStock: hasEcommerceStock(cantidad, artiCant),
+      variantStock: verificoStock(cantidad, artiCant),
+    });
+  });
+  return stockPlan;
+}
+
 async function updateEcommerceVariantSnapshot(conn, id, stock, visible) {
   await conn.query(
     `UPDATE ${DB_NAME}.statusecomercesincro
@@ -1279,6 +1343,8 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
   const processedProductIds = new Set();
   const productsWithErrors = new Set();
   const publishedProducts = new Set();
+  const stockByStatusId = await getEcommerceStockPlan(conn, rows, options.artiCant);
+  const variantVisibilityPlan = buildEcommerceProductVariantPlan(rows, stockByStatusId);
 
   const updateStatus = async (id, status) => {
     const fecha = formatDateTimeLocal(new Date());
@@ -1364,6 +1430,9 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       if (Number(articuloLocal.Web) === 1) {
         onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock/visible ${row.articulo || ''}` });
         const precioVenta = await computePrecioVenta(conn, articuloLocal);
+        const variantVisible = variantVisibilityPlan.has(Number(row.e_id))
+          ? variantVisibilityPlan.get(Number(row.e_id))
+          : hasStock;
         await tnubeRequest(
           tnubeConnection.storeId,
           tnubeConnection.accessToken,
@@ -1374,10 +1443,10 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
             id: Number(row.articulo_id),
             price: precioVenta ?? 0,
             stock: variantStock,
-            visible: hasStock,
+            visible: variantVisible,
           }]
         );
-        await updateEcommerceVariantSnapshot(conn, row.e_id, variantStock, hasStock);
+        await updateEcommerceVariantSnapshot(conn, row.e_id, variantStock, variantVisible);
         await updateStatus(row.e_id, 'OK');
         countOk += 1;
       } else {
