@@ -1348,12 +1348,18 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
   let countOk = 0;
   let countError = 0;
   let countCheck = 0;
+  const debeOcultarAutomaticamente = options.ocultarAutomaticamente === true && options.conOrden !== true;
+  const debePublicarPorUltimasOrdenes = options.conOrden === true;
   const processedProductIds = new Set();
   const productsWithErrors = new Set();
   const productsWithExclusions = new Set();
   const publishedProducts = new Set();
-  const stockByStatusId = await getEcommerceStockPlan(conn, rows, options.artiCant);
-  const variantVisibilityPlan = buildEcommerceProductVariantPlan(rows, stockByStatusId);
+  const stockByStatusId = debeOcultarAutomaticamente
+    ? await getEcommerceStockPlan(conn, rows, options.artiCant)
+    : new Map();
+  const variantVisibilityPlan = debeOcultarAutomaticamente
+    ? buildEcommerceProductVariantPlan(rows, stockByStatusId)
+    : new Map();
 
   const updateStatus = async (id, status) => {
     const fecha = formatDateTimeLocal(new Date());
@@ -1419,7 +1425,7 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       if (productId && isExcluded) productsWithExclusions.add(productId);
 
       if (
-        options.conOrden &&
+        debePublicarPorUltimasOrdenes &&
         productId &&
         !productsWithExclusions.has(productId) &&
         !publishedProducts.has(productId) &&
@@ -1440,25 +1446,38 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
       }
 
       if (!isExcluded) {
-        onProgress?.({ ...baseProgress, phase: `Actualizando precio/stock/visible ${row.articulo || ''}` });
+        onProgress?.({
+          ...baseProgress,
+          phase: `Actualizando precio/stock${
+            debeOcultarAutomaticamente || debePublicarPorUltimasOrdenes ? '/visible' : ''
+          } ${row.articulo || ''}`,
+        });
         const precioVenta = await computePrecioVenta(conn, articuloLocal);
         const variantVisible = variantVisibilityPlan.has(Number(row.e_id))
           ? variantVisibilityPlan.get(Number(row.e_id))
           : hasStock;
+        const variantPayload = {
+          id: Number(row.articulo_id),
+          price: precioVenta ?? 0,
+          stock: variantStock,
+        };
+        if (debeOcultarAutomaticamente || debePublicarPorUltimasOrdenes) {
+          variantPayload.visible = debeOcultarAutomaticamente ? variantVisible : hasStock;
+        }
         await tnubeRequest(
           tnubeConnection.storeId,
           tnubeConnection.accessToken,
           tnubeConnection.appName,
           'PATCH',
           `products/${row.product_id}/variants`,
-          [{
-            id: Number(row.articulo_id),
-            price: precioVenta ?? 0,
-            stock: variantStock,
-            visible: variantVisible,
-          }]
+          [variantPayload]
         );
-        await updateEcommerceVariantSnapshot(conn, row.e_id, variantStock, variantVisible);
+        await updateEcommerceVariantSnapshot(
+          conn,
+          row.e_id,
+          variantStock,
+          debeOcultarAutomaticamente || debePublicarPorUltimasOrdenes ? variantPayload.visible : row.visible_variante
+        );
         await updateStatus(row.e_id, 'OK');
         countOk += 1;
       } else {
@@ -1478,7 +1497,7 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
     }
   }
 
-  if (!options.conOrden) {
+  if (debeOcultarAutomaticamente) {
     const productIdsToSync = Array.from(processedProductIds).filter(
       (productId) => !productsWithErrors.has(productId) && !productsWithExclusions.has(productId)
     );
@@ -1521,7 +1540,7 @@ async function processEcommerceSyncRows(conn, rows, tnubeConnection, options, on
 async function runEcommerceSyncJob(job) {
   let conn;
   try {
-    const { idCorrida, storeId, conOrden, ordenCant, artiCant } = job.params;
+    const { idCorrida, storeId, conOrden, ocultarAutomaticamente, ordenCant, artiCant } = job.params;
     const tnubeConnection = getTnubeConnection(storeId);
     conn = await pool.getConnection();
     updateEcommerceSyncJob(job, { phase: 'Buscando articulos', percent: 1 });
@@ -1531,7 +1550,7 @@ async function runEcommerceSyncJob(job) {
       conn,
       rows,
       tnubeConnection,
-      { conOrden, artiCant },
+      { conOrden, ocultarAutomaticamente, artiCant },
       (progress) => updateEcommerceSyncJob(job, progress)
     );
     updateEcommerceSyncJob(job, {
@@ -16134,6 +16153,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     const idCorrida = String(req.body?.id_corrida || '').trim();
     const storeId = String(req.body?.store_id || '').trim();
     const conOrden = req.body?.conOrden === '1' || req.body?.conOrden === 1 || req.body?.conOrden === true;
+    const ocultarAutomaticamente =
+      !conOrden &&
+      (req.body?.ocultarAutomaticamente === '1' ||
+        req.body?.ocultarAutomaticamente === 1 ||
+        req.body?.ocultarAutomaticamente === true);
     const ordenCant = Math.max(1, Number(req.body?.ordenCant) || 5);
     const artiCant = Math.max(1, Number(req.body?.artiCant) || 10);
     if (!idCorrida || !storeId) {
@@ -16149,7 +16173,10 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         jobToken: signEcommerceJobToken(runningJob.id, { type: 'sync', idCorrida }),
       });
     }
-    const job = createEcommerceSyncJob({ idCorrida, storeId, conOrden, ordenCant, artiCant }, req.user?.id || null);
+    const job = createEcommerceSyncJob(
+      { idCorrida, storeId, conOrden, ocultarAutomaticamente, ordenCant, artiCant },
+      req.user?.id || null
+    );
     runEcommerceSyncJob(job);
     return res.json({
       ok: true,
@@ -16176,6 +16203,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     const idCorrida = String(req.query.id_corrida || '').trim();
     const storeId = String(req.query.store_id || '').trim();
     const conOrden = req.query.conOrden === '1' || req.query.conOrden === 1 || req.query.conOrden === true;
+    const ocultarAutomaticamente =
+      !conOrden &&
+      (req.query.ocultarAutomaticamente === '1' ||
+        req.query.ocultarAutomaticamente === 1 ||
+        req.query.ocultarAutomaticamente === true);
     const ordenCant = Math.max(1, Number(req.query.ordenCant) || 5);
     const artiCant = Math.max(1, Number(req.query.artiCant) || 10);
     const dryRun = req.query.dryRun === '1' || req.query.dryRun === 1 || req.query.dryRun === true;
@@ -16189,7 +16221,11 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     if (dryRun) {
       return res.json([{ OK: 0, Error: 0, 'No Requiere': 0, dryRun: true, total: rows.length }]);
     }
-    const result = await processEcommerceSyncRows(conn, rows, tnubeConnection, { conOrden, artiCant });
+    const result = await processEcommerceSyncRows(conn, rows, tnubeConnection, {
+      conOrden,
+      ocultarAutomaticamente,
+      artiCant,
+    });
     return res.json([result]);
   } catch (error) {
     return res.status(500).json({ message: 'Error en sincro TiendaNube', error: error.message });

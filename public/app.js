@@ -1069,6 +1069,7 @@ const ecommercePanelDetailSync = document.getElementById('ecommerce-panel-detail
 const ecommercePanelDetailOrdenCheck = document.getElementById('ecommerce-panel-detail-orden-check');
 const ecommercePanelDetailOrdenCant = document.getElementById('ecommerce-panel-detail-orden-cant');
 const ecommercePanelDetailArtiCant = document.getElementById('ecommerce-panel-detail-arti-cant');
+const ecommercePanelDetailAutoHideCheck = document.getElementById('ecommerce-panel-detail-auto-hide-check');
 const ecommerceSyncLoading = document.getElementById('ecommerce-sync-loading');
 const ecommerceSyncFinish = document.getElementById('ecommerce-sync-finish');
 const ecommerceSyncErrorModal = document.getElementById('ecommerce-sync-error-modal');
@@ -7549,6 +7550,14 @@ function initEcommercePanelDetail() {
       switchView('ecommerce-panel');
     });
   }
+  if (ecommercePanelDetailOrdenCheck && ecommercePanelDetailAutoHideCheck) {
+    ecommercePanelDetailOrdenCheck.addEventListener('change', () => {
+      if (ecommercePanelDetailOrdenCheck.checked) ecommercePanelDetailAutoHideCheck.checked = false;
+    });
+    ecommercePanelDetailAutoHideCheck.addEventListener('change', () => {
+      if (ecommercePanelDetailAutoHideCheck.checked) ecommercePanelDetailOrdenCheck.checked = false;
+    });
+  }
   if (ecommercePanelDetailSync) {
     ecommercePanelDetailSync.addEventListener('click', async () => {
       if (syncJobRunning) return;
@@ -7560,6 +7569,7 @@ function initEcommercePanelDetail() {
         return;
       }
       const conOrden = ecommercePanelDetailOrdenCheck?.checked ? 1 : 0;
+      const ocultarAutomaticamente = ecommercePanelDetailAutoHideCheck?.checked ? 1 : 0;
       const ordenCant = ecommercePanelDetailOrdenCant?.value || '5';
       const artiCant = ecommercePanelDetailArtiCant?.value || '10';
       try {
@@ -7574,6 +7584,7 @@ function initEcommercePanelDetail() {
             id_corrida: ctx.idCorrida,
             store_id: ctx.idCliente,
             conOrden: String(conOrden),
+            ocultarAutomaticamente: String(ocultarAutomaticamente),
             ordenCant: String(ordenCant),
             artiCant: String(artiCant),
           }),
