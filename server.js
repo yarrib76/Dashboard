@@ -11769,6 +11769,88 @@ app.get('/api/mercaderia/abm/image', async (req, res) => {
   }
 });
 
+async function getCatalogoArticuloImageSrc(articulo) {
+  const latestStatusSubquery =
+    '(SELECT id_provecomerce FROM statusecomercesincro ORDER BY id_provecomerce DESC LIMIT 1)';
+  const [rows] = await pool.query(
+    `SELECT imagessrc
+     FROM statusecomercesincro
+     WHERE articulo = ?
+       AND id_provecomerce = ${latestStatusSubquery}
+     LIMIT 1`,
+    [articulo]
+  );
+  return rows[0]?.imagessrc || '';
+}
+
+app.post('/api/mercaderia/catalogo/items', async (req, res) => {
+  try {
+    const articulos = Array.isArray(req.body?.articulos)
+      ? req.body.articulos
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+      : [];
+    const uniqueArticulos = Array.from(new Set(articulos)).slice(0, 120);
+    if (!uniqueArticulos.length) {
+      return res.status(400).json({ message: 'articulos requeridos' });
+    }
+    const placeholders = uniqueArticulos.map(() => '?').join(',');
+    const [rows] = await pool.query(
+      `SELECT
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         COALESCE(art.Cantidad, 0) AS cantidad,
+         repoArt.PrecioVenta AS precioVenta
+       FROM articulos AS art
+       INNER JOIN reportearticulo AS repoArt ON art.Articulo = repoArt.Articulo
+       WHERE art.Articulo IN (${placeholders})`,
+      uniqueArticulos
+    );
+    const byArticulo = new Map((rows || []).map((row) => [String(row.articulo), row]));
+    const data = uniqueArticulos
+      .map((articulo) => byArticulo.get(String(articulo)))
+      .filter(Boolean)
+      .map((row) => ({
+        articulo: row.articulo || '',
+        detalle: row.detalle || '',
+        cantidad: Number(row.cantidad) || 0,
+        precioVenta: row.precioVenta == null ? 0 : Number(row.precioVenta),
+        fotoUrl: `/api/mercaderia/catalogo/image?articulo=${encodeURIComponent(row.articulo || '')}`,
+      }));
+    res.json({ total: data.length, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos del catalogo', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/catalogo/image', async (req, res) => {
+  try {
+    const articulo = String(req.query.articulo || '').trim();
+    if (!articulo) return res.sendFile(path.join(__dirname, 'public', 'sinfoto.png'));
+    const src = await getCatalogoArticuloImageSrc(articulo);
+    if (!src) return res.sendFile(path.join(__dirname, 'public', 'sinfoto.png'));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let response;
+    try {
+      response = await fetch(src, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) return res.sendFile(path.join(__dirname, 'public', 'sinfoto.png'));
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.startsWith('image/')) {
+      return res.sendFile(path.join(__dirname, 'public', 'sinfoto.png'));
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(buffer);
+  } catch (_error) {
+    res.sendFile(path.join(__dirname, 'public', 'sinfoto.png'));
+  }
+});
+
 app.get('/api/mercaderia/abm/pedidos', async (req, res) => {
   try {
     const articulo = req.query.articulo;

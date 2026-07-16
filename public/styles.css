@@ -3047,26 +3047,93 @@ body.theme-light .row-alert td {
   table-layout: fixed;
 }
 
-#abm-table th:nth-child(2),
-#abm-table td:nth-child(2) {
-  width: 34ch;
-  white-space: normal;
-}
-
 #abm-table th:nth-child(1),
 #abm-table td:nth-child(1) {
+  width: 9ch;
+  text-align: center;
+  white-space: nowrap;
+}
+
+#abm-table th:nth-child(2),
+#abm-table td:nth-child(2) {
   width: 16ch;
   white-space: nowrap;
 }
 
 #abm-table th:nth-child(3),
 #abm-table td:nth-child(3) {
+  width: 34ch;
+  white-space: normal;
+}
+
+#abm-table th:nth-child(4),
+#abm-table td:nth-child(4) {
   width: 12ch;
   white-space: nowrap;
 }
 
-#abm-table td:nth-child(3) {
+#abm-table td:nth-child(4) {
   position: relative;
+}
+
+.abm-catalog-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(14, 116, 144, 0.35);
+  border-radius: 8px;
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.abm-catalog-bar.is-active {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.abm-catalog-bar strong {
+  margin-right: auto;
+  color: var(--text);
+}
+
+.abm-catalog-toggle {
+  width: 18px;
+  height: 18px;
+  accent-color: #0e7490;
+  cursor: pointer;
+}
+
+.abm-catalog-selected-list {
+  display: grid;
+  gap: 8px;
+}
+
+.abm-catalog-selected-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.abm-catalog-selected-item div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.abm-catalog-selected-item span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.abm-catalog-remove {
+  flex: 0 0 auto;
 }
 
 .abm-sku-truncate {
@@ -3219,6 +3286,11 @@ body.theme-light .abm-sku-truncate:focus {
   gap: 10px;
 }
 
+.abm-card.is-catalog-selected {
+  border-color: rgba(14, 116, 144, 0.8);
+  box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.16);
+}
+
 .abm-card-header {
   display: flex;
   justify-content: space-between;
@@ -3229,6 +3301,16 @@ body.theme-light .abm-sku-truncate:focus {
   margin: 0;
   font-weight: 700;
   font-size: 14px;
+}
+
+.abm-card-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 .abm-card-sub {

@@ -1173,6 +1173,15 @@ const abmCardsEl = document.getElementById('abm-cards');
 const abmMobileSearchInput = document.getElementById('abm-mobile-search-input');
 const abmMobileSearchBtn = document.getElementById('abm-mobile-search-btn');
 const abmCreateBtn = document.getElementById('abm-create');
+const abmCatalogBar = document.getElementById('abm-catalog-bar');
+const abmCatalogCount = document.getElementById('abm-catalog-count');
+const abmCatalogView = document.getElementById('abm-catalog-view');
+const abmCatalogPdf = document.getElementById('abm-catalog-pdf');
+const abmCatalogClear = document.getElementById('abm-catalog-clear');
+const abmCatalogOverlay = document.getElementById('abm-catalog-overlay');
+const abmCatalogClose = document.getElementById('abm-catalog-close');
+const abmCatalogSelectedList = document.getElementById('abm-catalog-selected-list');
+const abmCatalogStatus = document.getElementById('abm-catalog-status');
 const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
 const abmBarcodeClose = document.getElementById('abm-barcode-close');
 const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
@@ -1415,6 +1424,7 @@ let mercArtProvRows = [];
 let abmDataTable = null;
 let abmLoaded = false;
 let abmRowsCache = [];
+const abmCatalogSelection = new Map();
 let abmCardFilterTerm = '';
 let abmCardFilteredRows = [];
 let abmCardVisibleCount = 0;
@@ -6213,27 +6223,266 @@ function removeBatchItem(batchId) {
   renderBatchTable();
 }
 
+function getAbmCatalogCountLabel(count) {
+  return `${count} seleccionado${count === 1 ? '' : 's'}`;
+}
+
+function getAbmRowByArticulo(articulo) {
+  const key = String(articulo || '');
+  return abmRowsCache.find((row) => String(row.articulo || '') === key) || null;
+}
+
+function setAbmCatalogSelected(articulo, selected, row = null) {
+  const key = String(articulo || '').trim();
+  if (!key) return;
+  if (selected) {
+    const source = row || getAbmRowByArticulo(key) || {};
+    abmCatalogSelection.set(key, {
+      articulo: key,
+      detalle: source.detalle || '',
+      cantidad: source.cantidad ?? 0,
+      precioVenta: source.precioVenta ?? 0,
+    });
+  } else {
+    abmCatalogSelection.delete(key);
+  }
+  updateAbmCatalogUi();
+}
+
+function syncAbmCatalogInputs() {
+  document.querySelectorAll('.abm-catalog-toggle').forEach((input) => {
+    const articulo = String(input.dataset.articulo || '');
+    input.checked = abmCatalogSelection.has(articulo);
+    const card = input.closest('.abm-card');
+    if (card) card.classList.toggle('is-catalog-selected', input.checked);
+  });
+}
+
+function updateAbmCatalogUi() {
+  const count = abmCatalogSelection.size;
+  if (abmCatalogCount) abmCatalogCount.textContent = getAbmCatalogCountLabel(count);
+  if (abmCatalogBar) abmCatalogBar.classList.toggle('is-active', count > 0);
+  if (abmCatalogPdf) abmCatalogPdf.disabled = count === 0;
+  if (abmCatalogView) abmCatalogView.disabled = count === 0;
+  if (abmCatalogClear) abmCatalogClear.disabled = count === 0;
+  syncAbmCatalogInputs();
+  renderAbmCatalogSelected();
+}
+
+function renderAbmCatalogSelected() {
+  if (!abmCatalogSelectedList) return;
+  const items = Array.from(abmCatalogSelection.values());
+  if (!items.length) {
+    abmCatalogSelectedList.innerHTML = '<p class="status">No hay artículos seleccionados.</p>';
+    return;
+  }
+  abmCatalogSelectedList.innerHTML = items
+    .map(
+      (item) => `
+        <div class="abm-catalog-selected-item">
+          <div>
+            <strong>${escapeAttr(item.articulo)}</strong>
+            <span>${escapeAttr(item.detalle || '')}</span>
+          </div>
+          <button type="button" class="abm-catalog-remove" data-articulo="${escapeAttr(item.articulo)}">Quitar</button>
+        </div>
+      `
+    )
+    .join('');
+}
+
+function clearAbmCatalogSelection() {
+  abmCatalogSelection.clear();
+  if (abmCatalogStatus) abmCatalogStatus.textContent = '';
+  if (abmStatus) abmStatus.textContent = 'Selección de catálogo limpiada.';
+  updateAbmCatalogUi();
+}
+
+function loadImageForPdf(src) {
+  return new Promise((resolve) => {
+    if (!src) {
+      resolve(null);
+      return;
+    }
+    fetch(src, { credentials: 'include' })
+      .then((response) => (response.ok ? response.blob() : null))
+      .then((blob) => {
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const maxSide = 1200;
+          const ratio = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+          const width = Math.max(1, Math.round((img.naturalWidth || 1) * ratio));
+          const height = Math.max(1, Math.round((img.naturalHeight || 1) * ratio));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          URL.revokeObjectURL(objectUrl);
+          resolve({
+            dataUrl: canvas.toDataURL('image/jpeg', 0.86),
+            width,
+            height,
+          });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve(null);
+        };
+        img.src = objectUrl;
+      })
+      .catch(() => resolve(null));
+  });
+}
+
+function drawPdfImageContained(doc, image, x, y, width, height) {
+  if (!image?.dataUrl) return;
+  const ratio = Math.min(width / image.width, height / image.height);
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
+  doc.addImage(image.dataUrl, 'JPEG', drawX, drawY, drawWidth, drawHeight);
+}
+
+async function generateAbmCatalogPdf() {
+  const selected = Array.from(abmCatalogSelection.keys());
+  if (!selected.length) {
+    if (abmStatus) abmStatus.textContent = 'Seleccioná al menos un artículo.';
+    return;
+  }
+  const ok = await ensureJsPdf();
+  if (!ok) {
+    if (abmStatus) abmStatus.textContent = 'PDF no disponible.';
+    return;
+  }
+  try {
+    if (abmStatus) abmStatus.textContent = 'Preparando catálogo...';
+    const res = await fetchJSON('/api/mercaderia/catalogo/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articulos: selected }),
+    });
+    const items = Array.isArray(res.data) ? res.data : [];
+    if (!items.length) {
+      if (abmStatus) abmStatus.textContent = 'No se encontraron artículos para el catálogo.';
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    const gap = 8;
+    const cardWidth = (pageWidth - margin * 2 - gap) / 2;
+    const cardHeight = 78;
+    const imageHeight = 38;
+    const logo = await loadImageForPdf('/logo.png');
+    const images = [];
+    for (let i = 0; i < items.length; i += 1) {
+      if (abmStatus) abmStatus.textContent = `Cargando fotos ${i + 1}/${items.length}...`;
+      images.push(await loadImageForPdf(items[i].fotoUrl || '/sinfoto.png'));
+    }
+    const drawHeader = () => {
+      if (logo) drawPdfImageContained(doc, logo, margin, 8, 30, 18);
+      doc.setTextColor(27, 38, 59);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Catálogo', pageWidth - margin, 16, { align: 'right' });
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(new Date().toLocaleDateString('es-AR'), pageWidth - margin, 23, { align: 'right' });
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, 30, pageWidth - margin, 30);
+    };
+    drawHeader();
+    let x = margin;
+    let y = 36;
+    items.forEach((item, index) => {
+      if (y + cardHeight > pageHeight - 12) {
+        doc.addPage();
+        drawHeader();
+        x = margin;
+        y = 36;
+      }
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(x, y, cardWidth, cardHeight, 2, 2, 'FD');
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(x + 3, y + 3, cardWidth - 6, imageHeight, 2, 2, 'F');
+      drawPdfImageContained(doc, images[index], x + 4, y + 4, cardWidth - 8, imageHeight - 2);
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(String(item.articulo || ''), x + 4, y + imageHeight + 10, { maxWidth: cardWidth - 8 });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      const detailLines = doc.splitTextToSize(String(item.detalle || ''), cardWidth - 8).slice(0, 3);
+      doc.text(detailLines, x + 4, y + imageHeight + 16);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(14, 116, 144);
+      doc.text(formatMoney(item.precioVenta || 0), x + 4, y + cardHeight - 7);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Stock: ${item.cantidad ?? 0}`, x + cardWidth - 4, y + cardHeight - 7, { align: 'right' });
+      if (x === margin) {
+        x = margin + cardWidth + gap;
+      } else {
+        x = margin;
+        y += cardHeight + gap;
+      }
+    });
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+      doc.setPage(page);
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
+    }
+    const datePart = new Date().toISOString().slice(0, 10);
+    doc.save(`catalogo-${datePart}.pdf`);
+    if (abmStatus) abmStatus.textContent = `Catálogo generado con ${items.length} artículos.`;
+  } catch (error) {
+    if (abmStatus) abmStatus.textContent = error.message || 'No se pudo generar el catálogo.';
+  }
+}
+
 function renderAbmTable(rows) {
   if (!abmTableBody) return;
   abmTableBody.innerHTML = '';
   rows.forEach((row) => {
+    const articulo = row.articulo || '';
+    const checked = abmCatalogSelection.has(String(articulo)) ? ' checked' : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${row.articulo || ''}</td>
-      <td>${row.detalle || ''}</td>
-      <td>${row.proveedorSku || ''}</td>
-      <td>${row.cantidad ?? 0}</td>
-      <td>${row.enPedido ?? 0}</td>
+      <td>
+        <input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(articulo)}"${checked} aria-label="Seleccionar para catálogo">
+      </td>
+      <td>${escapeAttr(row.articulo || '')}</td>
+      <td>${escapeAttr(row.detalle || '')}</td>
+      <td>${escapeAttr(row.proveedorSku || '')}</td>
+      <td>${escapeAttr(row.cantidad ?? 0)}</td>
+      <td>${escapeAttr(row.enPedido ?? 0)}</td>
       <td>${formatMoney(row.precioVenta || 0)}</td>
       <td>
         <div class="abm-actions">
-          <button type="button" class="abm-action" data-action="barcode" data-articulo="${row.articulo || ''}">
+          <button type="button" class="abm-action" data-action="barcode" data-articulo="${escapeAttr(row.articulo || '')}">
             Codigo Barras
           </button>
-          <button type="button" class="abm-action" data-action="edit" data-articulo="${row.articulo || ''}">
+          <button type="button" class="abm-action" data-action="edit" data-articulo="${escapeAttr(row.articulo || '')}">
             Modificar
           </button>
-          <button type="button" class="abm-action" data-action="photo" data-articulo="${row.articulo || ''}">
+          <button type="button" class="abm-action" data-action="photo" data-articulo="${escapeAttr(row.articulo || '')}">
             Foto
           </button>
         </div>
@@ -6257,12 +6506,18 @@ function buildAbmCard(row) {
         )}">${enPedido}</button>`
       : `${enPedido}`;
   const card = document.createElement('article');
-  card.className = 'abm-card';
+  card.className = `abm-card${abmCatalogSelection.has(String(articulo)) ? ' is-catalog-selected' : ''}`;
   card.dataset.articulo = articulo;
   card.dataset.detalle = detalle;
   card.innerHTML = `
     <div class="abm-card-header">
       <div>
+        <label class="abm-card-select">
+          <input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(articulo)}"${
+            abmCatalogSelection.has(String(articulo)) ? ' checked' : ''
+          }>
+          <span>Catálogo</span>
+        </label>
         <p class="abm-card-title">${escapeAttr(articulo)}</p>
         <p class="abm-card-sub">${escapeAttr(detalle)}</p>
       </div>
@@ -9385,6 +9640,18 @@ async function loadAbmDataTable(force = false) {
         abmDataTable = new DataTable('#abm-table', {
           data: rows,
           columns: [
+            {
+              data: null,
+              orderable: false,
+              searchable: false,
+              render: (_data, _type, row) => {
+                const articulo = row.articulo || '';
+                const checked = abmCatalogSelection.has(String(articulo)) ? ' checked' : '';
+                return `<input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(
+                  articulo
+                )}"${checked} aria-label="Seleccionar para catálogo">`;
+              },
+            },
             { data: 'articulo' },
             { data: 'detalle' },
             {
@@ -9435,8 +9702,11 @@ async function loadAbmDataTable(force = false) {
           pageLength: 10,
           lengthMenu: [10, 25, 50, 100],
           deferRender: true,
-          order: [[0, 'asc']],
+          order: [[1, 'asc']],
           autoWidth: false,
+        });
+        abmDataTable.on('draw', () => {
+          syncAbmCatalogInputs();
         });
       } else {
         renderAbmTable(rows);
@@ -9446,6 +9716,7 @@ async function loadAbmDataTable(force = false) {
     if (abmStatus) {
       abmStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados';
     }
+    updateAbmCatalogUi();
   } catch (error) {
     if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar ABM';
   }
@@ -9453,6 +9724,25 @@ async function loadAbmDataTable(force = false) {
 
 function initAbm() {
   if (!viewAbm) return;
+  updateAbmCatalogUi();
+  if (abmCatalogPdf) abmCatalogPdf.addEventListener('click', generateAbmCatalogPdf);
+  if (abmCatalogClear) abmCatalogClear.addEventListener('click', clearAbmCatalogSelection);
+  if (abmCatalogView) {
+    abmCatalogView.addEventListener('click', () => {
+      renderAbmCatalogSelected();
+      if (abmCatalogStatus) abmCatalogStatus.textContent = '';
+      if (abmCatalogOverlay) abmCatalogOverlay.classList.add('open');
+    });
+  }
+  if (abmCatalogClose) abmCatalogClose.addEventListener('click', () => closeOverlay(abmCatalogOverlay));
+  if (abmCatalogOverlay) {
+    abmCatalogOverlay.addEventListener('click', (e) => {
+      if (e.target === abmCatalogOverlay) closeOverlay(abmCatalogOverlay);
+      const removeBtn = e.target.closest('.abm-catalog-remove');
+      if (!removeBtn) return;
+      setAbmCatalogSelected(removeBtn.dataset.articulo, false);
+    });
+  }
   if (abmRefreshBtn)
     abmRefreshBtn.addEventListener('click', () => {
       abmLoaded = false;
@@ -9460,6 +9750,11 @@ function initAbm() {
     });
   loadAbmDataTable();
   if (abmTableBody) {
+    abmTableBody.addEventListener('change', (e) => {
+      const toggle = e.target.closest('.abm-catalog-toggle');
+      if (!toggle) return;
+      setAbmCatalogSelected(toggle.dataset.articulo, toggle.checked);
+    });
     abmTableBody.addEventListener('click', async (e) => {
       const pedidosBtn = e.target.closest('.abm-pedido-link');
       if (pedidosBtn) {
@@ -9517,7 +9812,22 @@ function initAbm() {
     });
   }
   if (abmCardsEl) {
+    abmCardsEl.addEventListener('change', (e) => {
+      const catalogToggle = e.target.closest('.abm-catalog-toggle');
+      if (!catalogToggle) return;
+      const card = catalogToggle.closest('.abm-card');
+      const articulo = catalogToggle.dataset.articulo;
+      const row = getAbmRowByArticulo(articulo) || {
+        articulo,
+        detalle: card?.dataset?.detalle || '',
+      };
+      setAbmCatalogSelected(articulo, catalogToggle.checked, row);
+    });
     abmCardsEl.addEventListener('click', async (e) => {
+      const catalogToggle = e.target.closest('.abm-catalog-toggle');
+      if (catalogToggle) {
+        return;
+      }
       const toggle = e.target.closest('.abm-card-menu-toggle');
       if (toggle) {
         const menu = toggle.closest('.abm-card-actions')?.querySelector('.abm-card-menu');

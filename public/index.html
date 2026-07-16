@@ -3187,6 +3187,12 @@
           <button id="abm-refresh" type="button">Actualizar</button>
         </div>
       </div>
+      <div class="abm-catalog-bar" id="abm-catalog-bar">
+        <strong id="abm-catalog-count">0 seleccionados</strong>
+        <button id="abm-catalog-view" type="button">Ver seleccionados</button>
+        <button id="abm-catalog-pdf" type="button">Generar catálogo PDF</button>
+        <button id="abm-catalog-clear" type="button">Limpiar selección</button>
+      </div>
       
 <div class="abm-mobile-search">
         <input type="search" id="abm-mobile-search-input" placeholder="Buscar articulo..." />
@@ -3195,6 +3201,7 @@
         <table class="table" id="abm-table">
           <thead>
             <tr>
+              <th>Catálogo</th>
               <th data-sort="articulo">Articulo</th>
               <th data-sort="detalle">Detalle</th>
               <th data-sort="proveedorSku">ProveedorSKU</th>
@@ -3214,6 +3221,19 @@
       <p class="status" id="abm-status"></p>
     </article>
   </section>
+
+  <div class="modal-overlay" id="abm-catalog-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Artículos seleccionados</h3>
+        <button id="abm-catalog-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="abm-catalog-selected-list" id="abm-catalog-selected-list"></div>
+        <p class="status" id="abm-catalog-status"></p>
+      </div>
+    </div>
+  </div>
 
   <section class="view hidden" id="view-control-ordenes">
     <article class="card wide">
