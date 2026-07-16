@@ -6384,6 +6384,8 @@ async function generateAbmCatalogPdf() {
     const cardWidth = (pageWidth - margin * 2 - gap) / 2;
     const cardHeight = 78;
     const imageHeight = 38;
+    const catalogNote =
+      'Los precios y la disponibilidad de los artículos están sujetos a variación y se confirmarán al momento de concretar la compra.';
     const logo = await loadImageForPdf('/logo.png');
     const images = [];
     for (let i = 0; i < items.length; i += 1) {
@@ -6407,7 +6409,7 @@ async function generateAbmCatalogPdf() {
     let x = margin;
     let y = 36;
     items.forEach((item, index) => {
-      if (y + cardHeight > pageHeight - 12) {
+      if (y + cardHeight > pageHeight - 22) {
         doc.addPage();
         drawHeader();
         x = margin;
@@ -6431,10 +6433,6 @@ async function generateAbmCatalogPdf() {
       doc.setFontSize(12);
       doc.setTextColor(14, 116, 144);
       doc.text(formatMoney(item.precioVenta || 0), x + 4, y + cardHeight - 7);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Stock: ${item.cantidad ?? 0}`, x + cardWidth - 4, y + cardHeight - 7, { align: 'right' });
       if (x === margin) {
         x = margin + cardWidth + gap;
       } else {
@@ -6445,6 +6443,12 @@ async function generateAbmCatalogPdf() {
     const pageCount = doc.internal.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
       doc.setPage(page);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      const noteLines = doc.splitTextToSize(catalogNote, pageWidth - margin * 2 - 32);
+      doc.text(noteLines.slice(0, 2), margin, pageHeight - 10);
+      doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);
       doc.text(`Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
