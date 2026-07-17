@@ -6400,6 +6400,15 @@ async function generateAbmCatalogPdf() {
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.text('Catálogo', pageWidth - margin, 16, { align: 'right' });
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        new Date().toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }),
+        pageWidth - margin,
+        23,
+        { align: 'right' }
+      );
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, 30, pageWidth - margin, 30);
     };
