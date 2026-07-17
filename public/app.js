@@ -6371,6 +6371,8 @@ async function generateAbmCatalogPdf() {
       body: JSON.stringify({ articulos: selected }),
     });
     const items = Array.isArray(res.data) ? res.data : [];
+    const catalogUrl = String(res.store?.url || 'https://www.viamore.com.ar/');
+    const catalogUrlLabel = String(res.store?.label || 'Ver todos nuestros productos en www.viamore.com.ar');
     if (!items.length) {
       if (abmStatus) abmStatus.textContent = 'No se encontraron artículos para el catálogo.';
       return;
@@ -6398,10 +6400,6 @@ async function generateAbmCatalogPdf() {
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.text('Catálogo', pageWidth - margin, 16, { align: 'right' });
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 116, 139);
-      doc.text(new Date().toLocaleDateString('es-AR'), pageWidth - margin, 23, { align: 'right' });
       doc.setDrawColor(226, 232, 240);
       doc.line(margin, 30, pageWidth - margin, 30);
     };
@@ -6409,7 +6407,7 @@ async function generateAbmCatalogPdf() {
     let x = margin;
     let y = 36;
     items.forEach((item, index) => {
-      if (y + cardHeight > pageHeight - 22) {
+      if (y + cardHeight > pageHeight - 26) {
         doc.addPage();
         drawHeader();
         x = margin;
@@ -6440,14 +6438,29 @@ async function generateAbmCatalogPdf() {
         y += cardHeight + gap;
       }
     });
+    let linkY = x === margin ? y + 4 : y + cardHeight + 12;
+    if (linkY > pageHeight - 28) {
+      doc.addPage();
+      drawHeader();
+      linkY = 42;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(14, 116, 144);
+    doc.text(catalogUrlLabel, margin, linkY);
+    const linkTextWidth = doc.getTextWidth(catalogUrlLabel);
+    doc.setDrawColor(14, 116, 144);
+    doc.setLineWidth(0.45);
+    doc.line(margin, linkY + 1.2, margin + linkTextWidth, linkY + 1.2);
+    doc.link(margin, linkY - 5, linkTextWidth, 8, { url: catalogUrl });
     const pageCount = doc.internal.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
       doc.setPage(page);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(71, 85, 105);
-      const noteLines = doc.splitTextToSize(catalogNote, pageWidth - margin * 2 - 32);
-      doc.text(noteLines.slice(0, 2), margin, pageHeight - 10);
+      const noteLines = doc.splitTextToSize(catalogNote, pageWidth - margin * 2);
+      doc.text(noteLines.slice(0, 2), margin, pageHeight - 13);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);

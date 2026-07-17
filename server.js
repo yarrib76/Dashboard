@@ -102,6 +102,20 @@ const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 const ecommerceImportJobs = new Map();
 const ecommerceSyncJobs = new Map();
 
+function getCatalogoStoreInfo() {
+  const local = String(process.env.LOCAL || '').trim().toLowerCase();
+  if (local === 'samira') {
+    return {
+      url: 'https://www.samirabijou.com.ar/',
+      label: 'Ver todos nuestros productos en www.samirabijou.com.ar',
+    };
+  }
+  return {
+    url: 'https://www.viamore.com.ar/',
+    label: 'Ver todos nuestros productos en www.viamore.com.ar',
+  };
+}
+
 fs.mkdirSync(EMP_PHOTO_STORAGE_DIR, { recursive: true });
 fs.mkdirSync(TN_PUBLICACIONES_IMG_DIR, { recursive: true });
 app.use(EMP_PHOTO_PUBLIC_PREFIX, express.static(EMP_PHOTO_STORAGE_DIR));
@@ -11817,7 +11831,7 @@ app.post('/api/mercaderia/catalogo/items', async (req, res) => {
         precioVenta: row.precioVenta == null ? 0 : Number(row.precioVenta),
         fotoUrl: `/api/mercaderia/catalogo/image?articulo=${encodeURIComponent(row.articulo || '')}`,
       }));
-    res.json({ total: data.length, data });
+    res.json({ total: data.length, data, store: getCatalogoStoreInfo() });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar articulos del catalogo', error: error.message });
   }
