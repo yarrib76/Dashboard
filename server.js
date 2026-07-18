@@ -12052,7 +12052,7 @@ app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
           SELECT prov.id
           FROM provecomerce AS prov
           WHERE TIME(prov.fecha) >= '06:00:00'
-            AND TIME(prov.fecha) <= '06:00:10'
+            AND TIME(prov.fecha) <= '06:10:00'
           ORDER BY prov.id DESC
           LIMIT 1
         )
