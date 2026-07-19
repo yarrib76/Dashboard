@@ -837,12 +837,30 @@ async function fetchTnubeProductsPage(connection, tipoBajada, year, page) {
   return Array.isArray(response.body) ? response.body : [];
 }
 
+function cleanTnubeDescriptionText(value) {
+  return String(value || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function buildTnubeStatusRows(products) {
   const rows = [];
   (products || []).forEach((product) => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     const imageSrc = Array.isArray(product?.images) && product.images[0]?.src ? String(product.images[0].src) : '';
     const hasImages = imageSrc || (Array.isArray(product?.images) && product.images.length > 0) ? 1 : 0;
+    const descripcionWeb = cleanTnubeDescriptionText(product?.description?.es || '');
     variants.forEach((variant) => {
       const variantValues = Array.isArray(variant?.values) ? variant.values : [];
       const variantValue = variantValues
@@ -861,6 +879,7 @@ function buildTnubeStatusRows(products) {
         visibleVariante: variant?.visible ? 1 : 0,
         stockTn: variant?.stock == null ? null : Number(variant.stock),
         positionVariante: variant?.position == null ? null : Number(variant.position),
+        descripcionWeb,
       });
     });
   });
@@ -974,16 +993,17 @@ async function insertTnubeStatusRows(conn, idProvecomerce, rows, onProgress) {
           row.positionVariante,
           row.valorVariante,
           row.images,
-          row.imagessrc
+          row.imagessrc,
+          row.descripcionWeb || null
         );
-        return '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        return '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
       })
       .join(', ');
     await conn.query(
       `INSERT INTO ${DB_NAME}.statusecomercesincro
        (id_provecomerce, status, fecha, articulo, product_id, articulo_id, visible,
         visible_variante, published_padre, stock_tn, position_variante, valor_variante,
-        images, imagessrc)
+        images, imagessrc, descripcionWeb)
        VALUES ${placeholders}`,
       values
     );
@@ -12044,7 +12064,8 @@ app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
          art.Articulo AS articulo,
          art.Detalle AS detalle,
          COALESCE(art.Cantidad, 0) AS cantidad,
-         COALESCE(status.imagessrc, '') AS fotoUrl
+         COALESCE(status.imagessrc, '') AS fotoUrl,
+         COALESCE(status.descripcionWeb, '') AS descripcionWeb
        FROM articulos AS art
        LEFT JOIN statusecomercesincro AS status
          ON status.articulo = art.Articulo
@@ -12069,6 +12090,7 @@ app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
         detalle: row.detalle || '',
         cantidad: Number(row.cantidad) || 0,
         fotoUrl: row.fotoUrl || '',
+        descripcionWeb: row.descripcionWeb || '',
       })),
     });
   } catch (error) {

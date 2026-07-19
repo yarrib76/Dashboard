@@ -4211,7 +4211,23 @@ async function loadMercaderiaFotos() {
           autoWidth: false,
           order: [[0, 'asc']],
           columns: [
-            { data: 'detalle', defaultContent: '' },
+            {
+              data: 'detalle',
+              defaultContent: '',
+              render: (data, type, row) => {
+                const detalle = data || '';
+                const descripcionWeb = row?.descripcionWeb || '';
+                if (type === 'filter') {
+                  return `${detalle} ${descripcionWeb}`.trim();
+                }
+                if (type !== 'display') return detalle;
+                const safeDetalle = escapeAttr(detalle);
+                const safeDescripcionWeb = escapeAttr(descripcionWeb);
+                return safeDescripcionWeb
+                  ? `<span class="merc-fotos-detail" title="${safeDescripcionWeb}">${safeDetalle}</span>`
+                  : safeDetalle;
+              },
+            },
             { data: 'cantidad', defaultContent: 0 },
             {
               data: 'fotoUrl',
