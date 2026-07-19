@@ -850,6 +850,12 @@ function cleanTnubeDescriptionText(value) {
     .replace(/&#39;|&apos;/gi, "'")
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
