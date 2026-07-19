@@ -146,6 +146,7 @@ const taskScheduleEnabled = document.getElementById('task-schedule-enabled');
 const taskScheduleType = document.getElementById('task-schedule-type');
 const taskScheduleTime = document.getElementById('task-schedule-time');
 const taskScheduleSave = document.getElementById('task-schedule-save');
+const taskScheduleRun = document.getElementById('task-schedule-run');
 const taskScheduleStatus = document.getElementById('task-schedule-status');
 const taskScheduleLastRun = document.getElementById('task-schedule-last-run');
 const taskScheduleLastStatus = document.getElementById('task-schedule-last-status');
@@ -18497,6 +18498,7 @@ function fillTaskSchedule(data = {}) {
   if (taskScheduleLastRun) taskScheduleLastRun.textContent = data.ultimaEjecucion || '-';
   if (taskScheduleLastStatus) taskScheduleLastStatus.textContent = data.ultimoEstado || '-';
   if (taskScheduleLastMessage) taskScheduleLastMessage.textContent = data.ultimoMensaje || '-';
+  if (taskScheduleRun) taskScheduleRun.disabled = data.ultimoEstado === 'running';
   startTaskSchedulePolling(data);
 }
 
@@ -18538,6 +18540,31 @@ async function saveTaskSchedule() {
     if (taskScheduleStatus) taskScheduleStatus.textContent = error.message || 'No se pudo guardar la programacion.';
   } finally {
     if (taskScheduleSave) taskScheduleSave.disabled = false;
+  }
+}
+
+async function runTaskScheduleNow() {
+  if (!taskScheduleType) return;
+  let started = false;
+  try {
+    if (taskScheduleRun) taskScheduleRun.disabled = true;
+    if (taskScheduleStatus) taskScheduleStatus.textContent = 'Ejecutando bajada programada...';
+    const res = await fetchJSON('/api/config/ecommerce-import-schedule/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipoBajada: taskScheduleType.value || 'todo' }),
+    });
+    fillTaskSchedule(res.data || {});
+    taskScheduleLoaded = true;
+    started = true;
+    if (res.job?.id) {
+      startTaskSchedulePolling({ ultimoEstado: 'running', ultimoJobId: res.job.id });
+    }
+    if (taskScheduleStatus) taskScheduleStatus.textContent = 'Bajada programada iniciada.';
+  } catch (error) {
+    if (taskScheduleStatus) taskScheduleStatus.textContent = error.message || 'No se pudo ejecutar la bajada.';
+  } finally {
+    if (taskScheduleRun && !started) taskScheduleRun.disabled = false;
   }
 }
 
@@ -18631,6 +18658,7 @@ function initConfigTabs() {
   });
   if (promptTnSave) promptTnSave.addEventListener('click', savePromptTn);
   if (taskScheduleSave) taskScheduleSave.addEventListener('click', saveTaskSchedule);
+  if (taskScheduleRun) taskScheduleRun.addEventListener('click', runTaskScheduleNow);
   if (cleanupScheduleSave) cleanupScheduleSave.addEventListener('click', saveCleanupSchedule);
   taskScheduleNavItems.forEach((item) => {
     item.addEventListener('click', () => showTaskSchedulePanel(item.dataset.taskPanel || 'import'));

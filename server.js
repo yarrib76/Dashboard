@@ -1176,6 +1176,23 @@ function readPersistedEcommerceJob(jobId) {
   }
 }
 
+async function getEcommerceRunDescriptionStats(idProvecomerce) {
+  const runId = Number(idProvecomerce) || 0;
+  if (!runId) return { total: 0, conDescripcion: 0 };
+  const [[row]] = await pool.query(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN COALESCE(descripcionWeb, '') <> '' THEN 1 ELSE 0 END) AS conDescripcion
+     FROM ${DB_NAME}.statusecomercesincro
+     WHERE id_provecomerce = ?`,
+    [runId]
+  );
+  return {
+    total: Number(row?.total) || 0,
+    conDescripcion: Number(row?.conDescripcion) || 0,
+  };
+}
+
 function signEcommerceJobToken(jobId, extra = {}) {
   const body = Buffer.from(JSON.stringify({ jobId, ...extra, iat: Date.now() })).toString('base64url');
   const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
@@ -6359,6 +6376,27 @@ app.put('/api/config/ecommerce-import-schedule', requireAuth, async (req, res) =
     res.json({ ok: true, data });
   } catch (error) {
     res.status(500).json({ message: 'Error al guardar programacion de tareas', error: error.message });
+  }
+});
+
+app.post('/api/config/ecommerce-import-schedule/run', requireAuth, async (req, res) => {
+  try {
+    const tipoBajada = String(req.body?.tipoBajada || req.body?.tipo_bajada || '').trim();
+    if (tipoBajada && !['todo', 'visible'].includes(tipoBajada)) {
+      return res.status(400).json({ message: 'tipo_bajada debe ser todo o visible' });
+    }
+    const savedConfig = await getEcommerceImportScheduleConfig();
+    const config = {
+      ...savedConfig,
+      tipoBajada: tipoBajada || savedConfig.tipoBajada || 'todo',
+    };
+    const job = await startScheduledEcommerceImport(config);
+    const data = await getEcommerceImportScheduleConfig();
+    res.json({ ok: true, data, job: serializeEcommerceImportJob(job) });
+  } catch (error) {
+    const message = error.message || 'Error al ejecutar bajada programada';
+    const status = /en curso|ejecutando/i.test(message) ? 409 : 500;
+    res.status(status).json({ message });
   }
 });
 
@@ -16181,11 +16219,43 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
 });
 
   app.get('/api/ecommerce/panel/import/:jobId', async (req, res) => {
-  const job = ecommerceImportJobs.get(String(req.params.jobId || '')) || readPersistedEcommerceJob(req.params.jobId);
-  if (!job) {
-    return res.status(404).json({ message: 'Bajada no encontrada' });
+  const jobId = String(req.params.jobId || '');
+  const job = ecommerceImportJobs.get(jobId) || readPersistedEcommerceJob(jobId);
+  if (job) {
+    return res.json({ job: serializeEcommerceImportJob(job) });
   }
-  return res.json({ job: serializeEcommerceImportJob(job) });
+  try {
+    const [[task]] = await pool.query(
+      `SELECT ultimo_job_id, ultimo_estado, ultimo_mensaje
+       FROM ${DB_NAME}.scheduled_tasks
+       WHERE ultimo_job_id = ?
+       LIMIT 1`,
+      [jobId]
+    );
+    if (task) {
+      const status = task.ultimo_estado || 'running';
+      return res.json({
+        job: {
+          id: jobId,
+          status,
+          phase: status === 'running' ? 'Programador de tareas' : 'Finalizado',
+          percent: status === 'done' ? 100 : 0,
+          processedPages: 0,
+          totalPages: 0,
+          productos: 0,
+          variantes: 0,
+          corrida: null,
+          tienda: '',
+          storeId: '',
+          message: task.ultimo_mensaje || '',
+          error: status === 'error' ? task.ultimo_mensaje || '' : '',
+        },
+      });
+    }
+  } catch (_error) {
+    /* keep original 404 response */
+  }
+  return res.status(404).json({ message: 'Bajada no encontrada' });
 });
 
   // Panel E-Commerce: elimina corridas y sus items asociados.
@@ -16505,30 +16575,26 @@ async function getScheduledEcommerceImportUserId() {
   return anyUser?.id || null;
 }
 
-async function runScheduledEcommerceImport(config) {
-  ecommerceImportScheduleRunning = true;
-  let job = null;
+async function finishScheduledEcommerceImport(config, job) {
   try {
-    const userId = await getScheduledEcommerceImportUserId();
-    if (!userId) throw new Error('No hay usuario disponible para registrar la bajada automatica');
-    job = createEcommerceImportJob(config.tipoBajada || 'todo', userId);
-    await pool.query(
-      `UPDATE ${DB_NAME}.scheduled_tasks
-       SET ultima_ejecucion = ?, ultimo_job_id = ?, ultimo_estado = 'running', ultimo_mensaje = ?
-       WHERE id = ?`,
-      [
-        formatDateTimeLocal(new Date()),
-        job.id,
-        `Bajada ${config.tipoBajada || 'todo'} iniciada automaticamente`,
-        config.id,
-      ]
-    );
     await runEcommerceImportJob(job);
+    let scheduledMessage = job.message || job.error || '';
+    if (job.corrida) {
+      try {
+        const descStats = await getEcommerceRunDescriptionStats(job.corrida);
+        scheduledMessage =
+          `Corrida ${job.corrida} creada para ${job.tienda || 'tienda'}. ` +
+          `Tipo: ${job.tipoBajada || 'todo'}. Variantes: ${job.variantes || descStats.total}. ` +
+          `Desc DB: ${descStats.conDescripcion}/${descStats.total}. Job: ${job.id}. Trace v2.`;
+      } catch (_error) {
+        scheduledMessage = `${scheduledMessage} Job: ${job.id}. Trace v2.`;
+      }
+    }
     await pool.query(
       `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultimo_estado = ?, ultimo_mensaje = ?
        WHERE id = ?`,
-      [job.status || 'done', job.message || job.error || '', config.id]
+      [job.status || 'done', scheduledMessage, config.id]
     );
   } catch (error) {
     await pool.query(
@@ -16539,6 +16605,48 @@ async function runScheduledEcommerceImport(config) {
     ).catch(() => {});
   } finally {
     ecommerceImportScheduleRunning = false;
+  }
+}
+
+async function startScheduledEcommerceImport(config) {
+  if (ecommerceImportScheduleRunning || ecommerceCleanupScheduleRunning || hasImportJobRunning()) {
+    throw new Error('Ya hay una bajada Tienda Nube en curso');
+  }
+  ecommerceImportScheduleRunning = true;
+  try {
+    const userId = await getScheduledEcommerceImportUserId();
+    if (!userId) throw new Error('No hay usuario disponible para registrar la bajada automatica');
+    const job = createEcommerceImportJob(config.tipoBajada || 'todo', userId);
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET ultima_ejecucion = ?, ultimo_job_id = ?, ultimo_estado = 'running', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [
+        formatDateTimeLocal(new Date()),
+        job.id,
+        `Bajada ${config.tipoBajada || 'todo'} iniciada automaticamente. Job ${job.id}. Trace v2.`,
+        config.id,
+      ]
+    );
+    finishScheduledEcommerceImport(config, job);
+    return job;
+  } catch (error) {
+    ecommerceImportScheduleRunning = false;
+    await pool.query(
+      `UPDATE ${DB_NAME}.scheduled_tasks
+       SET ultimo_estado = 'error', ultimo_mensaje = ?
+       WHERE id = ?`,
+      [String(error.message || 'Error en bajada automatica').slice(0, 255), config.id]
+    ).catch(() => {});
+    throw error;
+  }
+}
+
+async function runScheduledEcommerceImport(config) {
+  try {
+    return await startScheduledEcommerceImport(config);
+  } catch (_error) {
+    return null;
   }
 }
 
