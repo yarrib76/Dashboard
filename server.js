@@ -2158,6 +2158,7 @@ const ROLE_PERMISSIONS = [
   'mercaderia',
   'mercaderia-articulos-proveedor',
   'mercaderia-fotos',
+  'mercaderia-catalogo',
   'abm',
   'control-ordenes',
   'ecommerce',
@@ -12101,6 +12102,53 @@ app.get('/api/mercaderia/fotos', requireAuth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al cargar fotos de mercaderia', error: error.message });
+  }
+});
+
+app.get('/api/mercaderia/catalogo/all', requireAuth, async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         COALESCE(art.Cantidad, 0) AS cantidad,
+         repoArt.PrecioVenta AS precioVenta,
+         COALESCE(status.imagessrc, '') AS fotoUrl,
+         COALESCE(status.descripcionWeb, '') AS descripcionWeb
+       FROM articulos AS art
+       INNER JOIN reportearticulo AS repoArt ON art.Articulo = repoArt.Articulo
+       LEFT JOIN (
+         SELECT
+           articulo,
+           MAX(imagessrc) AS imagessrc,
+           MAX(descripcionWeb) AS descripcionWeb
+         FROM statusecomercesincro
+         WHERE id_provecomerce = (
+           SELECT prov.id
+           FROM provecomerce AS prov
+           WHERE TIME(prov.fecha) >= '06:00:00'
+             AND TIME(prov.fecha) <= '06:10:00'
+           ORDER BY prov.id DESC
+           LIMIT 1
+         )
+         GROUP BY articulo
+       ) AS status ON status.articulo = art.Articulo
+       ORDER BY art.Detalle ASC, art.Articulo ASC`
+    );
+
+    res.json({
+      total: rows.length,
+      data: (rows || []).map((row) => ({
+        articulo: row.articulo || '',
+        detalle: row.detalle || '',
+        cantidad: Number(row.cantidad) || 0,
+        precioVenta: row.precioVenta == null ? 0 : Number(row.precioVenta),
+        fotoUrl: row.fotoUrl || '',
+        descripcionWeb: row.descripcionWeb || '',
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogo de mercaderia', error: error.message });
   }
 });
 

@@ -501,6 +501,7 @@ const viewPedidosNuevo = document.getElementById('view-pedidos-nuevo');
 const viewMercaderia = document.getElementById('view-mercaderia');
 const viewMercaderiaArticulosProveedor = document.getElementById('view-mercaderia-articulos-proveedor');
 const viewMercaderiaFotos = document.getElementById('view-mercaderia-fotos');
+const viewMercaderiaCatalogo = document.getElementById('view-mercaderia-catalogo');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
@@ -567,6 +568,24 @@ const mercFotosLimitInput = document.getElementById('merc-fotos-limit');
 const mercFotosRefreshBtn = document.getElementById('merc-fotos-refresh');
 const mercFotosStatus = document.getElementById('merc-fotos-status');
 const mercFotosTableEl = document.getElementById('mercaderia-fotos-table');
+const mercCatalogoRefreshBtn = document.getElementById('merc-catalogo-refresh');
+const mercCatalogoTableEl = document.getElementById('mercaderia-catalogo-table');
+const mercCatalogoStatus = document.getElementById('merc-catalogo-status');
+const mercCatalogoBar = document.getElementById('merc-catalogo-bar');
+const mercCatalogoCount = document.getElementById('merc-catalogo-count');
+const mercCatalogoView = document.getElementById('merc-catalogo-view');
+const mercCatalogoPdf = document.getElementById('merc-catalogo-pdf');
+const mercCatalogoClear = document.getElementById('merc-catalogo-clear');
+const mercCatalogoOverlay = document.getElementById('merc-catalogo-overlay');
+const mercCatalogoClose = document.getElementById('merc-catalogo-close');
+const mercCatalogoSelectedList = document.getElementById('merc-catalogo-selected-list');
+const mercCatalogoModalStatus = document.getElementById('merc-catalogo-modal-status');
+const mercCatalogoCards = document.getElementById('merc-catalogo-cards');
+const mercCatalogoMobileSearchInput = document.getElementById('merc-catalogo-mobile-search-input');
+const mercCatalogoDescOverlay = document.getElementById('merc-catalogo-desc-overlay');
+const mercCatalogoDescClose = document.getElementById('merc-catalogo-desc-close');
+const mercCatalogoDescTitle = document.getElementById('merc-catalogo-desc-title');
+const mercCatalogoDescText = document.getElementById('merc-catalogo-desc-text');
 const mercArtProvTitle = document.getElementById('merc-art-prov-title');
 const mercArtProvRefreshBtn = document.getElementById('merc-art-prov-refresh');
 const mercArtProvExportBtn = document.getElementById('merc-art-prov-export');
@@ -1173,15 +1192,6 @@ const abmCardsEl = document.getElementById('abm-cards');
 const abmMobileSearchInput = document.getElementById('abm-mobile-search-input');
 const abmMobileSearchBtn = document.getElementById('abm-mobile-search-btn');
 const abmCreateBtn = document.getElementById('abm-create');
-const abmCatalogBar = document.getElementById('abm-catalog-bar');
-const abmCatalogCount = document.getElementById('abm-catalog-count');
-const abmCatalogView = document.getElementById('abm-catalog-view');
-const abmCatalogPdf = document.getElementById('abm-catalog-pdf');
-const abmCatalogClear = document.getElementById('abm-catalog-clear');
-const abmCatalogOverlay = document.getElementById('abm-catalog-overlay');
-const abmCatalogClose = document.getElementById('abm-catalog-close');
-const abmCatalogSelectedList = document.getElementById('abm-catalog-selected-list');
-const abmCatalogStatus = document.getElementById('abm-catalog-status');
 const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
 const abmBarcodeClose = document.getElementById('abm-barcode-close');
 const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
@@ -1418,13 +1428,22 @@ let mercImgZoom = 1;
 let mercChart = null;
 let mercFotosDataTable = null;
 let mercFotosLoaded = false;
+let mercCatalogoDataTable = null;
+let mercCatalogoLoaded = false;
+let mercCatalogoRows = [];
+let mercCatalogoCardFilterTerm = '';
+let mercCatalogoCardFilteredRows = [];
+let mercCatalogoCardVisibleCount = 0;
+let mercCatalogoCardLoading = false;
+let mercCatalogoCardSearchTimer = null;
+const mercCatalogoCardBatchSize = 20;
+const mercCatalogoSelection = new Map();
 let mercArtProvDataTable = null;
 let mercArtProvLoaded = false;
 let mercArtProvRows = [];
 let abmDataTable = null;
 let abmLoaded = false;
 let abmRowsCache = [];
-const abmCatalogSelection = new Map();
 let abmCardFilterTerm = '';
 let abmCardFilteredRows = [];
 let abmCardVisibleCount = 0;
@@ -4295,6 +4314,343 @@ function initMercaderiaFotos() {
   }
 }
 
+function getMercCatalogoCountLabel(count) {
+  return count === 1 ? '1 seleccionado' : `${count} seleccionados`;
+}
+
+function getMercCatalogoRowByArticulo(articulo) {
+  const key = String(articulo || '');
+  return mercCatalogoRows.find((row) => String(row.articulo || '') === key) || null;
+}
+
+function setMercCatalogoSelected(articulo, selected, row) {
+  const key = String(articulo || '').trim();
+  if (!key) return;
+  const source = row || getMercCatalogoRowByArticulo(key) || {};
+  if (selected) {
+    mercCatalogoSelection.set(key, {
+      articulo: key,
+      detalle: source.detalle || '',
+      cantidad: Number(source.cantidad) || 0,
+      precioVenta: source.precioVenta == null ? 0 : Number(source.precioVenta),
+      fotoUrl: source.fotoUrl || '',
+      descripcionWeb: source.descripcionWeb || '',
+    });
+  } else {
+    mercCatalogoSelection.delete(key);
+  }
+  updateMercCatalogoUi();
+}
+
+function syncMercCatalogoInputs() {
+  document.querySelectorAll('.merc-catalogo-toggle').forEach((input) => {
+    const articulo = String(input.dataset.articulo || '');
+    input.checked = mercCatalogoSelection.has(articulo);
+    const card = input.closest('.abm-card');
+    if (card) card.classList.toggle('is-catalog-selected', input.checked);
+  });
+}
+
+function renderMercCatalogoSelected() {
+  if (!mercCatalogoSelectedList) return;
+  const items = Array.from(mercCatalogoSelection.values());
+  if (!items.length) {
+    mercCatalogoSelectedList.innerHTML = '<p class="status">No hay artículos seleccionados.</p>';
+    return;
+  }
+  mercCatalogoSelectedList.innerHTML = items
+    .map(
+      (item) => `
+        <div class="abm-catalog-selected-item">
+          <div>
+            <strong>${escapeAttr(item.articulo)}</strong>
+            <span>${escapeAttr(item.detalle || '')}</span>
+          </div>
+          <button type="button" class="merc-catalogo-remove" data-articulo="${escapeAttr(item.articulo)}">Quitar</button>
+        </div>
+      `
+    )
+    .join('');
+}
+
+function updateMercCatalogoUi() {
+  const count = mercCatalogoSelection.size;
+  if (mercCatalogoCount) mercCatalogoCount.textContent = getMercCatalogoCountLabel(count);
+  if (mercCatalogoBar) mercCatalogoBar.classList.toggle('is-active', count > 0);
+  if (mercCatalogoPdf) mercCatalogoPdf.disabled = count === 0;
+  if (mercCatalogoView) mercCatalogoView.disabled = count === 0;
+  if (mercCatalogoClear) mercCatalogoClear.disabled = count === 0;
+  syncMercCatalogoInputs();
+  renderMercCatalogoSelected();
+}
+
+function clearMercCatalogoSelection() {
+  mercCatalogoSelection.clear();
+  if (mercCatalogoModalStatus) mercCatalogoModalStatus.textContent = '';
+  if (mercCatalogoStatus) mercCatalogoStatus.textContent = 'Selección de catálogo limpiada.';
+  updateMercCatalogoUi();
+}
+
+function filterMercCatalogoRows(rows, term) {
+  const clean = String(term || '').trim();
+  if (!clean) return rows;
+  return rows.filter((row) =>
+    textMatchesAllTokens(`${row.articulo || ''} ${row.detalle || ''} ${row.descripcionWeb || ''}`, clean)
+  );
+}
+
+function openMercCatalogoDescription(row) {
+  if (!mercCatalogoDescOverlay) return;
+  const articulo = String(row?.articulo || '').trim();
+  const detalle = String(row?.detalle || '').trim();
+  const descripcionWeb = String(row?.descripcionWeb || '').trim();
+  if (mercCatalogoDescTitle) {
+    mercCatalogoDescTitle.textContent = articulo ? `Descripción web - ${articulo}` : 'Descripción web';
+  }
+  if (mercCatalogoDescText) {
+    mercCatalogoDescText.textContent = descripcionWeb || detalle || 'Sin descripción web.';
+  }
+  mercCatalogoDescOverlay.classList.add('open');
+}
+
+function buildMercCatalogoCard(row) {
+  const articulo = row.articulo || '';
+  const detalle = row.detalle || '';
+  const descripcionWeb = row.descripcionWeb || '';
+  const cantidad = row.cantidad ?? 0;
+  const precioVenta = formatMoney(row.precioVenta || 0);
+  const fotoUrl = row.fotoUrl || '/sinfoto.png';
+  const card = document.createElement('article');
+  card.className = `abm-card merc-catalogo-card${mercCatalogoSelection.has(String(articulo)) ? ' is-catalog-selected' : ''}`;
+  card.dataset.articulo = articulo;
+  card.dataset.detalle = detalle;
+  card.innerHTML = `
+    <div class="abm-card-header">
+      <div>
+        <label class="abm-card-select">
+          <input type="checkbox" class="merc-catalogo-toggle" data-articulo="${escapeAttr(articulo)}"${
+            mercCatalogoSelection.has(String(articulo)) ? ' checked' : ''
+          }>
+          <span>Catálogo</span>
+        </label>
+        <p class="abm-card-title">${escapeAttr(detalle)}</p>
+        <p class="abm-card-sub">${escapeAttr(articulo)}</p>
+      </div>
+      <img src="${escapeAttr(fotoUrl)}" alt="Foto de articulo" class="merc-catalogo-card-thumb" loading="lazy" onerror="this.onerror=null;this.src='/sinfoto.png';">
+    </div>
+    <div class="abm-card-grid">
+      <div>
+        <div class="abm-card-label">Stock</div>
+        <div class="abm-card-value">${escapeAttr(cantidad)}</div>
+      </div>
+      <div>
+        <div class="abm-card-label">Precio Venta</div>
+        <div class="abm-card-value">${escapeAttr(precioVenta)}</div>
+      </div>
+    </div>
+    ${
+      descripcionWeb
+        ? `<button type="button" class="abm-link-btn merc-catalogo-desc-btn" data-articulo="${escapeAttr(articulo)}">Ver descripción</button>`
+        : ''
+    }
+  `;
+  return card;
+}
+
+function resetMercCatalogoCards() {
+  if (!mercCatalogoCards) return;
+  mercCatalogoCardFilteredRows = filterMercCatalogoRows(mercCatalogoRows, mercCatalogoCardFilterTerm);
+  mercCatalogoCardVisibleCount = 0;
+  mercCatalogoCards.innerHTML = '';
+  appendMercCatalogoCards();
+}
+
+function appendMercCatalogoCards() {
+  if (!mercCatalogoCards || mercCatalogoCardLoading) return;
+  if (mercCatalogoCardVisibleCount >= mercCatalogoCardFilteredRows.length) return;
+  mercCatalogoCardLoading = true;
+  const next = mercCatalogoCardFilteredRows.slice(
+    mercCatalogoCardVisibleCount,
+    mercCatalogoCardVisibleCount + mercCatalogoCardBatchSize
+  );
+  next.forEach((row) => {
+    mercCatalogoCards.appendChild(buildMercCatalogoCard(row));
+  });
+  mercCatalogoCardVisibleCount += next.length;
+  mercCatalogoCardLoading = false;
+}
+
+function generateMercCatalogoPdf() {
+  return generateCatalogPdfFromSelection(mercCatalogoSelection, mercCatalogoStatus);
+}
+
+async function loadMercaderiaCatalogo(force = false) {
+  if (!mercCatalogoTableEl) return;
+  try {
+    if (mercCatalogoLoaded && !force) return;
+    if (mercCatalogoStatus) mercCatalogoStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/mercaderia/catalogo/all');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    mercCatalogoRows = rows;
+    resetMercCatalogoCards();
+    if (mercCatalogoDataTable) {
+      mercCatalogoDataTable.clear();
+      mercCatalogoDataTable.rows.add(rows);
+      mercCatalogoDataTable.draw();
+    } else {
+      const dtAvailable = window.DataTable || (await ensureDataTable());
+      if (dtAvailable) {
+        mercCatalogoDataTable = new DataTable('#mercaderia-catalogo-table', {
+          data: rows,
+          pageLength: 20,
+          lengthMenu: [20, 50, 100],
+          deferRender: true,
+          autoWidth: false,
+          order: [[1, 'asc']],
+          columns: [
+            {
+              data: null,
+              orderable: false,
+              searchable: false,
+              render: (_data, _type, row) => {
+                const articulo = row.articulo || '';
+                const checked = mercCatalogoSelection.has(String(articulo)) ? ' checked' : '';
+                return `<input type="checkbox" class="merc-catalogo-toggle" data-articulo="${escapeAttr(
+                  articulo
+                )}"${checked} aria-label="Seleccionar para catálogo">`;
+              },
+            },
+            {
+              data: 'detalle',
+              defaultContent: '',
+              render: (data, type, row) => {
+                const detalle = data || '';
+                const descripcionWeb = row?.descripcionWeb || '';
+                if (type === 'filter') return `${row?.articulo || ''} ${detalle} ${descripcionWeb}`.trim();
+                if (type !== 'display') return detalle;
+                const safeDetalle = escapeAttr(detalle);
+                const safeDescripcionWeb = escapeAttr(descripcionWeb);
+                return safeDescripcionWeb
+                  ? `<span class="merc-catalogo-detail" title="${safeDescripcionWeb}">${safeDetalle}</span>`
+                  : safeDetalle;
+              },
+            },
+            { data: 'cantidad', defaultContent: 0 },
+            { data: 'precioVenta', render: (data) => formatMoney(data || 0) },
+            {
+              data: 'fotoUrl',
+              orderable: false,
+              searchable: false,
+              render: (data, type) => {
+                if (type !== 'display') return data || '';
+                return formatMercaderiaFotoCell(data || '');
+              },
+            },
+          ],
+          language: {
+            search: 'Buscar:',
+            lengthMenu: 'Mostrar _MENU_',
+            info: 'Mostrando _START_ a _END_ de _TOTAL_',
+            infoEmpty: 'Sin resultados',
+            emptyTable: 'Sin artículos.',
+            paginate: { first: 'Primero', last: 'Ultimo', next: 'Siguiente', previous: 'Anterior' },
+          },
+          columnDefs: [
+            { targets: 0, width: '90px' },
+            { targets: 2, width: '100px' },
+            { targets: 3, width: '130px' },
+            { targets: 4, width: '120px' },
+          ],
+        });
+        mercCatalogoDataTable.on('draw', () => syncMercCatalogoInputs());
+      }
+    }
+    mercCatalogoLoaded = true;
+    if (mercCatalogoStatus) {
+      mercCatalogoStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados';
+    }
+    updateMercCatalogoUi();
+  } catch (error) {
+    mercCatalogoLoaded = false;
+    if (mercCatalogoStatus) mercCatalogoStatus.textContent = error.message || 'Error al cargar catálogo.';
+  }
+}
+
+function initMercaderiaCatalogo() {
+  if (!viewMercaderiaCatalogo) return;
+  updateMercCatalogoUi();
+  if (mercCatalogoRefreshBtn) {
+    mercCatalogoRefreshBtn.addEventListener('click', () => {
+      mercCatalogoLoaded = false;
+      loadMercaderiaCatalogo(true);
+    });
+  }
+  if (mercCatalogoPdf) mercCatalogoPdf.addEventListener('click', generateMercCatalogoPdf);
+  if (mercCatalogoClear) mercCatalogoClear.addEventListener('click', clearMercCatalogoSelection);
+  if (mercCatalogoView) {
+    mercCatalogoView.addEventListener('click', () => {
+      renderMercCatalogoSelected();
+      if (mercCatalogoModalStatus) mercCatalogoModalStatus.textContent = '';
+      if (mercCatalogoOverlay) mercCatalogoOverlay.classList.add('open');
+    });
+  }
+  if (mercCatalogoClose) mercCatalogoClose.addEventListener('click', () => closeOverlay(mercCatalogoOverlay));
+  if (mercCatalogoOverlay) {
+    mercCatalogoOverlay.addEventListener('click', (e) => {
+      if (e.target === mercCatalogoOverlay) closeOverlay(mercCatalogoOverlay);
+      const removeBtn = e.target.closest('.merc-catalogo-remove');
+      if (!removeBtn) return;
+      setMercCatalogoSelected(removeBtn.dataset.articulo, false);
+    });
+  }
+  if (mercCatalogoDescClose) mercCatalogoDescClose.addEventListener('click', () => closeOverlay(mercCatalogoDescOverlay));
+  if (mercCatalogoDescOverlay) {
+    mercCatalogoDescOverlay.addEventListener('click', (e) => {
+      if (e.target === mercCatalogoDescOverlay) closeOverlay(mercCatalogoDescOverlay);
+    });
+  }
+  if (mercCatalogoTableEl) {
+    mercCatalogoTableEl.addEventListener('change', (e) => {
+      const toggle = e.target.closest('.merc-catalogo-toggle');
+      if (!toggle) return;
+      setMercCatalogoSelected(toggle.dataset.articulo, toggle.checked);
+    });
+    mercCatalogoTableEl.addEventListener('click', (event) => {
+      const img = event.target.closest('.merc-fotos-thumb');
+      if (!img) return;
+      openMercImage(img.src);
+    });
+  }
+  if (mercCatalogoMobileSearchInput) {
+    mercCatalogoMobileSearchInput.addEventListener('input', () => {
+      if (mercCatalogoCardSearchTimer) clearTimeout(mercCatalogoCardSearchTimer);
+      mercCatalogoCardSearchTimer = setTimeout(() => {
+        mercCatalogoCardFilterTerm = mercCatalogoMobileSearchInput.value || '';
+        resetMercCatalogoCards();
+      }, 200);
+    });
+  }
+  if (mercCatalogoCards) {
+    mercCatalogoCards.addEventListener('change', (e) => {
+      const toggle = e.target.closest('.merc-catalogo-toggle');
+      if (!toggle) return;
+      const card = toggle.closest('.abm-card');
+      const articulo = toggle.dataset.articulo;
+      const row = getMercCatalogoRowByArticulo(articulo) || { articulo, detalle: card?.dataset?.detalle || '' };
+      setMercCatalogoSelected(articulo, toggle.checked, row);
+    });
+    mercCatalogoCards.addEventListener('click', (e) => {
+      const descBtn = e.target.closest('.merc-catalogo-desc-btn');
+      if (descBtn) {
+        openMercCatalogoDescription(getMercCatalogoRowByArticulo(descBtn.dataset.articulo));
+        return;
+      }
+      const img = e.target.closest('.merc-catalogo-card-thumb');
+      if (img) openMercImage(img.src);
+    });
+  }
+}
+
 function closeMercIa() {
   if (mercIaOverlay) mercIaOverlay.classList.remove('open');
   mercCurrentRow = null;
@@ -6248,72 +6604,6 @@ function getAbmRowByArticulo(articulo) {
   return abmRowsCache.find((row) => String(row.articulo || '') === key) || null;
 }
 
-function setAbmCatalogSelected(articulo, selected, row = null) {
-  const key = String(articulo || '').trim();
-  if (!key) return;
-  if (selected) {
-    const source = row || getAbmRowByArticulo(key) || {};
-    abmCatalogSelection.set(key, {
-      articulo: key,
-      detalle: source.detalle || '',
-      cantidad: source.cantidad ?? 0,
-      precioVenta: source.precioVenta ?? 0,
-    });
-  } else {
-    abmCatalogSelection.delete(key);
-  }
-  updateAbmCatalogUi();
-}
-
-function syncAbmCatalogInputs() {
-  document.querySelectorAll('.abm-catalog-toggle').forEach((input) => {
-    const articulo = String(input.dataset.articulo || '');
-    input.checked = abmCatalogSelection.has(articulo);
-    const card = input.closest('.abm-card');
-    if (card) card.classList.toggle('is-catalog-selected', input.checked);
-  });
-}
-
-function updateAbmCatalogUi() {
-  const count = abmCatalogSelection.size;
-  if (abmCatalogCount) abmCatalogCount.textContent = getAbmCatalogCountLabel(count);
-  if (abmCatalogBar) abmCatalogBar.classList.toggle('is-active', count > 0);
-  if (abmCatalogPdf) abmCatalogPdf.disabled = count === 0;
-  if (abmCatalogView) abmCatalogView.disabled = count === 0;
-  if (abmCatalogClear) abmCatalogClear.disabled = count === 0;
-  syncAbmCatalogInputs();
-  renderAbmCatalogSelected();
-}
-
-function renderAbmCatalogSelected() {
-  if (!abmCatalogSelectedList) return;
-  const items = Array.from(abmCatalogSelection.values());
-  if (!items.length) {
-    abmCatalogSelectedList.innerHTML = '<p class="status">No hay artículos seleccionados.</p>';
-    return;
-  }
-  abmCatalogSelectedList.innerHTML = items
-    .map(
-      (item) => `
-        <div class="abm-catalog-selected-item">
-          <div>
-            <strong>${escapeAttr(item.articulo)}</strong>
-            <span>${escapeAttr(item.detalle || '')}</span>
-          </div>
-          <button type="button" class="abm-catalog-remove" data-articulo="${escapeAttr(item.articulo)}">Quitar</button>
-        </div>
-      `
-    )
-    .join('');
-}
-
-function clearAbmCatalogSelection() {
-  abmCatalogSelection.clear();
-  if (abmCatalogStatus) abmCatalogStatus.textContent = '';
-  if (abmStatus) abmStatus.textContent = 'Selección de catálogo limpiada.';
-  updateAbmCatalogUi();
-}
-
 function loadImageForPdf(src) {
   return new Promise((resolve) => {
     if (!src) {
@@ -6368,19 +6658,19 @@ function drawPdfImageContained(doc, image, x, y, width, height) {
   doc.addImage(image.dataUrl, 'JPEG', drawX, drawY, drawWidth, drawHeight);
 }
 
-async function generateAbmCatalogPdf() {
-  const selected = Array.from(abmCatalogSelection.keys());
+async function generateCatalogPdfFromSelection(selection, statusEl) {
+  const selected = Array.from(selection.keys());
   if (!selected.length) {
-    if (abmStatus) abmStatus.textContent = 'Seleccioná al menos un artículo.';
+    if (statusEl) statusEl.textContent = 'Seleccioná al menos un artículo.';
     return;
   }
   const ok = await ensureJsPdf();
   if (!ok) {
-    if (abmStatus) abmStatus.textContent = 'PDF no disponible.';
+    if (statusEl) statusEl.textContent = 'PDF no disponible.';
     return;
   }
   try {
-    if (abmStatus) abmStatus.textContent = 'Preparando catálogo...';
+    if (statusEl) statusEl.textContent = 'Preparando catálogo...';
     const res = await fetchJSON('/api/mercaderia/catalogo/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -6390,7 +6680,7 @@ async function generateAbmCatalogPdf() {
     const catalogUrl = String(res.store?.url || 'https://www.viamore.com.ar/');
     const catalogUrlLabel = String(res.store?.label || 'Ver todos nuestros productos en www.viamore.com.ar');
     if (!items.length) {
-      if (abmStatus) abmStatus.textContent = 'No se encontraron artículos para el catálogo.';
+      if (statusEl) statusEl.textContent = 'No se encontraron artículos para el catálogo.';
       return;
     }
     const { jsPDF } = window.jspdf;
@@ -6407,7 +6697,7 @@ async function generateAbmCatalogPdf() {
     const logo = await loadImageForPdf('/logo.png');
     const images = [];
     for (let i = 0; i < items.length; i += 1) {
-      if (abmStatus) abmStatus.textContent = `Cargando fotos ${i + 1}/${items.length}...`;
+      if (statusEl) statusEl.textContent = `Cargando fotos ${i + 1}/${items.length}...`;
       images.push(await loadImageForPdf(items[i].fotoUrl || '/sinfoto.png'));
     }
     const drawHeader = () => {
@@ -6493,9 +6783,9 @@ async function generateAbmCatalogPdf() {
     }
     const datePart = new Date().toISOString().slice(0, 10);
     doc.save(`catalogo-${datePart}.pdf`);
-    if (abmStatus) abmStatus.textContent = `Catálogo generado con ${items.length} artículos.`;
+    if (statusEl) statusEl.textContent = `Catálogo generado con ${items.length} artículos.`;
   } catch (error) {
-    if (abmStatus) abmStatus.textContent = error.message || 'No se pudo generar el catálogo.';
+    if (statusEl) statusEl.textContent = error.message || 'No se pudo generar el catálogo.';
   }
 }
 
@@ -6503,13 +6793,8 @@ function renderAbmTable(rows) {
   if (!abmTableBody) return;
   abmTableBody.innerHTML = '';
   rows.forEach((row) => {
-    const articulo = row.articulo || '';
-    const checked = abmCatalogSelection.has(String(articulo)) ? ' checked' : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>
-        <input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(articulo)}"${checked} aria-label="Seleccionar para catálogo">
-      </td>
       <td>${escapeAttr(row.articulo || '')}</td>
       <td>${escapeAttr(row.detalle || '')}</td>
       <td>${escapeAttr(row.proveedorSku || '')}</td>
@@ -6548,18 +6833,12 @@ function buildAbmCard(row) {
         )}">${enPedido}</button>`
       : `${enPedido}`;
   const card = document.createElement('article');
-  card.className = `abm-card${abmCatalogSelection.has(String(articulo)) ? ' is-catalog-selected' : ''}`;
+  card.className = 'abm-card';
   card.dataset.articulo = articulo;
   card.dataset.detalle = detalle;
   card.innerHTML = `
     <div class="abm-card-header">
       <div>
-        <label class="abm-card-select">
-          <input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(articulo)}"${
-            abmCatalogSelection.has(String(articulo)) ? ' checked' : ''
-          }>
-          <span>Catálogo</span>
-        </label>
         <p class="abm-card-title">${escapeAttr(articulo)}</p>
         <p class="abm-card-sub">${escapeAttr(detalle)}</p>
       </div>
@@ -9682,18 +9961,6 @@ async function loadAbmDataTable(force = false) {
         abmDataTable = new DataTable('#abm-table', {
           data: rows,
           columns: [
-            {
-              data: null,
-              orderable: false,
-              searchable: false,
-              render: (_data, _type, row) => {
-                const articulo = row.articulo || '';
-                const checked = abmCatalogSelection.has(String(articulo)) ? ' checked' : '';
-                return `<input type="checkbox" class="abm-catalog-toggle" data-articulo="${escapeAttr(
-                  articulo
-                )}"${checked} aria-label="Seleccionar para catálogo">`;
-              },
-            },
             { data: 'articulo' },
             { data: 'detalle' },
             {
@@ -9744,11 +10011,8 @@ async function loadAbmDataTable(force = false) {
           pageLength: 10,
           lengthMenu: [10, 25, 50, 100],
           deferRender: true,
-          order: [[1, 'asc']],
+          order: [[0, 'asc']],
           autoWidth: false,
-        });
-        abmDataTable.on('draw', () => {
-          syncAbmCatalogInputs();
         });
       } else {
         renderAbmTable(rows);
@@ -9758,7 +10022,6 @@ async function loadAbmDataTable(force = false) {
     if (abmStatus) {
       abmStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados';
     }
-    updateAbmCatalogUi();
   } catch (error) {
     if (abmStatus) abmStatus.textContent = error.message || 'Error al cargar ABM';
   }
@@ -9766,25 +10029,6 @@ async function loadAbmDataTable(force = false) {
 
 function initAbm() {
   if (!viewAbm) return;
-  updateAbmCatalogUi();
-  if (abmCatalogPdf) abmCatalogPdf.addEventListener('click', generateAbmCatalogPdf);
-  if (abmCatalogClear) abmCatalogClear.addEventListener('click', clearAbmCatalogSelection);
-  if (abmCatalogView) {
-    abmCatalogView.addEventListener('click', () => {
-      renderAbmCatalogSelected();
-      if (abmCatalogStatus) abmCatalogStatus.textContent = '';
-      if (abmCatalogOverlay) abmCatalogOverlay.classList.add('open');
-    });
-  }
-  if (abmCatalogClose) abmCatalogClose.addEventListener('click', () => closeOverlay(abmCatalogOverlay));
-  if (abmCatalogOverlay) {
-    abmCatalogOverlay.addEventListener('click', (e) => {
-      if (e.target === abmCatalogOverlay) closeOverlay(abmCatalogOverlay);
-      const removeBtn = e.target.closest('.abm-catalog-remove');
-      if (!removeBtn) return;
-      setAbmCatalogSelected(removeBtn.dataset.articulo, false);
-    });
-  }
   if (abmRefreshBtn)
     abmRefreshBtn.addEventListener('click', () => {
       abmLoaded = false;
@@ -9792,11 +10036,6 @@ function initAbm() {
     });
   loadAbmDataTable();
   if (abmTableBody) {
-    abmTableBody.addEventListener('change', (e) => {
-      const toggle = e.target.closest('.abm-catalog-toggle');
-      if (!toggle) return;
-      setAbmCatalogSelected(toggle.dataset.articulo, toggle.checked);
-    });
     abmTableBody.addEventListener('click', async (e) => {
       const pedidosBtn = e.target.closest('.abm-pedido-link');
       if (pedidosBtn) {
@@ -9854,22 +10093,7 @@ function initAbm() {
     });
   }
   if (abmCardsEl) {
-    abmCardsEl.addEventListener('change', (e) => {
-      const catalogToggle = e.target.closest('.abm-catalog-toggle');
-      if (!catalogToggle) return;
-      const card = catalogToggle.closest('.abm-card');
-      const articulo = catalogToggle.dataset.articulo;
-      const row = getAbmRowByArticulo(articulo) || {
-        articulo,
-        detalle: card?.dataset?.detalle || '',
-      };
-      setAbmCatalogSelected(articulo, catalogToggle.checked, row);
-    });
     abmCardsEl.addEventListener('click', async (e) => {
-      const catalogToggle = e.target.closest('.abm-catalog-toggle');
-      if (catalogToggle) {
-        return;
-      }
       const toggle = e.target.closest('.abm-card-menu-toggle');
       if (toggle) {
         const menu = toggle.closest('.abm-card-actions')?.querySelector('.abm-card-menu');
@@ -16202,6 +16426,7 @@ function getFirstAllowedView(perms = {}) {
       'mercaderia',
       'mercaderia-articulos-proveedor',
       'mercaderia-fotos',
+      'mercaderia-catalogo',
       'abm',
       'control-ordenes',
       'ecommerce-imagenweb',
@@ -17858,6 +18083,7 @@ const permissionGroups = [
       { key: 'mercaderia', label: 'Articulos Mas Vendido' },
       { key: 'mercaderia-articulos-proveedor', label: 'Articulos/Proveedor' },
       { key: 'mercaderia-fotos', label: 'Mercaderia - Fotos' },
+      { key: 'mercaderia-catalogo', label: 'Mercaderia - Catalogo' },
       { key: 'abm', label: 'ABM Articulos' },
       { key: 'control-ordenes', label: 'Control Ordenes' },
     ],
@@ -18062,7 +18288,7 @@ function renderPermissions() {
     'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
-    mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'abm', 'control-ordenes'],
+    mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'mercaderia-catalogo', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones', 'ecommerce-ordenes-tn', 'ecommerce-asignacion-pedidos'],
   };
@@ -21947,6 +22173,7 @@ function switchView(target) {
       viewMercaderia,
       viewMercaderiaArticulosProveedor,
       viewMercaderiaFotos,
+      viewMercaderiaCatalogo,
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
@@ -21994,6 +22221,7 @@ function switchView(target) {
       viewMercaderia,
       viewMercaderiaArticulosProveedor,
       viewMercaderiaFotos,
+      viewMercaderiaCatalogo,
       viewAbm,
       viewControlOrdenes,
       viewEcommerceImagenweb,
@@ -22084,6 +22312,9 @@ function switchView(target) {
   } else if (target === 'mercaderia-fotos') {
     viewMercaderiaFotos.classList.remove('hidden');
     if (mercFotosStatus) mercFotosStatus.textContent = 'Ingresa un stock mínimo y presiona Actualizar.';
+  } else if (target === 'mercaderia-catalogo') {
+    viewMercaderiaCatalogo.classList.remove('hidden');
+    loadMercaderiaCatalogo();
   } else if (target === 'abm') {
     viewAbm.classList.remove('hidden');
     abmLoaded = false;
@@ -22190,6 +22421,7 @@ initPedidosResumen();
 initMercaderia();
 initMercaderiaArticulosProveedor();
 initMercaderiaFotos();
+initMercaderiaCatalogo();
 initAbm();
 initControlOrdenes();
 initEcommerceImagenweb();
@@ -22211,10 +22443,14 @@ window.addEventListener(
   'scroll',
   () => {
     if (!document.body.classList.contains('is-mobile')) return;
-    if (!viewAbm || viewAbm.classList.contains('hidden')) return;
-    if (abmCardVisibleCount >= abmCardFilteredRows.length) return;
     if (window.innerHeight + window.scrollY < document.body.offsetHeight - 200) return;
-    appendAbmCards();
+    if (viewAbm && !viewAbm.classList.contains('hidden')) {
+      if (abmCardVisibleCount < abmCardFilteredRows.length) appendAbmCards();
+      return;
+    }
+    if (viewMercaderiaCatalogo && !viewMercaderiaCatalogo.classList.contains('hidden')) {
+      if (mercCatalogoCardVisibleCount < mercCatalogoCardFilteredRows.length) appendMercCatalogoCards();
+    }
   },
   { passive: true }
 );
