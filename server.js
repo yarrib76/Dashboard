@@ -1032,6 +1032,10 @@ async function runEcommerceImportJob(job) {
     const importResult = await fetchTnubeImportRows(tnubeConnection, job.tipoBajada, (progress) => {
       updateEcommerceImportJob(job, progress);
     });
+    const descripcionPayloadCount = importResult.rows.reduce(
+      (acc, row) => acc + (String(row.descripcionWeb || '').trim() ? 1 : 0),
+      0
+    );
     const fecha = formatDateTimeLocal(new Date());
 
     updateEcommerceImportJob(job, {
@@ -1053,13 +1057,24 @@ async function runEcommerceImportJob(job) {
         updateEcommerceImportJob(job, progress);
       });
     }
+    const [[descripcionDbRow]] = await conn.query(
+      `SELECT COUNT(*) AS total
+       FROM ${DB_NAME}.statusecomercesincro
+       WHERE id_provecomerce = ?
+         AND COALESCE(descripcionWeb, '') <> ''`,
+      [idProvecomerce]
+    );
+    const descripcionDbCount = Number(descripcionDbRow?.total) || 0;
     await conn.commit();
     updateEcommerceImportJob(job, {
       status: 'done',
       phase: 'Finalizado',
       percent: 100,
       corrida: idProvecomerce,
-      message: `Corrida ${idProvecomerce} creada para ${tnubeConnection.tienda}. Variantes: ${importResult.rows.length}.`,
+      message:
+        `Corrida ${idProvecomerce} creada para ${tnubeConnection.tienda}. ` +
+        `Tipo: ${job.tipoBajada || 'todo'}. Variantes: ${importResult.rows.length}. ` +
+        `Desc payload: ${descripcionPayloadCount}. Desc DB: ${descripcionDbCount}.`,
     });
   } catch (error) {
     if (conn) {
