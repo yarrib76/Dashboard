@@ -5425,6 +5425,19 @@ body.theme-light .day-card.gray .status {
   font-size: 16px;
 }
 
+.task-schedule-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+.task-schedule-actions button {
+  width: auto;
+  min-width: 86px;
+}
+
 .roles-list button.role-item {
   width: 100%;
   text-align: left;
