@@ -3090,6 +3090,48 @@ body.theme-light .row-alert td {
   color: var(--text);
 }
 
+.catalogo-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-direction: row;
+  margin: 0;
+}
+
+.catalogo-sort-control span {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.catalogo-sort-control select,
+.merc-catalogo-mobile-search select {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.catalogo-sort-control select {
+  min-width: 160px;
+}
+
+.merc-catalogo-header-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.merc-catalogo-header-controls button {
+  width: auto;
+  flex: 0 0 auto;
+}
+
 .abm-catalog-toggle,
 .merc-catalogo-toggle {
   width: 18px;
@@ -3284,6 +3326,35 @@ body.theme-light .abm-sku-truncate:focus {
 
 .abm-mobile-search input {
   flex: 1;
+}
+
+.merc-catalogo-mobile-search select {
+  flex: 0 0 170px;
+}
+
+.merc-catalogo-mobile-search input {
+  min-width: 0;
+}
+
+.merc-catalogo-pagination {
+  display: none;
+  margin-top: 12px;
+}
+
+.is-mobile .merc-catalogo-pagination.is-active {
+  display: flex;
+}
+
+@media (max-width: 520px) {
+  .merc-catalogo-mobile-search {
+    flex-wrap: wrap;
+  }
+
+  .merc-catalogo-mobile-search select,
+  .merc-catalogo-mobile-search input {
+    flex: 1 1 100%;
+    width: 100%;
+  }
 }
 
 .abm-cards {

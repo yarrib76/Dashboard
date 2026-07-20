@@ -570,6 +570,7 @@ const mercFotosRefreshBtn = document.getElementById('merc-fotos-refresh');
 const mercFotosStatus = document.getElementById('merc-fotos-status');
 const mercFotosTableEl = document.getElementById('mercaderia-fotos-table');
 const mercCatalogoRefreshBtn = document.getElementById('merc-catalogo-refresh');
+const mercCatalogoSort = document.getElementById('merc-catalogo-sort');
 const mercCatalogoTableEl = document.getElementById('mercaderia-catalogo-table');
 const mercCatalogoStatus = document.getElementById('merc-catalogo-status');
 const mercCatalogoBar = document.getElementById('merc-catalogo-bar');
@@ -583,6 +584,11 @@ const mercCatalogoSelectedList = document.getElementById('merc-catalogo-selected
 const mercCatalogoModalStatus = document.getElementById('merc-catalogo-modal-status');
 const mercCatalogoCards = document.getElementById('merc-catalogo-cards');
 const mercCatalogoMobileSearchInput = document.getElementById('merc-catalogo-mobile-search-input');
+const mercCatalogoMobileSort = document.getElementById('merc-catalogo-mobile-sort');
+const mercCatalogoPagination = document.getElementById('merc-catalogo-pagination');
+const mercCatalogoPrev = document.getElementById('merc-catalogo-prev');
+const mercCatalogoNext = document.getElementById('merc-catalogo-next');
+const mercCatalogoPageInfo = document.getElementById('merc-catalogo-page-info');
 const mercCatalogoDescOverlay = document.getElementById('merc-catalogo-desc-overlay');
 const mercCatalogoDescClose = document.getElementById('merc-catalogo-desc-close');
 const mercCatalogoDescTitle = document.getElementById('merc-catalogo-desc-title');
@@ -1433,11 +1439,12 @@ let mercCatalogoDataTable = null;
 let mercCatalogoLoaded = false;
 let mercCatalogoRows = [];
 let mercCatalogoCardFilterTerm = '';
+let mercCatalogoSortMode = 'stock-desc';
 let mercCatalogoCardFilteredRows = [];
-let mercCatalogoCardVisibleCount = 0;
 let mercCatalogoCardLoading = false;
 let mercCatalogoCardSearchTimer = null;
-const mercCatalogoCardBatchSize = 20;
+let mercCatalogoCardPage = 1;
+const mercCatalogoCardPageSize = 10;
 const mercCatalogoSelection = new Map();
 let mercArtProvDataTable = null;
 let mercArtProvLoaded = false;
@@ -4400,6 +4407,57 @@ function filterMercCatalogoRows(rows, term) {
   );
 }
 
+function compareMercCatalogoText(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'es', { sensitivity: 'base', numeric: true });
+}
+
+function sortMercCatalogoRows(rows, mode = mercCatalogoSortMode) {
+  const sorted = [...(rows || [])];
+  sorted.sort((a, b) => {
+    if (mode === 'stock-desc') {
+      const diff = (Number(b?.cantidad) || 0) - (Number(a?.cantidad) || 0);
+      if (diff) return diff;
+      return compareMercCatalogoText(a?.detalle, b?.detalle);
+    }
+    if (mode === 'price-desc') {
+      const diff = (Number(b?.precioVenta) || 0) - (Number(a?.precioVenta) || 0);
+      if (diff) return diff;
+      const stockDiff = (Number(b?.cantidad) || 0) - (Number(a?.cantidad) || 0);
+      if (stockDiff) return stockDiff;
+      return compareMercCatalogoText(a?.detalle, b?.detalle);
+    }
+    if (mode === 'price-asc') {
+      const diff = (Number(a?.precioVenta) || 0) - (Number(b?.precioVenta) || 0);
+      if (diff) return diff;
+      const stockDiff = (Number(b?.cantidad) || 0) - (Number(a?.cantidad) || 0);
+      if (stockDiff) return stockDiff;
+      return compareMercCatalogoText(a?.detalle, b?.detalle);
+    }
+    return compareMercCatalogoText(a?.detalle, b?.detalle);
+  });
+  return sorted;
+}
+
+function syncMercCatalogoSortControls(source) {
+  if (source !== 'desktop' && mercCatalogoSort) mercCatalogoSort.value = mercCatalogoSortMode;
+  if (source !== 'mobile' && mercCatalogoMobileSort) mercCatalogoMobileSort.value = mercCatalogoSortMode;
+}
+
+function applyMercCatalogoSort(source) {
+  syncMercCatalogoSortControls(source);
+  if (mercCatalogoDataTable) {
+    const orderMap = {
+      detalle: [[1, 'asc']],
+      'stock-desc': [[2, 'desc']],
+      'price-desc': [[3, 'desc'], [2, 'desc'], [1, 'asc']],
+      'price-asc': [[3, 'asc'], [2, 'desc'], [1, 'asc']],
+    };
+    mercCatalogoDataTable.order(orderMap[mercCatalogoSortMode] || orderMap.detalle).draw();
+  }
+  mercCatalogoCardPage = 1;
+  resetMercCatalogoCards();
+}
+
 function openMercCatalogoDescription(row) {
   if (!mercCatalogoDescOverlay) return;
   const articulo = String(row?.articulo || '').trim();
@@ -4460,24 +4518,29 @@ function buildMercCatalogoCard(row) {
 
 function resetMercCatalogoCards() {
   if (!mercCatalogoCards) return;
-  mercCatalogoCardFilteredRows = filterMercCatalogoRows(mercCatalogoRows, mercCatalogoCardFilterTerm);
-  mercCatalogoCardVisibleCount = 0;
-  mercCatalogoCards.innerHTML = '';
-  appendMercCatalogoCards();
+  mercCatalogoCardFilteredRows = sortMercCatalogoRows(
+    filterMercCatalogoRows(mercCatalogoRows, mercCatalogoCardFilterTerm)
+  );
+  const totalPages = Math.max(1, Math.ceil(mercCatalogoCardFilteredRows.length / mercCatalogoCardPageSize));
+  mercCatalogoCardPage = Math.min(Math.max(1, mercCatalogoCardPage), totalPages);
+  renderMercCatalogoCardsPage();
 }
 
-function appendMercCatalogoCards() {
+function renderMercCatalogoCardsPage() {
   if (!mercCatalogoCards || mercCatalogoCardLoading) return;
-  if (mercCatalogoCardVisibleCount >= mercCatalogoCardFilteredRows.length) return;
   mercCatalogoCardLoading = true;
-  const next = mercCatalogoCardFilteredRows.slice(
-    mercCatalogoCardVisibleCount,
-    mercCatalogoCardVisibleCount + mercCatalogoCardBatchSize
-  );
-  next.forEach((row) => {
+  const totalPages = Math.max(1, Math.ceil(mercCatalogoCardFilteredRows.length / mercCatalogoCardPageSize));
+  mercCatalogoCardPage = Math.min(Math.max(1, mercCatalogoCardPage), totalPages);
+  const start = (mercCatalogoCardPage - 1) * mercCatalogoCardPageSize;
+  const pageRows = mercCatalogoCardFilteredRows.slice(start, start + mercCatalogoCardPageSize);
+  mercCatalogoCards.innerHTML = '';
+  pageRows.forEach((row) => {
     mercCatalogoCards.appendChild(buildMercCatalogoCard(row));
   });
-  mercCatalogoCardVisibleCount += next.length;
+  if (mercCatalogoPagination) mercCatalogoPagination.classList.toggle('is-active', mercCatalogoCardFilteredRows.length > 0);
+  if (mercCatalogoPageInfo) mercCatalogoPageInfo.textContent = `Pagina ${mercCatalogoCardPage} de ${totalPages}`;
+  if (mercCatalogoPrev) mercCatalogoPrev.disabled = mercCatalogoCardPage <= 1;
+  if (mercCatalogoNext) mercCatalogoNext.disabled = mercCatalogoCardPage >= totalPages;
   mercCatalogoCardLoading = false;
 }
 
@@ -4493,7 +4556,6 @@ async function loadMercaderiaCatalogo(force = false) {
     const res = await fetchJSON('/api/mercaderia/catalogo/all');
     const rows = Array.isArray(res.data) ? res.data : [];
     mercCatalogoRows = rows;
-    resetMercCatalogoCards();
     if (mercCatalogoDataTable) {
       mercCatalogoDataTable.clear();
       mercCatalogoDataTable.rows.add(rows);
@@ -4536,8 +4598,15 @@ async function loadMercaderiaCatalogo(force = false) {
                   : safeDetalle;
               },
             },
-            { data: 'cantidad', defaultContent: 0 },
-            { data: 'precioVenta', render: (data) => formatMoney(data || 0) },
+            {
+              data: 'cantidad',
+              defaultContent: 0,
+              render: (data, type) => (type === 'display' ? data ?? 0 : Number(data) || 0),
+            },
+            {
+              data: 'precioVenta',
+              render: (data, type) => (type === 'display' ? formatMoney(data || 0) : Number(data) || 0),
+            },
             {
               data: 'fotoUrl',
               orderable: false,
@@ -4566,6 +4635,7 @@ async function loadMercaderiaCatalogo(force = false) {
         mercCatalogoDataTable.on('draw', () => syncMercCatalogoInputs());
       }
     }
+    applyMercCatalogoSort();
     mercCatalogoLoaded = true;
     if (mercCatalogoStatus) {
       mercCatalogoStatus.textContent = rows.length ? `Total artículos: ${rows.length}` : 'Sin resultados';
@@ -4584,6 +4654,33 @@ function initMercaderiaCatalogo() {
     mercCatalogoRefreshBtn.addEventListener('click', () => {
       mercCatalogoLoaded = false;
       loadMercaderiaCatalogo(true);
+    });
+  }
+  if (mercCatalogoSort) {
+    mercCatalogoSort.addEventListener('change', () => {
+      mercCatalogoSortMode = mercCatalogoSort.value || 'detalle';
+      applyMercCatalogoSort('desktop');
+    });
+  }
+  if (mercCatalogoMobileSort) {
+    mercCatalogoMobileSort.addEventListener('change', () => {
+      mercCatalogoSortMode = mercCatalogoMobileSort.value || 'detalle';
+      applyMercCatalogoSort('mobile');
+    });
+  }
+  if (mercCatalogoPrev) {
+    mercCatalogoPrev.addEventListener('click', () => {
+      if (mercCatalogoCardPage <= 1) return;
+      mercCatalogoCardPage -= 1;
+      renderMercCatalogoCardsPage();
+    });
+  }
+  if (mercCatalogoNext) {
+    mercCatalogoNext.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(mercCatalogoCardFilteredRows.length / mercCatalogoCardPageSize));
+      if (mercCatalogoCardPage >= totalPages) return;
+      mercCatalogoCardPage += 1;
+      renderMercCatalogoCardsPage();
     });
   }
   if (mercCatalogoPdf) mercCatalogoPdf.addEventListener('click', generateMercCatalogoPdf);
@@ -4627,6 +4724,7 @@ function initMercaderiaCatalogo() {
       if (mercCatalogoCardSearchTimer) clearTimeout(mercCatalogoCardSearchTimer);
       mercCatalogoCardSearchTimer = setTimeout(() => {
         mercCatalogoCardFilterTerm = mercCatalogoMobileSearchInput.value || '';
+        mercCatalogoCardPage = 1;
         resetMercCatalogoCards();
       }, 200);
     });
@@ -22475,9 +22573,6 @@ window.addEventListener(
     if (viewAbm && !viewAbm.classList.contains('hidden')) {
       if (abmCardVisibleCount < abmCardFilteredRows.length) appendAbmCards();
       return;
-    }
-    if (viewMercaderiaCatalogo && !viewMercaderiaCatalogo.classList.contains('hidden')) {
-      if (mercCatalogoCardVisibleCount < mercCatalogoCardFilteredRows.length) appendMercCatalogoCards();
     }
   },
   { passive: true }

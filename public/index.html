@@ -2057,7 +2057,16 @@
           <h2>Catálogo de Mercadería</h2>
           <p class="status">Selección de artículos para generar catálogo.</p>
         </div>
-        <div class="actions inline no-wrap">
+        <div class="actions inline no-wrap merc-catalogo-header-controls">
+          <label class="catalogo-sort-control">
+            <span>Ordenar</span>
+            <select id="merc-catalogo-sort">
+              <option value="detalle">Detalle</option>
+              <option value="stock-desc" selected>Mayor Stock</option>
+              <option value="price-desc">Mayor Precio</option>
+              <option value="price-asc">Menor Precio</option>
+            </select>
+          </label>
           <button id="merc-catalogo-refresh" type="button">Actualizar</button>
         </div>
       </div>
@@ -2068,6 +2077,12 @@
         <button id="merc-catalogo-clear" type="button">Limpiar selección</button>
       </div>
       <div class="abm-mobile-search merc-catalogo-mobile-search">
+        <select id="merc-catalogo-mobile-sort" aria-label="Ordenar catálogo">
+          <option value="detalle">Ordenar por detalle</option>
+          <option value="stock-desc" selected>Mayor Stock</option>
+          <option value="price-desc">Mayor Precio</option>
+          <option value="price-asc">Menor Precio</option>
+        </select>
         <input type="search" id="merc-catalogo-mobile-search-input" placeholder="Buscar articulo..." />
       </div>
       <div class="table-wrap">
@@ -2084,6 +2099,11 @@
           <tbody></tbody>
         </table>
         <div class="abm-cards merc-catalogo-cards" id="merc-catalogo-cards"></div>
+      </div>
+      <div class="pagination merc-catalogo-pagination" id="merc-catalogo-pagination">
+        <button id="merc-catalogo-prev" type="button">Anterior</button>
+        <span id="merc-catalogo-page-info">Pagina 1</span>
+        <button id="merc-catalogo-next" type="button">Siguiente</button>
       </div>
       <p class="status" id="merc-catalogo-status"></p>
     </article>
