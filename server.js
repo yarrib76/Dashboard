@@ -95,12 +95,23 @@ const TNUBE_IMPORT_START_YEAR = Math.max(2000, Number(process.env.TNUBE_IMPORT_S
 const TNUBE_PRODUCTS_PER_PAGE = Math.min(200, Math.max(1, Number(process.env.TNUBE_PRODUCTS_PER_PAGE || 200) || 200));
 const TNUBE_REQUEST_RETRIES = Math.max(0, Number(process.env.TNUBE_REQUEST_RETRIES || 2) || 0);
 const TNUBE_INSERT_CHUNK_SIZE = Math.max(50, Number(process.env.TNUBE_INSERT_CHUNK_SIZE || 500) || 500);
+const ECOMMERCE_SCHEDULE_TRACE = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.ECOMMERCE_SCHEDULE_TRACE || '').trim().toLowerCase()
+);
 const LOGS_DIR = path.join(__dirname, 'logs');
 const ECOMMERCE_JOBS_DIR = path.join(LOGS_DIR, 'ecommerce-jobs');
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 const ecommerceImportJobs = new Map();
 const ecommerceSyncJobs = new Map();
+
+function traceEcommerceSchedule(step, data = {}) {
+  if (!ECOMMERCE_SCHEDULE_TRACE) return;
+  const details = Object.entries(data)
+    .map(([key, value]) => `${key}=${value == null ? '' : value}`)
+    .join(' ');
+  console.log(`[ecommerce-schedule-trace] ${new Date().toISOString()} ${step}${details ? ` ${details}` : ''}`);
+}
 
 function getCatalogoStoreInfo() {
   const local = String(process.env.LOCAL || '').trim().toLowerCase();
@@ -916,6 +927,7 @@ function createEcommerceImportJob(tipoBajada, userId) {
   };
   ecommerceImportJobs.set(id, job);
   persistEcommerceJob(job);
+  traceEcommerceSchedule('create-import-job', { jobId: id, tipoBajada, userId });
   return job;
 }
 
@@ -1022,6 +1034,7 @@ async function insertTnubeStatusRows(conn, idProvecomerce, rows, onProgress) {
 async function runEcommerceImportJob(job) {
   let conn;
   try {
+    traceEcommerceSchedule('run-import-start', { jobId: job?.id, tipoBajada: job?.tipoBajada });
     const tnubeConnection = getConfiguredTnubeConnection();
     updateEcommerceImportJob(job, {
       tienda: tnubeConnection.tienda,
@@ -1036,6 +1049,11 @@ async function runEcommerceImportJob(job) {
       (acc, row) => acc + (String(row.descripcionWeb || '').trim() ? 1 : 0),
       0
     );
+    traceEcommerceSchedule('payload-ready', {
+      jobId: job?.id,
+      rows: importResult.rows.length,
+      descripcionPayloadCount,
+    });
     const fecha = formatDateTimeLocal(new Date());
 
     updateEcommerceImportJob(job, {
@@ -1052,6 +1070,7 @@ async function runEcommerceImportJob(job) {
       ['TiendaNube', job.userId || null, fecha, tnubeConnection.storeId, tnubeConnection.tienda]
     );
     const idProvecomerce = proveResult.insertId;
+    traceEcommerceSchedule('corrida-created', { jobId: job?.id, corrida: idProvecomerce });
     if (importResult.rows.length) {
       await insertTnubeStatusRows(conn, idProvecomerce, importResult.rows, (progress) => {
         updateEcommerceImportJob(job, progress);
@@ -1065,6 +1084,12 @@ async function runEcommerceImportJob(job) {
       [idProvecomerce]
     );
     const descripcionDbCount = Number(descripcionDbRow?.total) || 0;
+    traceEcommerceSchedule('insert-finished', {
+      jobId: job?.id,
+      corrida: idProvecomerce,
+      rows: importResult.rows.length,
+      descripcionDbCount,
+    });
     await conn.commit();
     updateEcommerceImportJob(job, {
       status: 'done',
@@ -1077,6 +1102,7 @@ async function runEcommerceImportJob(job) {
         `Desc payload: ${descripcionPayloadCount}. Desc DB: ${descripcionDbCount}.`,
     });
   } catch (error) {
+    traceEcommerceSchedule('run-import-error', { jobId: job?.id, error: error.message || error });
     if (conn) {
       try {
         await conn.rollback();
@@ -1162,6 +1188,7 @@ function persistEcommerceJob(job) {
     if (!filePath) return;
     fs.writeFileSync(filePath, JSON.stringify(job), 'utf8');
   } catch (_err) {
+    traceEcommerceSchedule('persist-job-error', { jobId: job?.id, error: _err.message || _err });
     /* ignore progress persistence errors */
   }
 }
@@ -16577,11 +16604,19 @@ async function getScheduledEcommerceImportUserId() {
 
 async function finishScheduledEcommerceImport(config, job) {
   try {
+    traceEcommerceSchedule('finish-scheduled-start', { taskId: config?.id, jobId: job?.id });
     await runEcommerceImportJob(job);
     let scheduledMessage = job.message || job.error || '';
     if (job.corrida) {
       try {
         const descStats = await getEcommerceRunDescriptionStats(job.corrida);
+        traceEcommerceSchedule('scheduled-desc-stats', {
+          taskId: config?.id,
+          jobId: job?.id,
+          corrida: job.corrida,
+          conDescripcion: descStats.conDescripcion,
+          total: descStats.total,
+        });
         scheduledMessage =
           `Corrida ${job.corrida} creada para ${job.tienda || 'tienda'}. ` +
           `Tipo: ${job.tipoBajada || 'todo'}. Variantes: ${job.variantes || descStats.total}. ` +
@@ -16596,7 +16631,14 @@ async function finishScheduledEcommerceImport(config, job) {
        WHERE id = ?`,
       [job.status || 'done', scheduledMessage, config.id]
     );
+    traceEcommerceSchedule('finish-scheduled-done', {
+      taskId: config?.id,
+      jobId: job?.id,
+      status: job.status || 'done',
+      corrida: job.corrida,
+    });
   } catch (error) {
+    traceEcommerceSchedule('finish-scheduled-error', { taskId: config?.id, jobId: job?.id, error: error.message || error });
     await pool.query(
       `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultimo_estado = 'error', ultimo_mensaje = ?
@@ -16609,6 +16651,13 @@ async function finishScheduledEcommerceImport(config, job) {
 }
 
 async function startScheduledEcommerceImport(config) {
+  traceEcommerceSchedule('start-scheduled-called', {
+    taskId: config?.id,
+    tipoBajada: config?.tipoBajada,
+    importRunning: ecommerceImportScheduleRunning,
+    cleanupRunning: ecommerceCleanupScheduleRunning,
+    hasImportJobRunning: hasImportJobRunning(),
+  });
   if (ecommerceImportScheduleRunning || ecommerceCleanupScheduleRunning || hasImportJobRunning()) {
     throw new Error('Ya hay una bajada Tienda Nube en curso');
   }
@@ -16617,6 +16666,7 @@ async function startScheduledEcommerceImport(config) {
     const userId = await getScheduledEcommerceImportUserId();
     if (!userId) throw new Error('No hay usuario disponible para registrar la bajada automatica');
     const job = createEcommerceImportJob(config.tipoBajada || 'todo', userId);
+    traceEcommerceSchedule('start-scheduled-job-created', { taskId: config?.id, jobId: job.id, userId });
     await pool.query(
       `UPDATE ${DB_NAME}.scheduled_tasks
        SET ultima_ejecucion = ?, ultimo_job_id = ?, ultimo_estado = 'running', ultimo_mensaje = ?
@@ -16629,8 +16679,10 @@ async function startScheduledEcommerceImport(config) {
       ]
     );
     finishScheduledEcommerceImport(config, job);
+    traceEcommerceSchedule('start-scheduled-dispatched', { taskId: config?.id, jobId: job.id });
     return job;
   } catch (error) {
+    traceEcommerceSchedule('start-scheduled-error', { taskId: config?.id, error: error.message || error });
     ecommerceImportScheduleRunning = false;
     await pool.query(
       `UPDATE ${DB_NAME}.scheduled_tasks
@@ -16644,8 +16696,10 @@ async function startScheduledEcommerceImport(config) {
 
 async function runScheduledEcommerceImport(config) {
   try {
+    traceEcommerceSchedule('run-scheduled-called', { taskId: config?.id, tipoBajada: config?.tipoBajada });
     return await startScheduledEcommerceImport(config);
   } catch (_error) {
+    traceEcommerceSchedule('run-scheduled-error', { taskId: config?.id, error: _error.message || _error });
     return null;
   }
 }
@@ -16739,18 +16793,54 @@ async function checkEcommerceImportSchedule() {
   const minuteKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
   if (minuteKey === ecommerceImportScheduleLastCheckMinute) return;
   ecommerceImportScheduleLastCheckMinute = minuteKey;
-  if (ecommerceImportScheduleRunning || ecommerceCleanupScheduleRunning || hasImportJobRunning()) return;
+  const importJobRunning = hasImportJobRunning();
+  if (ecommerceImportScheduleRunning || ecommerceCleanupScheduleRunning || importJobRunning) {
+    traceEcommerceSchedule('check-schedule-skip-running', {
+      minuteKey,
+      importRunning: ecommerceImportScheduleRunning,
+      cleanupRunning: ecommerceCleanupScheduleRunning,
+      importJobRunning,
+    });
+    return;
+  }
   let config;
   try {
     config = await getEcommerceImportScheduleConfig();
   } catch (_error) {
+    traceEcommerceSchedule('check-schedule-config-error', { minuteKey, error: _error.message || _error });
     return;
   }
-  if (!config.enabled) return;
-  if (!isScheduleDayEnabled(config.diasSemana, now)) return;
+  traceEcommerceSchedule('check-schedule-config', {
+    minuteKey,
+    taskId: config.id,
+    enabled: config.enabled,
+    hora: config.hora,
+    diasSemana: config.diasSemana,
+    ultimaEjecucion: config.ultimaEjecucion || '',
+  });
+  if (!config.enabled) {
+    traceEcommerceSchedule('check-schedule-skip-disabled', { minuteKey, taskId: config.id });
+    return;
+  }
+  if (!isScheduleDayEnabled(config.diasSemana, now)) {
+    traceEcommerceSchedule('check-schedule-skip-day', { minuteKey, taskId: config.id, diasSemana: config.diasSemana });
+    return;
+  }
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  if (currentTime !== config.hora) return;
-  if (sameLocalDate(config.ultimaEjecucion, now) && !wasScheduleChangedAfterLastRun(config)) return;
+  if (currentTime !== config.hora) {
+    traceEcommerceSchedule('check-schedule-skip-time', { minuteKey, taskId: config.id, currentTime, hora: config.hora });
+    return;
+  }
+  if (sameLocalDate(config.ultimaEjecucion, now) && !wasScheduleChangedAfterLastRun(config)) {
+    traceEcommerceSchedule('check-schedule-skip-already-run', {
+      minuteKey,
+      taskId: config.id,
+      ultimaEjecucion: config.ultimaEjecucion || '',
+      actualizadoEn: config.actualizadoEn || '',
+    });
+    return;
+  }
+  traceEcommerceSchedule('check-schedule-trigger', { minuteKey, taskId: config.id, tipoBajada: config.tipoBajada });
   runScheduledEcommerceImport(config);
 }
 
