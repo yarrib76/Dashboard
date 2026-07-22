@@ -6412,12 +6412,7 @@ app.post('/api/config/ecommerce-import-schedule/run', requireAuth, async (req, r
     if (tipoBajada && !['todo', 'visible'].includes(tipoBajada)) {
       return res.status(400).json({ message: 'tipo_bajada debe ser todo o visible' });
     }
-    const savedConfig = await getEcommerceImportScheduleConfig();
-    const config = {
-      ...savedConfig,
-      tipoBajada: tipoBajada || savedConfig.tipoBajada || 'todo',
-    };
-    const job = await startScheduledEcommerceImport(config);
+    const job = await executeEcommerceImportScheduleRun(tipoBajada);
     const data = await getEcommerceImportScheduleConfig();
     res.json({ ok: true, data, job: serializeEcommerceImportJob(job) });
   } catch (error) {
@@ -16574,6 +16569,11 @@ function wasScheduleChangedAfterLastRun(config) {
   return updated.getTime() > lastRun.getTime();
 }
 
+function isValidEcommerceScheduleRun(config) {
+  const message = String(config?.ultimoMensaje || '');
+  return message.includes('Trace v2') || message.includes('Desc DB:');
+}
+
 function isScheduleDayEnabled(diasSemana, date) {
   const clean = String(diasSemana || '').trim();
   if (!clean) return true;
@@ -16582,6 +16582,16 @@ function isScheduleDayEnabled(diasSemana, date) {
     .map((item) => Number.parseInt(item, 10))
     .filter((item) => Number.isInteger(item));
   return enabledDays.includes(date.getDay());
+}
+
+async function executeEcommerceImportScheduleRun(tipoBajadaOverride = '', configOverride = null) {
+  const savedConfig = configOverride || (await getEcommerceImportScheduleConfig());
+  const tipoBajada = String(tipoBajadaOverride || savedConfig.tipoBajada || 'todo').trim();
+  const config = {
+    ...savedConfig,
+    tipoBajada: ['todo', 'visible'].includes(tipoBajada) ? tipoBajada : 'todo',
+  };
+  return startScheduledEcommerceImport(config);
 }
 
 async function getScheduledEcommerceImportUserId() {
@@ -16697,7 +16707,7 @@ async function startScheduledEcommerceImport(config) {
 async function runScheduledEcommerceImport(config) {
   try {
     traceEcommerceSchedule('run-scheduled-called', { taskId: config?.id, tipoBajada: config?.tipoBajada });
-    return await startScheduledEcommerceImport(config);
+    return await executeEcommerceImportScheduleRun(config?.tipoBajada, config);
   } catch (_error) {
     traceEcommerceSchedule('run-scheduled-error', { taskId: config?.id, error: _error.message || _error });
     return null;
@@ -16832,13 +16842,23 @@ async function checkEcommerceImportSchedule() {
     return;
   }
   if (sameLocalDate(config.ultimaEjecucion, now) && !wasScheduleChangedAfterLastRun(config)) {
-    traceEcommerceSchedule('check-schedule-skip-already-run', {
+    if (isValidEcommerceScheduleRun(config)) {
+      traceEcommerceSchedule('check-schedule-skip-already-run', {
+        minuteKey,
+        taskId: config.id,
+        ultimaEjecucion: config.ultimaEjecucion || '',
+        actualizadoEn: config.actualizadoEn || '',
+        ultimoMensaje: config.ultimoMensaje || '',
+      });
+      return;
+    }
+    traceEcommerceSchedule('check-schedule-rerun-invalid-last-run', {
       minuteKey,
       taskId: config.id,
       ultimaEjecucion: config.ultimaEjecucion || '',
       actualizadoEn: config.actualizadoEn || '',
+      ultimoMensaje: config.ultimoMensaje || '',
     });
-    return;
   }
   traceEcommerceSchedule('check-schedule-trigger', { minuteKey, taskId: config.id, tipoBajada: config.tipoBajada });
   runScheduledEcommerceImport(config);
