@@ -5861,16 +5861,20 @@ function splitTextByLength(text, maxChars, maxLines) {
   const words = cleaned.split(' ');
   const lines = [];
   let current = '';
-  words.forEach((word) => {
-    if (lines.length >= maxLines) return;
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
     const next = current ? `${current} ${word}` : word;
     if (next.length <= maxChars || !current) {
       current = next;
     } else {
+      if (lines.length >= maxLines - 1) {
+        current = [current, ...words.slice(index)].join(' ');
+        break;
+      }
       lines.push(current);
       current = word;
     }
-  });
+  }
   if (current && lines.length < maxLines) lines.push(current);
   return lines;
 }
@@ -5899,7 +5903,7 @@ function getZplDetalleLayout(detalle) {
       lineGap: 0,
     };
   }
-  if (text.length <= 48) {
+  if (text.length <= 38) {
     return {
       lines: splitTextByLength(text, 24, 2),
       font: 14,
@@ -5931,7 +5935,7 @@ function buildAbmBarcodeZpl(articulo, detalle, quantity = 1) {
   const barcodeData = code.length === 13 ? code.slice(0, 12) : code;
   const detalleLayout = getZplDetalleLayout(detalle);
   const detalleText = detalleLayout.lines.join('\\&');
-  const isLongDetalle = zplText(detalle).length > 48;
+  const isLongDetalle = zplText(detalle).length > 38;
   const barcodeCommand = code.length === 13 ? '^BEN,96,N,N' : '^BCN,96,N,N,N';
   const barcodeWidth = code.length === 13 ? '^BY2,3,96' : '^BY2,3,96';
   const fields = [
