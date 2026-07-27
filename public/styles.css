@@ -4567,6 +4567,31 @@ body.theme-light .pedido-notas-badge {
   text-align: center;
 }
 
+.barcode-mode-toggle {
+  display: inline-flex;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.barcode-mode-btn {
+  min-width: 112px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.barcode-mode-btn.active {
+  background: rgba(123, 215, 255, 0.18);
+  color: var(--text);
+  font-weight: 700;
+}
+
 .barcode-preview {
   display: flex;
   flex-direction: column;
@@ -4592,6 +4617,80 @@ body.theme-light .pedido-notas-badge {
   color: var(--muted);
   font-size: 11px;
   line-height: 1;
+}
+
+.barcode-zpl-preview {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: min(100%, 430px);
+}
+
+.barcode-zpl-preview.hidden,
+.barcode-preview.hidden {
+  display: none;
+}
+
+.barcode-zpl-label {
+  width: 6cm;
+  min-height: 3.2cm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 6px 8px;
+  border: 1px dashed rgba(148, 163, 184, 0.8);
+  border-radius: 8px;
+  background: #fff;
+  color: #000;
+  box-sizing: border-box;
+}
+
+.barcode-zpl-label svg {
+  width: 5.4cm;
+  height: 1.35cm;
+  display: block;
+}
+
+.barcode-zpl-label .barcode-code {
+  color: #000;
+  font-size: 10px;
+  font-family: "Arial Black", Arial, sans-serif;
+}
+
+.barcode-zpl-label .barcode-text {
+  max-width: 5.5cm;
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: "Arial Black", Arial, sans-serif;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.barcode-zpl-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.barcode-zpl-raw textarea {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 10px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .abm-form-grid {
@@ -4958,7 +5057,9 @@ body.theme-light .pedido-notas-badge {
   #abm-barcode-overlay .modal-header,
   #abm-barcode-close,
   #abm-barcode-status,
-  #abm-barcode-print {
+  #abm-barcode-print,
+  #abm-barcode-overlay .barcode-mode-toggle,
+  #abm-barcode-overlay .barcode-zpl-preview {
     display: none !important;
   }
 

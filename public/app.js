@@ -1202,11 +1202,18 @@ const abmCreateBtn = document.getElementById('abm-create');
 const abmBarcodeOverlay = document.getElementById('abm-barcode-overlay');
 const abmBarcodeClose = document.getElementById('abm-barcode-close');
 const abmBarcodeSvg = document.getElementById('abm-barcode-svg');
+const abmBarcodeZplSvg = document.getElementById('abm-barcode-zpl-svg');
 const abmBarcodeCode = document.getElementById('abm-barcode-code');
 const abmBarcodeText = document.getElementById('abm-barcode-text');
+const abmBarcodeZplCode = document.getElementById('abm-barcode-zpl-code');
+const abmBarcodeZplText = document.getElementById('abm-barcode-zpl-text');
+const abmBarcodeZplOutput = document.getElementById('abm-barcode-zpl');
+const abmBarcodeZplPreview = document.getElementById('abm-barcode-zpl-preview');
 const abmBarcodeStatus = document.getElementById('abm-barcode-status');
 const abmBarcodePrint = document.getElementById('abm-barcode-print');
 const abmBarcodePreview = document.querySelector('#abm-barcode-overlay .barcode-preview');
+const abmBarcodeModeBrowser = document.getElementById('abm-barcode-mode-browser');
+const abmBarcodeModeZpl = document.getElementById('abm-barcode-mode-zpl');
 const abmEditOverlay = document.getElementById('abm-edit-overlay');
 const abmEditClose = document.getElementById('abm-edit-close');
 const abmEditCancel = document.getElementById('abm-edit-cancel');
@@ -1473,6 +1480,8 @@ let pedidoCardsServerSearch = '';
 let abmProvidersLoaded = false;
 let abmCreateProvidersLoaded = false;
 let abmCurrentArticulo = null;
+let abmBarcodeMode = 'browser';
+let abmCurrentBarcodeZpl = '';
 let abmDolarRate = null;
 let abmBatchTable = null;
 let abmPickTable = null;
@@ -5834,12 +5843,128 @@ function buildCodigoBarras(articulo) {
   return raw;
 }
 
+function zplText(value) {
+  return String(value || '')
+    .replace(/[\^~\\]/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitZplDetalle(detalle) {
+  const text = zplText(detalle);
+  if (!text) return [];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  words.forEach((word) => {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= 28 || !current) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  });
+  if (current) lines.push(current);
+  return lines.slice(0, 2);
+}
+
+function buildAbmBarcodeZpl(articulo, detalle) {
+  const code = buildCodigoBarras(articulo);
+  const detalleLines = splitZplDetalle(detalle);
+  const detalleText = detalleLines.join('\\&');
+  const barcodeCommand = code.length === 13 ? '^BEN,76,Y,N' : '^BCN,76,Y,N,N';
+  const barcodeWidth = code.length === 13 ? '^BY2,2,76' : '^BY2,2,76';
+  const fields = [
+    '^XA',
+    '^CI28',
+    '^PW400',
+    '^LL190',
+    '^LH0,0',
+    `^FO52,18${barcodeWidth}${barcodeCommand}^FD${zplText(code)}^FS`,
+  ];
+  if (detalleText) {
+    fields.push(`^FO24,128^A0N,24,24^FB352,2,2,C,0^FD${detalleText}^FS`);
+  }
+  fields.push('^XZ');
+  return fields.join('\n');
+}
+
+function renderBarcodeSvg(svgEl, code) {
+  if (!window.JsBarcode || !svgEl) return false;
+  try {
+    window.JsBarcode(svgEl, code, {
+      format: code.length === 13 ? 'EAN13' : 'CODE128',
+      width: 1,
+      height: 40,
+      displayValue: false,
+      flat: true,
+    });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function setAbmBarcodeMode(mode) {
+  abmBarcodeMode = mode === 'zpl' ? 'zpl' : 'browser';
+  const isZpl = abmBarcodeMode === 'zpl';
+  abmBarcodeModeBrowser?.classList.toggle('active', !isZpl);
+  abmBarcodeModeZpl?.classList.toggle('active', isZpl);
+  abmBarcodeModeBrowser?.setAttribute('aria-pressed', String(!isZpl));
+  abmBarcodeModeZpl?.setAttribute('aria-pressed', String(isZpl));
+  abmBarcodePreview?.classList.toggle('hidden', isZpl);
+  abmBarcodeZplPreview?.classList.toggle('hidden', !isZpl);
+  if (abmBarcodePrint) abmBarcodePrint.textContent = isZpl ? 'Imprimir ZPL' : 'Imprimir';
+  if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
+}
+
+function printCurrentBarcodeZpl() {
+  if (!abmCurrentBarcodeZpl) {
+    if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No hay ZPL para imprimir.';
+    return;
+  }
+  if (!window.BrowserPrint) {
+    if (abmBarcodeStatus) {
+      abmBarcodeStatus.textContent =
+        'ZPL generado. Para imprimir directo falta cargar/instalar Zebra Browser Print en este equipo.';
+    }
+    return;
+  }
+  window.BrowserPrint.getDefaultDevice(
+    'printer',
+    (device) => {
+      if (!device) {
+        if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No se encontro impresora Zebra predeterminada.';
+        return;
+      }
+      device.send(
+        abmCurrentBarcodeZpl,
+        () => {
+          if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'Etiqueta ZPL enviada a la impresora.';
+        },
+        (error) => {
+          if (abmBarcodeStatus) abmBarcodeStatus.textContent = error || 'No se pudo enviar ZPL a la impresora.';
+        }
+      );
+    },
+    (error) => {
+      if (abmBarcodeStatus) abmBarcodeStatus.textContent = error || 'No se pudo acceder a Zebra Browser Print.';
+    }
+  );
+}
+
 function openAbmBarcode(articulo, detalle) {
   if (!abmBarcodeOverlay) return;
   const code = buildCodigoBarras(articulo);
   const texto = balanceDetalle(detalle);
+  abmCurrentBarcodeZpl = buildAbmBarcodeZpl(articulo, detalle);
   if (abmBarcodeCode) abmBarcodeCode.textContent = code;
   if (abmBarcodeText) abmBarcodeText.textContent = texto;
+  if (abmBarcodeZplCode) abmBarcodeZplCode.textContent = code;
+  if (abmBarcodeZplText) abmBarcodeZplText.textContent = texto;
+  if (abmBarcodeZplOutput) abmBarcodeZplOutput.value = abmCurrentBarcodeZpl;
   if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
   if (abmBarcodePreview) {
     abmBarcodePreview.classList.remove('is-compact', 'is-tight');
@@ -5849,22 +5974,17 @@ function openAbmBarcode(articulo, detalle) {
       abmBarcodePreview.classList.add('is-compact');
     }
   }
+  setAbmBarcodeMode('browser');
   if (!window.JsBarcode || !abmBarcodeSvg) {
     if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No se pudo generar el codigo de barras.';
     abmBarcodeOverlay.classList.add('open');
     return;
   }
-  try {
-    window.JsBarcode(abmBarcodeSvg, code, {
-      format: 'EAN13',
-      width: 1,
-      height: 40,
-      displayValue: false,
-      flat: true,
-    });
-  } catch (error) {
+  const browserRendered = renderBarcodeSvg(abmBarcodeSvg, code);
+  renderBarcodeSvg(abmBarcodeZplSvg, code);
+  if (!browserRendered) {
     if (abmBarcodeStatus) {
-      abmBarcodeStatus.textContent = error.message || 'Codigo de barras invalido.';
+      abmBarcodeStatus.textContent = 'Codigo de barras invalido.';
     }
   }
   abmBarcodeOverlay.classList.add('open');
@@ -10505,9 +10625,15 @@ function initAbm() {
     abmBarcodeOverlay.addEventListener('click', (e) => {
       if (e.target === abmBarcodeOverlay) closeAbmBarcode();
     });
+  if (abmBarcodeModeBrowser) abmBarcodeModeBrowser.addEventListener('click', () => setAbmBarcodeMode('browser'));
+  if (abmBarcodeModeZpl) abmBarcodeModeZpl.addEventListener('click', () => setAbmBarcodeMode('zpl'));
   if (abmBarcodePrint)
     abmBarcodePrint.addEventListener('click', () => {
-      window.print();
+      if (abmBarcodeMode === 'zpl') {
+        printCurrentBarcodeZpl();
+      } else {
+        window.print();
+      }
     });
   if (abmCalcOpen) abmCalcOpen.addEventListener('click', openAbmCalc);
   if (abmCalcClose) abmCalcClose.addEventListener('click', closeAbmCalc);

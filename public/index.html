@@ -3948,10 +3948,25 @@
         <button id="abm-barcode-close" class="close-btn" type="button">×</button>
       </div>
       <div class="modal-body barcode-body">
-        <div class="barcode-preview">
+        <div class="barcode-mode-toggle" role="group" aria-label="Modo de impresion">
+          <button id="abm-barcode-mode-browser" class="barcode-mode-btn active" type="button" data-mode="browser">Navegador</button>
+          <button id="abm-barcode-mode-zpl" class="barcode-mode-btn" type="button" data-mode="zpl">ZPL</button>
+        </div>
+        <div class="barcode-preview barcode-browser-preview">
           <svg id="abm-barcode-svg"></svg>
           <p class="barcode-code" id="abm-barcode-code"></p>
           <p class="barcode-text" id="abm-barcode-text"></p>
+        </div>
+        <div class="barcode-zpl-preview hidden" id="abm-barcode-zpl-preview">
+          <div class="barcode-zpl-label">
+            <svg id="abm-barcode-zpl-svg"></svg>
+            <p class="barcode-code" id="abm-barcode-zpl-code"></p>
+            <p class="barcode-text" id="abm-barcode-zpl-text"></p>
+          </div>
+          <label class="barcode-zpl-raw">
+            ZPL generado
+            <textarea id="abm-barcode-zpl" readonly rows="8"></textarea>
+          </label>
         </div>
         <button id="abm-barcode-print" type="button">Imprimir</button>
         <p class="status" id="abm-barcode-status"></p>
