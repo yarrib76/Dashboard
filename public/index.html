@@ -3952,11 +3952,16 @@
           <button id="abm-barcode-mode-browser" class="barcode-mode-btn active" type="button" data-mode="browser">Navegador</button>
           <button id="abm-barcode-mode-zpl" class="barcode-mode-btn" type="button" data-mode="zpl">ZPL</button>
         </div>
+        <label class="barcode-quantity">
+          <span>Cantidad</span>
+          <input id="abm-barcode-quantity" type="number" min="1" max="999" step="1" value="1" inputmode="numeric" />
+        </label>
         <div class="barcode-preview barcode-browser-preview">
           <svg id="abm-barcode-svg"></svg>
           <p class="barcode-code" id="abm-barcode-code"></p>
           <p class="barcode-text" id="abm-barcode-text"></p>
         </div>
+        <div class="barcode-browser-copies" id="abm-barcode-browser-copies"></div>
         <div class="barcode-zpl-preview hidden" id="abm-barcode-zpl-preview">
           <div class="barcode-zpl-label">
             <svg id="abm-barcode-zpl-svg"></svg>

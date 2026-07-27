@@ -1212,8 +1212,10 @@ const abmBarcodeZplPreview = document.getElementById('abm-barcode-zpl-preview');
 const abmBarcodeStatus = document.getElementById('abm-barcode-status');
 const abmBarcodePrint = document.getElementById('abm-barcode-print');
 const abmBarcodePreview = document.querySelector('#abm-barcode-overlay .barcode-preview');
+const abmBarcodeBrowserCopies = document.getElementById('abm-barcode-browser-copies');
 const abmBarcodeModeBrowser = document.getElementById('abm-barcode-mode-browser');
 const abmBarcodeModeZpl = document.getElementById('abm-barcode-mode-zpl');
+const abmBarcodeQuantityInput = document.getElementById('abm-barcode-quantity');
 const abmEditOverlay = document.getElementById('abm-edit-overlay');
 const abmEditClose = document.getElementById('abm-edit-close');
 const abmEditCancel = document.getElementById('abm-edit-cancel');
@@ -1482,6 +1484,8 @@ let abmCreateProvidersLoaded = false;
 let abmCurrentArticulo = null;
 let abmBarcodeMode = 'browser';
 let abmCurrentBarcodeZpl = '';
+let abmCurrentBarcodeArticulo = '';
+let abmCurrentBarcodeDetalle = '';
 let abmDolarRate = null;
 let abmBatchTable = null;
 let abmPickTable = null;
@@ -5917,7 +5921,12 @@ function getZplDetalleLayout(detalle) {
   };
 }
 
-function buildAbmBarcodeZpl(articulo, detalle) {
+function getAbmBarcodeQuantity() {
+  const value = Number(abmBarcodeQuantityInput?.value || 1);
+  return Math.max(1, Math.min(999, Number.isFinite(value) ? Math.floor(value) : 1));
+}
+
+function buildAbmBarcodeZpl(articulo, detalle, quantity = 1) {
   const code = buildCodigoBarras(articulo);
   const barcodeData = code.length === 13 ? code.slice(0, 12) : code;
   const detalleLayout = getZplDetalleLayout(detalle);
@@ -5937,8 +5946,36 @@ function buildAbmBarcodeZpl(articulo, detalle) {
       `^FO${detalleLayout.x},${detalleLayout.y}^A0N,${detalleLayout.font},${detalleLayout.font}^FB${detalleLayout.width},${detalleLayout.maxLines},${detalleLayout.lineGap},C,0^FD${detalleText}^FS`
     );
   }
+  fields.push(`^PQ${getAbmBarcodeQuantityFromValue(quantity)},0,1,N`);
   fields.push('^XZ');
   return fields.join('\n');
+}
+
+function getAbmBarcodeQuantityFromValue(value) {
+  const quantity = Number(value || 1);
+  return Math.max(1, Math.min(999, Number.isFinite(quantity) ? Math.floor(quantity) : 1));
+}
+
+function updateCurrentBarcodeZpl() {
+  abmCurrentBarcodeZpl = buildAbmBarcodeZpl(
+    abmCurrentBarcodeArticulo,
+    abmCurrentBarcodeDetalle,
+    getAbmBarcodeQuantity()
+  );
+  if (abmBarcodeZplOutput) abmBarcodeZplOutput.value = abmCurrentBarcodeZpl;
+}
+
+function renderBrowserBarcodeCopies() {
+  if (!abmBarcodeBrowserCopies || !abmBarcodePreview) return;
+  abmBarcodeBrowserCopies.innerHTML = '';
+  const quantity = getAbmBarcodeQuantity();
+  for (let index = 1; index < quantity; index += 1) {
+    const copy = abmBarcodePreview.cloneNode(true);
+    copy.classList.add('barcode-print-copy');
+    copy.removeAttribute('id');
+    copy.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+    abmBarcodeBrowserCopies.appendChild(copy);
+  }
 }
 
 function renderBarcodeSvg(svgEl, code) {
@@ -6103,14 +6140,18 @@ async function printCurrentBarcodeZpl() {
 
 function openAbmBarcode(articulo, detalle) {
   if (!abmBarcodeOverlay) return;
+  abmCurrentBarcodeArticulo = articulo || '';
+  abmCurrentBarcodeDetalle = detalle || '';
+  if (abmBarcodeQuantityInput) abmBarcodeQuantityInput.value = '1';
   const code = buildCodigoBarras(articulo);
   const texto = balanceDetalle(detalle);
-  abmCurrentBarcodeZpl = buildAbmBarcodeZpl(articulo, detalle);
+  updateCurrentBarcodeZpl();
   if (abmBarcodeCode) abmBarcodeCode.textContent = code;
   if (abmBarcodeText) abmBarcodeText.textContent = texto;
   if (abmBarcodeZplCode) abmBarcodeZplCode.textContent = code;
   if (abmBarcodeZplText) abmBarcodeZplText.textContent = texto;
   if (abmBarcodeZplOutput) abmBarcodeZplOutput.value = abmCurrentBarcodeZpl;
+  if (abmBarcodeBrowserCopies) abmBarcodeBrowserCopies.innerHTML = '';
   if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
   if (abmBarcodePreview) {
     abmBarcodePreview.classList.remove('is-compact', 'is-tight');
@@ -10784,11 +10825,24 @@ function initAbm() {
     });
   if (abmBarcodeModeBrowser) abmBarcodeModeBrowser.addEventListener('click', () => setAbmBarcodeMode('browser'));
   if (abmBarcodeModeZpl) abmBarcodeModeZpl.addEventListener('click', () => setAbmBarcodeMode('zpl'));
+  if (abmBarcodeQuantityInput)
+    abmBarcodeQuantityInput.addEventListener('input', () => {
+      updateCurrentBarcodeZpl();
+      if (abmBarcodeBrowserCopies) abmBarcodeBrowserCopies.innerHTML = '';
+      if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
+    });
+  if (abmBarcodeQuantityInput)
+    abmBarcodeQuantityInput.addEventListener('change', () => {
+      abmBarcodeQuantityInput.value = String(getAbmBarcodeQuantity());
+      updateCurrentBarcodeZpl();
+    });
   if (abmBarcodePrint)
     abmBarcodePrint.addEventListener('click', async () => {
       if (abmBarcodeMode === 'zpl') {
+        updateCurrentBarcodeZpl();
         await printCurrentBarcodeZpl();
       } else {
+        renderBrowserBarcodeCopies();
         window.print();
       }
     });

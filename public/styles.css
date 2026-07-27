@@ -4592,11 +4592,33 @@ body.theme-light .pedido-notas-badge {
   font-weight: 700;
 }
 
+.barcode-quantity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.barcode-quantity input {
+  width: 78px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 7px 9px;
+  text-align: center;
+}
+
 .barcode-preview {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
+}
+
+.barcode-browser-copies {
+  display: none;
 }
 
 .barcode-preview svg {
@@ -5075,6 +5097,7 @@ body.theme-light .pedido-notas-badge {
   #abm-barcode-status,
   #abm-barcode-print,
   #abm-barcode-overlay .barcode-mode-toggle,
+  #abm-barcode-overlay .barcode-quantity,
   #abm-barcode-overlay .barcode-zpl-preview {
     display: none !important;
   }
@@ -5095,6 +5118,15 @@ body.theme-light .pedido-notas-badge {
   .barcode-preview {
     gap: 0;
     max-width: 6cm;
+  }
+
+  .barcode-browser-copies {
+    display: block;
+  }
+
+  .barcode-browser-copies .barcode-preview {
+    page-break-before: always;
+    break-before: page;
   }
 
   .barcode-code {
