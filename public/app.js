@@ -5880,9 +5880,9 @@ function getZplDetalleLayout(detalle) {
   if (!text) {
     return {
       lines: [],
-      font: 20,
+      font: 18,
       x: 54,
-      y: 132,
+      y: 140,
       width: 292,
       maxLines: 1,
       lineGap: 0,
@@ -5891,9 +5891,9 @@ function getZplDetalleLayout(detalle) {
   if (text.length <= 24) {
     return {
       lines: [text],
-      font: 20,
+      font: 18,
       x: 54,
-      y: 132,
+      y: 140,
       width: 292,
       maxLines: 1,
       lineGap: 0,
@@ -5902,9 +5902,9 @@ function getZplDetalleLayout(detalle) {
   if (text.length <= 48) {
     return {
       lines: splitTextByLength(text, 24, 2),
-      font: 18,
+      font: 16,
       x: 52,
-      y: 126,
+      y: 134,
       width: 296,
       maxLines: 2,
       lineGap: 0,
@@ -5912,9 +5912,9 @@ function getZplDetalleLayout(detalle) {
   }
   return {
     lines: splitTextByLength(text, 25, 3),
-    font: 15,
+    font: 13,
     x: 46,
-    y: 120,
+    y: 128,
     width: 308,
     maxLines: 3,
     lineGap: 0,
@@ -5931,16 +5931,17 @@ function buildAbmBarcodeZpl(articulo, detalle, quantity = 1) {
   const barcodeData = code.length === 13 ? code.slice(0, 12) : code;
   const detalleLayout = getZplDetalleLayout(detalle);
   const detalleText = detalleLayout.lines.join('\\&');
-  const barcodeCommand = code.length === 13 ? '^BEN,76,N,N' : '^BCN,76,N,N,N';
-  const barcodeWidth = code.length === 13 ? '^BY2,3,76' : '^BY2,3,76';
+  const barcodeCommand = code.length === 13 ? '^BEN,96,N,N' : '^BCN,96,N,N,N';
+  const barcodeWidth = code.length === 13 ? '^BY2,3,96' : '^BY2,3,96';
   const fields = [
     '^XA',
     '^CI28',
+    '^PR2',
     '^PW400',
     '^LL190',
     '^LH0,0',
-    `^FO96,18${barcodeWidth}${barcodeCommand}^FD${zplText(barcodeData)}^FS`,
-    `^FO60,98^A0N,22,22^FB280,1,0,C,0^FD${zplText(code)}^FS`,
+    `^FO96,8${barcodeWidth}${barcodeCommand}^FD${zplText(barcodeData)}^FS`,
+    `^FO60,112^A0N,20,20^FB280,1,0,C,0^FD${zplText(code)}^FS`,
   ];
   if (detalleText) {
     fields.push(
