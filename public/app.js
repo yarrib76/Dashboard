@@ -5920,15 +5920,85 @@ function setAbmBarcodeMode(mode) {
   if (abmBarcodeStatus) abmBarcodeStatus.textContent = '';
 }
 
-function printCurrentBarcodeZpl() {
+function getBrowserPrintBaseUrls() {
+  const secureUrls = ['https://localhost:9101/', 'https://127.0.0.1:9101/'];
+  const plainUrls = ['http://localhost:9100/', 'http://127.0.0.1:9100/'];
+  return window.location.protocol === 'https:' ? [...secureUrls, ...plainUrls] : [...plainUrls, ...secureUrls];
+}
+
+function fetchBrowserPrint(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 3500);
+  return fetch(url, {
+    ...options,
+    signal: controller.signal,
+  }).finally(() => window.clearTimeout(timeout));
+}
+
+function normalizeBrowserPrintDevices(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.deviceList)) return payload.deviceList;
+  if (Array.isArray(payload.printer)) return payload.printer;
+  return Object.values(payload).flatMap((value) => (Array.isArray(value) ? value : []));
+}
+
+async function getBrowserPrintDeviceFromService(baseUrl) {
+  const defaultRes = await fetchBrowserPrint(`${baseUrl}default?type=printer`);
+  if (defaultRes.ok) {
+    const text = await defaultRes.text();
+    if (text.trim()) return JSON.parse(text);
+  }
+  const availableRes = await fetchBrowserPrint(`${baseUrl}available`);
+  if (!availableRes.ok) throw new Error(`HTTP ${availableRes.status}`);
+  const payload = await availableRes.json();
+  return normalizeBrowserPrintDevices(payload).find((device) => device?.deviceType === 'printer') || null;
+}
+
+async function sendZplWithBrowserPrintService(zpl) {
+  let lastError = null;
+  const baseUrls = getBrowserPrintBaseUrls();
+  for (const baseUrl of baseUrls) {
+    try {
+      const device = await getBrowserPrintDeviceFromService(baseUrl);
+      if (!device) {
+        lastError = new Error('No hay impresora Zebra configurada en Browser Print.');
+        continue;
+      }
+      const writeRes = await fetchBrowserPrint(`${baseUrl}write`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device, data: zpl }),
+      });
+      if (!writeRes.ok) {
+        const errorText = await writeRes.text().catch(() => '');
+        throw new Error(errorText || `HTTP ${writeRes.status}`);
+      }
+      return device;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('No se pudo conectar con Zebra Browser Print.');
+}
+
+async function printCurrentBarcodeZpl() {
   if (!abmCurrentBarcodeZpl) {
     if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'No hay ZPL para imprimir.';
     return;
   }
+  if (abmBarcodeStatus) abmBarcodeStatus.textContent = 'Buscando impresora Zebra...';
   if (!window.BrowserPrint) {
-    if (abmBarcodeStatus) {
-      abmBarcodeStatus.textContent =
-        'ZPL generado. Para imprimir directo falta cargar/instalar Zebra Browser Print en este equipo.';
+    try {
+      const device = await sendZplWithBrowserPrintService(abmCurrentBarcodeZpl);
+      if (abmBarcodeStatus) {
+        abmBarcodeStatus.textContent = `Etiqueta ZPL enviada a ${device.name || device.uid || 'la impresora'}.`;
+      }
+    } catch (error) {
+      if (abmBarcodeStatus) {
+        abmBarcodeStatus.textContent =
+          'No se pudo conectar con Zebra Browser Print. Verifica que la app Zebra Browser Print este abierta y que tenga una impresora predeterminada.';
+      }
     }
     return;
   }
@@ -10628,9 +10698,9 @@ function initAbm() {
   if (abmBarcodeModeBrowser) abmBarcodeModeBrowser.addEventListener('click', () => setAbmBarcodeMode('browser'));
   if (abmBarcodeModeZpl) abmBarcodeModeZpl.addEventListener('click', () => setAbmBarcodeMode('zpl'));
   if (abmBarcodePrint)
-    abmBarcodePrint.addEventListener('click', () => {
+    abmBarcodePrint.addEventListener('click', async () => {
       if (abmBarcodeMode === 'zpl') {
-        printCurrentBarcodeZpl();
+        await printCurrentBarcodeZpl();
       } else {
         window.print();
       }
