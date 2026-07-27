@@ -6035,8 +6035,18 @@ async function printCurrentBarcodeZpl() {
         }
       );
     },
-    (error) => {
-      if (abmBarcodeStatus) abmBarcodeStatus.textContent = error || 'No se pudo acceder a Zebra Browser Print.';
+    async (error) => {
+      try {
+        const device = await sendZplWithBrowserPrintService(abmCurrentBarcodeZpl);
+        if (abmBarcodeStatus) {
+          abmBarcodeStatus.textContent = `Etiqueta ZPL enviada a ${device.name || device.uid || 'la impresora'}.`;
+        }
+      } catch (fallbackError) {
+        if (abmBarcodeStatus) {
+          abmBarcodeStatus.textContent =
+            fallbackError.message || error || 'No se pudo acceder a Zebra Browser Print.';
+        }
+      }
     }
   );
 }
