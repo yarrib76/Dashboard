@@ -5908,7 +5908,7 @@ function getZplDetalleLayout(detalle) {
       lines: splitTextByLength(text, 24, 2),
       font: 14,
       x: 42,
-      y: 132,
+      y: 138,
       width: 296,
       maxLines: 2,
       lineGap: 0,
@@ -5916,9 +5916,9 @@ function getZplDetalleLayout(detalle) {
   }
   return {
     lines: splitTextByLength(text, 30, 3),
-    font: 11,
+    font: 10,
     x: 28,
-    y: 126,
+    y: 138,
     width: 344,
     maxLines: 3,
     lineGap: 0,
@@ -5947,9 +5947,11 @@ function buildAbmBarcodeZpl(articulo, detalle, quantity = 1) {
     '^LH0,0',
     `^FO96,8${barcodeWidth}${barcodeCommand}^FD${zplText(barcodeData)}^FS`,
   ];
-  if (!isLongDetalle) {
-    fields.push(`^FO60,112^A0N,20,20^FB280,1,0,C,0^FD${zplText(code)}^FS`);
-  }
+  fields.push(
+    isLongDetalle
+      ? `^FO60,112^A0N,16,16^FB280,1,0,C,0^FD${zplText(code)}^FS`
+      : `^FO60,112^A0N,20,20^FB280,1,0,C,0^FD${zplText(code)}^FS`
+  );
   if (detalleText) {
     fields.push(
       `^FO${detalleLayout.x},${detalleLayout.y}^A0N,${detalleLayout.font},${detalleLayout.font}^FB${detalleLayout.width},${detalleLayout.maxLines},${detalleLayout.lineGap},C,0^FD${detalleText}^FS`
