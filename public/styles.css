@@ -4697,14 +4697,14 @@ body.theme-light .pedido-notas-badge {
 }
 
 .barcode-zpl-preview.is-zpl-medium .barcode-zpl-label .barcode-text {
-  font-size: 8px;
-  max-width: 5cm;
+  font-size: 7px;
+  max-width: 5.1cm;
 }
 
 .barcode-zpl-preview.is-zpl-long .barcode-zpl-label .barcode-text {
-  font-size: 7px;
-  max-width: 5.2cm;
-  line-height: 0.95;
+  font-size: 6px;
+  max-width: 5.6cm;
+  line-height: 0.9;
 }
 
 .barcode-zpl-raw {
