@@ -5975,7 +5975,6 @@ async function sendZplWithBrowserPrintService(zpl) {
         try {
           const writeRes = await fetchBrowserPrint(`${baseUrl}write`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
           if (writeRes.ok) {
