@@ -5879,6 +5879,17 @@ function splitTextByLength(text, maxChars, maxLines) {
   return lines;
 }
 
+function abbreviateZplDetalle(detalle, maxChars) {
+  const text = zplText(detalle);
+  if (text.length <= maxChars) return text;
+  const words = text.split(' ');
+  const tail = words.length > 1 ? words[words.length - 1] : '';
+  const prefixLimit = tail ? maxChars - tail.length - 1 : maxChars;
+  if (prefixLimit <= 6) return text.slice(0, maxChars);
+  const prefix = text.slice(0, prefixLimit).trim();
+  return tail ? `${prefix} ${tail}` : prefix;
+}
+
 function getZplDetalleLayout(detalle) {
   const text = zplText(detalle);
   if (!text) {
@@ -5914,13 +5925,25 @@ function getZplDetalleLayout(detalle) {
       lineGap: 0,
     };
   }
+  if (text.length <= 62) {
+    const abbreviated = abbreviateZplDetalle(text, 48);
+    return {
+      lines: splitTextByLength(abbreviated, 24, 2),
+      font: 13,
+      x: 36,
+      y: 136,
+      width: 328,
+      maxLines: 2,
+      lineGap: 0,
+    };
+  }
   return {
-    lines: splitTextByLength(text, 30, 3),
-    font: 10,
-    x: 28,
-    y: 138,
-    width: 344,
-    maxLines: 3,
+    lines: splitTextByLength(abbreviateZplDetalle(text, 54), 27, 2),
+    font: 12,
+    x: 30,
+    y: 136,
+    width: 340,
+    maxLines: 2,
     lineGap: 0,
   };
 }
