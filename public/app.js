@@ -5851,41 +5851,91 @@ function zplText(value) {
     .trim();
 }
 
-function splitZplDetalle(detalle) {
-  const text = zplText(detalle);
-  if (!text) return [];
-  const words = text.split(' ');
+function splitTextByLength(text, maxChars, maxLines) {
+  const cleaned = zplText(text);
+  if (!cleaned) return [];
+  const words = cleaned.split(' ');
   const lines = [];
   let current = '';
   words.forEach((word) => {
+    if (lines.length >= maxLines) return;
     const next = current ? `${current} ${word}` : word;
-    if (next.length <= 28 || !current) {
+    if (next.length <= maxChars || !current) {
       current = next;
     } else {
       lines.push(current);
       current = word;
     }
   });
-  if (current) lines.push(current);
-  return lines.slice(0, 2);
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines;
+}
+
+function getZplDetalleLayout(detalle) {
+  const text = zplText(detalle);
+  if (!text) {
+    return {
+      lines: [],
+      font: 20,
+      x: 54,
+      y: 130,
+      width: 292,
+      maxLines: 1,
+      lineGap: 0,
+    };
+  }
+  if (text.length <= 24) {
+    return {
+      lines: [text],
+      font: 20,
+      x: 54,
+      y: 130,
+      width: 292,
+      maxLines: 1,
+      lineGap: 0,
+    };
+  }
+  if (text.length <= 48) {
+    return {
+      lines: splitTextByLength(text, 24, 2),
+      font: 18,
+      x: 52,
+      y: 124,
+      width: 296,
+      maxLines: 2,
+      lineGap: 0,
+    };
+  }
+  return {
+    lines: splitTextByLength(text, 25, 3),
+    font: 15,
+    x: 46,
+    y: 118,
+    width: 308,
+    maxLines: 3,
+    lineGap: 0,
+  };
 }
 
 function buildAbmBarcodeZpl(articulo, detalle) {
   const code = buildCodigoBarras(articulo);
-  const detalleLines = splitZplDetalle(detalle);
-  const detalleText = detalleLines.join('\\&');
-  const barcodeCommand = code.length === 13 ? '^BEN,76,Y,N' : '^BCN,76,Y,N,N';
-  const barcodeWidth = code.length === 13 ? '^BY2,2,76' : '^BY2,2,76';
+  const barcodeData = code.length === 13 ? code.slice(0, 12) : code;
+  const detalleLayout = getZplDetalleLayout(detalle);
+  const detalleText = detalleLayout.lines.join('\\&');
+  const barcodeCommand = code.length === 13 ? '^BEN,82,Y,N' : '^BCN,82,Y,N,N';
+  const barcodeWidth = code.length === 13 ? '^BY3,2,82' : '^BY3,2,82';
   const fields = [
     '^XA',
     '^CI28',
     '^PW400',
     '^LL190',
     '^LH0,0',
-    `^FO52,18${barcodeWidth}${barcodeCommand}^FD${zplText(code)}^FS`,
+    `^FO58,12${barcodeWidth}${barcodeCommand}^FD${zplText(barcodeData)}^FS`,
   ];
   if (detalleText) {
-    fields.push(`^FO24,128^A0N,24,24^FB352,2,2,C,0^FD${detalleText}^FS`);
+    fields.push(
+      `^FO${detalleLayout.x},${detalleLayout.y}^A0N,${detalleLayout.font},${detalleLayout.font}^FB${detalleLayout.width},${detalleLayout.maxLines},${detalleLayout.lineGap},C,0^FD${detalleText}^FS`
+    );
   }
   fields.push('^XZ');
   return fields.join('\n');
@@ -6068,6 +6118,17 @@ function openAbmBarcode(articulo, detalle) {
       abmBarcodePreview.classList.add('is-tight');
     } else if (texto.length > 40) {
       abmBarcodePreview.classList.add('is-compact');
+    }
+  }
+  if (abmBarcodeZplPreview) {
+    abmBarcodeZplPreview.classList.remove('is-zpl-short', 'is-zpl-medium', 'is-zpl-long');
+    const detalleLength = zplText(detalle).length;
+    if (detalleLength > 48) {
+      abmBarcodeZplPreview.classList.add('is-zpl-long');
+    } else if (detalleLength > 24) {
+      abmBarcodeZplPreview.classList.add('is-zpl-medium');
+    } else {
+      abmBarcodeZplPreview.classList.add('is-zpl-short');
     }
   }
   setAbmBarcodeMode('browser');
