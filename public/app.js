@@ -5965,14 +5965,31 @@ async function sendZplWithBrowserPrintService(zpl) {
         lastError = new Error('No hay impresora Zebra configurada en Browser Print.');
         continue;
       }
-      const writeRes = await fetchBrowserPrint(`${baseUrl}write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device, data: zpl }),
-      });
-      if (!writeRes.ok) {
-        const errorText = await writeRes.text().catch(() => '');
-        throw new Error(errorText || `HTTP ${writeRes.status}`);
+      const writePayloads = [
+        { device, data: zpl },
+        { device: device.uid || device.name, data: zpl },
+        { deviceType: 'printer', deviceUid: device.uid || device.name, data: zpl },
+      ];
+      let writeOk = false;
+      for (const payload of writePayloads) {
+        try {
+          const writeRes = await fetchBrowserPrint(`${baseUrl}write`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (writeRes.ok) {
+            writeOk = true;
+            break;
+          }
+          const errorText = await writeRes.text().catch(() => '');
+          lastError = new Error(errorText || `HTTP ${writeRes.status}`);
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!writeOk) {
+        throw lastError || new Error('No se pudo escribir en Browser Print.');
       }
       return device;
     } catch (error) {
@@ -5997,7 +6014,7 @@ async function printCurrentBarcodeZpl() {
     } catch (error) {
       if (abmBarcodeStatus) {
         abmBarcodeStatus.textContent =
-          'No se pudo conectar con Zebra Browser Print. Verifica que la app Zebra Browser Print este abierta y que tenga una impresora predeterminada.';
+          `No se pudo enviar ZPL con Zebra Browser Print: ${error.message || error}.`;
       }
     }
     return;
