@@ -100,6 +100,9 @@ const ECOMMERCE_SCHEDULE_TRACE = ['1', 'true', 'yes', 'on'].includes(
 );
 const LOGS_DIR = path.join(__dirname, 'logs');
 const ECOMMERCE_JOBS_DIR = path.join(LOGS_DIR, 'ecommerce-jobs');
+const AI_REPORTS_DIR = path.join(LOGS_DIR, 'ai-reports');
+const IMPACTO_MERCADERIA_AI_REPORTS_DIR = path.join(AI_REPORTS_DIR, 'impacto-mercaderia');
+const IMPACTO_MERCADERIA_AI_MODEL = 'gpt-5.4-nano';
 const FACTURAS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'facturas-error.log');
 const PEDIDOS_ERROR_LOG_PATH = path.join(LOGS_DIR, 'pedidos-error.log');
 const ecommerceImportJobs = new Map();
@@ -165,6 +168,8 @@ function parseISODate(value) {
   }
   return date;
 }
+
+const MONTH_NAMES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 function formatDateTimeLocal(dateObj) {
   const yyyy = dateObj.getFullYear();
@@ -2194,7 +2199,10 @@ const ROLE_PERMISSIONS = [
   'dashboard-pedidos-vendedora',
   'dashboard-ventas-vendedora',
   'dashboard-pedidos-clientes',
+  'dashboard-comparativo-menu',
   'dashboard-comparativo',
+  'dashboard-comparativo-mercaderia',
+  'dashboard-comparativo-impacto-mercaderia',
   'panel-control',
   'cargar-ticket',
   'empleados',
@@ -2243,6 +2251,12 @@ const DASHBOARD_REPORT_PERMISSIONS = [
   'dashboard-comparativo',
 ];
 
+const DASHBOARD_COMPARATIVO_SUB_PERMISSIONS = [
+  'dashboard-comparativo',
+  'dashboard-comparativo-mercaderia',
+  'dashboard-comparativo-impacto-mercaderia',
+];
+
 const ECOMMERCE_SUB_PERMISSIONS = [
   'ecommerce-imagenweb',
   'ecommerce-panel',
@@ -2256,6 +2270,23 @@ function normalizeDashboardPermissions(permissions = {}, hasDashboardSubPerms = 
   DASHBOARD_REPORT_PERMISSIONS.forEach((permission) => {
     permissions[permission] = true;
   });
+  return permissions;
+}
+
+function normalizeDashboardComparativoPermissions(permissions = {}) {
+  const hasComparativoSubPerms = DASHBOARD_COMPARATIVO_SUB_PERMISSIONS.some(
+    (permission) => permissions[permission] === true
+  );
+  if (hasComparativoSubPerms && permissions['dashboard-comparativo-menu'] !== true) {
+    permissions['dashboard-comparativo-menu'] = true;
+  }
+  if (
+    permissions['dashboard-comparativo-menu'] === true &&
+    permissions['dashboard-comparativo'] !== true &&
+    permissions['dashboard-comparativo-mercaderia'] !== true
+  ) {
+    permissions['dashboard-comparativo'] = true;
+  }
   return permissions;
 }
 
@@ -2287,6 +2318,7 @@ async function getPermissionsForUser(userId) {
     Object.prototype.hasOwnProperty.call(permissions, permission)
   );
   normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+  normalizeDashboardComparativoPermissions(permissions);
   normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
   return permissions;
 }
@@ -6026,6 +6058,7 @@ app.get('/api/me', (req, res) => {
         Object.prototype.hasOwnProperty.call(permissions, permission)
       );
       normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
+      normalizeDashboardComparativoPermissions(permissions);
       const hasEcommerceSubPerms = ECOMMERCE_SUB_PERMISSIONS.some((permission) =>
         Object.prototype.hasOwnProperty.call(permissions, permission)
       );
@@ -12279,6 +12312,856 @@ app.post('/api/mercaderia/prediccion', async (req, res) => {
     res.status(500).json({ message: 'Error en predicción de mercadería', error: error.message });
   }
 });
+
+app.get('/api/dashboard/comparativo-mercaderia', requireAuth, requirePermission('dashboard-comparativo-mercaderia'), async (req, res) => {
+  try {
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const ventaDesdeDate = req.query.ventaDesde ? parseISODate(req.query.ventaDesde) : inicioMes;
+    const ventaHastaDate = req.query.ventaHasta ? parseISODate(req.query.ventaHasta) : hoy;
+    if (ventaHastaDate < ventaDesdeDate) {
+      return res.status(400).json({ message: 'La fecha hasta de ventas no puede ser anterior a la fecha desde.' });
+    }
+
+    const defaultIngresoDesde = new Date(ventaDesdeDate);
+    defaultIngresoDesde.setDate(defaultIngresoDesde.getDate() - 15);
+    const ingresoDesdeDate = req.query.ingresoDesde ? parseISODate(req.query.ingresoDesde) : defaultIngresoDesde;
+    const ingresoHastaDate = req.query.ingresoHasta ? parseISODate(req.query.ingresoHasta) : ventaHastaDate;
+    if (ingresoHastaDate < ingresoDesdeDate) {
+      return res.status(400).json({ message: 'La fecha hasta de ingresos no puede ser anterior a la fecha desde.' });
+    }
+
+    const ventaDesde = ventaDesdeDate.toISOString().slice(0, 10);
+    const ventaHasta = ventaHastaDate.toISOString().slice(0, 10);
+    const ingresoDesde = ingresoDesdeDate.toISOString().slice(0, 10);
+    const ingresoHasta = ingresoHastaDate.toISOString().slice(0, 10);
+    const minIngreso = Math.max(1, Number.parseInt(req.query.minIngreso, 10) || 30);
+    const canal = ['todos', 'pedidos', 'salon'].includes(String(req.query.canal || '').toLowerCase())
+      ? String(req.query.canal || 'todos').toLowerCase()
+      : 'todos';
+
+    const [ingresosRows] = await pool.query(
+      `SELECT
+         rango.articulo,
+         COALESCE(NULLIF(rango.detalle, ''), art.Detalle, '') AS detalle,
+         rango.cantidadIngresada,
+         rango.primerIngresoRango,
+         rango.ultimoIngresoRango,
+         hist.primerIngresoHistorico
+       FROM (
+         SELECT
+           Articulo AS articulo,
+           COALESCE(MAX(NULLIF(Detalle, '')), '') AS detalle,
+           SUM(CASE WHEN Cantidad > 0 THEN Cantidad ELSE 0 END) AS cantidadIngresada,
+           DATE_FORMAT(MIN(FechaCompra), '%Y-%m-%d') AS primerIngresoRango,
+           DATE_FORMAT(MAX(FechaCompra), '%Y-%m-%d') AS ultimoIngresoRango
+         FROM compras
+         WHERE DATE(FechaCompra) BETWEEN ? AND ?
+           AND Cantidad > 0
+         GROUP BY Articulo
+         HAVING SUM(CASE WHEN Cantidad > 0 THEN Cantidad ELSE 0 END) >= ?
+       ) rango
+       LEFT JOIN (
+         SELECT
+           Articulo AS articulo,
+           DATE_FORMAT(MIN(FechaCompra), '%Y-%m-%d') AS primerIngresoHistorico
+         FROM compras
+         WHERE Cantidad > 0
+         GROUP BY Articulo
+       ) hist ON hist.articulo = rango.articulo
+       LEFT JOIN articulos art ON art.Articulo = rango.articulo
+       ORDER BY rango.cantidadIngresada DESC, detalle ASC`,
+      [ingresoDesde, ingresoHasta, minIngreso]
+    );
+
+    const ingresoMap = new Map();
+    (ingresosRows || []).forEach((row) => {
+      const articulo = String(row.articulo || '').trim();
+      if (!articulo) return;
+      const primerHistorico = row.primerIngresoHistorico ? String(row.primerIngresoHistorico).slice(0, 10) : '';
+      const tipo = primerHistorico && primerHistorico >= ingresoDesde && primerHistorico <= ingresoHasta ? 'nueva' : 'reposicion';
+      ingresoMap.set(articulo, {
+        articulo,
+        detalle: row.detalle || '',
+        tipo,
+        cantidadIngresada: Number(row.cantidadIngresada) || 0,
+        primerIngresoRango: row.primerIngresoRango ? String(row.primerIngresoRango).slice(0, 10) : '',
+        ultimoIngresoRango: row.ultimoIngresoRango ? String(row.ultimoIngresoRango).slice(0, 10) : '',
+        primerIngresoHistorico: primerHistorico,
+      });
+    });
+
+    const salesQueries = [];
+    if (canal === 'todos' || canal === 'pedidos') {
+      salesQueries.push(
+        pool.query(
+          `SELECT
+             'pedidos' AS canal,
+             pt.Articulo AS articulo,
+             COALESCE(NULLIF(pt.Detalle, ''), art.Detalle, '') AS detalle,
+             SUM(COALESCE(pt.Cantidad, 0)) AS unidades,
+             ROUND(SUM(COALESCE(pt.Cantidad, 0) * COALESCE(pt.PrecioUnitario, pt.PrecioVenta, 0)), 2) AS monto
+           FROM pedidotemp pt
+           INNER JOIN controlpedidos cp ON cp.nropedido = pt.NroPedido
+           LEFT JOIN facturah fh ON fh.NroFactura = cp.nrofactura
+           LEFT JOIN articulos art ON art.Articulo = pt.Articulo
+           WHERE DATE(COALESCE(fh.Fecha, cp.ultactualizacion, cp.fecha)) BETWEEN ? AND ?
+             AND cp.estado <> 2
+             AND cp.total > 1
+             AND cp.ordenWeb IS NOT NULL
+             AND cp.ordenWeb <> 0
+           GROUP BY pt.Articulo, COALESCE(NULLIF(pt.Detalle, ''), art.Detalle, '')`,
+          [ventaDesde, ventaHasta]
+        )
+      );
+    }
+    if (canal === 'todos' || canal === 'salon') {
+      salesQueries.push(
+        pool.query(
+          `SELECT
+             'salon' AS canal,
+             fac.Articulo AS articulo,
+             COALESCE(NULLIF(fac.Detalle, ''), art.Detalle, '') AS detalle,
+             SUM(COALESCE(fac.Cantidad, 0)) AS unidades,
+             ROUND(SUM(COALESCE(fac.Cantidad, 0) * COALESCE(fac.PrecioUnitario, fac.PrecioVenta, 0)), 2) AS monto
+           FROM factura fac
+           INNER JOIN facturah fh ON fh.NroFactura = fac.NroFactura
+           LEFT JOIN controlpedidos cp ON cp.nrofactura = fh.NroFactura
+           LEFT JOIN articulos art ON art.Articulo = fac.Articulo
+           WHERE DATE(fh.Fecha) BETWEEN ? AND ?
+             AND (fh.Estado IS NULL OR fh.Estado <> 2)
+             AND fh.Total > 0
+             AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+           GROUP BY fac.Articulo, COALESCE(NULLIF(fac.Detalle, ''), art.Detalle, '')`,
+          [ventaDesde, ventaHasta]
+        )
+      );
+    }
+
+    const salesResults = await Promise.all(salesQueries);
+    const salesRows = salesResults.flatMap(([rows]) => rows || []);
+    const detailMap = new Map();
+    const emptyTotals = () => ({
+      unidades: 0,
+      monto: 0,
+      pedidosUnidades: 0,
+      pedidosMonto: 0,
+      salonUnidades: 0,
+      salonMonto: 0,
+    });
+    const summaryMap = new Map([
+      ['nueva', { key: 'nueva', label: 'Mercadería nueva', cantidadIngresada: 0, articulos: 0, ...emptyTotals() }],
+      ['reposicion', { key: 'reposicion', label: 'Reposición', cantidadIngresada: 0, articulos: 0, ...emptyTotals() }],
+      ['vieja', { key: 'vieja', label: 'Vieja / sin ingreso reciente', cantidadIngresada: 0, articulos: 0, ...emptyTotals() }],
+    ]);
+
+    ingresoMap.forEach((info) => {
+      const bucket = summaryMap.get(info.tipo);
+      bucket.cantidadIngresada += info.cantidadIngresada;
+      bucket.articulos += 1;
+    });
+
+    salesRows.forEach((row) => {
+      const articulo = String(row.articulo || '').trim();
+      if (!articulo) return;
+      const ingresoInfo = ingresoMap.get(articulo);
+      const tipo = ingresoInfo?.tipo || 'vieja';
+      const key = `${tipo}:${articulo}`;
+      const unidades = Number(row.unidades) || 0;
+      const monto = Number(row.monto) || 0;
+      if (!detailMap.has(key)) {
+        detailMap.set(key, {
+          articulo,
+          detalle: ingresoInfo?.detalle || row.detalle || '',
+          tipo,
+          tipoLabel: summaryMap.get(tipo)?.label || tipo,
+          cantidadIngresada: ingresoInfo?.cantidadIngresada || 0,
+          primerIngresoHistorico: ingresoInfo?.primerIngresoHistorico || '',
+          primerIngresoRango: ingresoInfo?.primerIngresoRango || '',
+          ultimoIngresoRango: ingresoInfo?.ultimoIngresoRango || '',
+          pedidosUnidades: 0,
+          pedidosMonto: 0,
+          salonUnidades: 0,
+          salonMonto: 0,
+          unidades: 0,
+          monto: 0,
+        });
+      }
+      const detail = detailMap.get(key);
+      detail.unidades += unidades;
+      detail.monto += monto;
+      const summary = summaryMap.get(tipo);
+      summary.unidades += unidades;
+      summary.monto += monto;
+      if (row.canal === 'pedidos') {
+        detail.pedidosUnidades += unidades;
+        detail.pedidosMonto += monto;
+        summary.pedidosUnidades += unidades;
+        summary.pedidosMonto += monto;
+      } else {
+        detail.salonUnidades += unidades;
+        detail.salonMonto += monto;
+        summary.salonUnidades += unidades;
+        summary.salonMonto += monto;
+      }
+    });
+
+    const summary = Array.from(summaryMap.values()).map((item) => ({
+      ...item,
+      unidades: Number(item.unidades.toFixed(2)),
+      monto: Number(item.monto.toFixed(2)),
+      pedidosUnidades: Number(item.pedidosUnidades.toFixed(2)),
+      pedidosMonto: Number(item.pedidosMonto.toFixed(2)),
+      salonUnidades: Number(item.salonUnidades.toFixed(2)),
+      salonMonto: Number(item.salonMonto.toFixed(2)),
+      rotacionPct: item.cantidadIngresada > 0 ? Number(((item.unidades / item.cantidadIngresada) * 100).toFixed(1)) : null,
+    }));
+    const totalUnidades = summary.reduce((acc, item) => acc + item.unidades, 0);
+    const totalMonto = summary.reduce((acc, item) => acc + item.monto, 0);
+    summary.forEach((item) => {
+      item.participacionUnidades = totalUnidades > 0 ? Number(((item.unidades / totalUnidades) * 100).toFixed(1)) : 0;
+      item.participacionMonto = totalMonto > 0 ? Number(((item.monto / totalMonto) * 100).toFixed(1)) : 0;
+    });
+
+    const detail = Array.from(detailMap.values())
+      .map((item) => ({
+        ...item,
+        unidades: Number(item.unidades.toFixed(2)),
+        monto: Number(item.monto.toFixed(2)),
+        pedidosUnidades: Number(item.pedidosUnidades.toFixed(2)),
+        pedidosMonto: Number(item.pedidosMonto.toFixed(2)),
+        salonUnidades: Number(item.salonUnidades.toFixed(2)),
+        salonMonto: Number(item.salonMonto.toFixed(2)),
+        rotacionPct:
+          item.cantidadIngresada > 0 ? Number(((item.unidades / item.cantidadIngresada) * 100).toFixed(1)) : null,
+      }))
+      .sort((a, b) => b.monto - a.monto || b.unidades - a.unidades || a.detalle.localeCompare(b.detalle));
+
+    res.json({
+      filters: { ventaDesde, ventaHasta, ingresoDesde, ingresoHasta, minIngreso, canal },
+      totals: {
+        unidades: Number(totalUnidades.toFixed(2)),
+        monto: Number(totalMonto.toFixed(2)),
+        cantidadIngresada: summary.reduce((acc, item) => acc + item.cantidadIngresada, 0),
+        articulosIngresados: ingresosRows.length,
+      },
+      summary,
+      detail,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar comparativo de mercadería', error: error.message });
+  }
+});
+
+app.get(
+  '/api/dashboard/impacto-mercaderia',
+  requireAuth,
+  requirePermission('dashboard-comparativo-impacto-mercaderia'),
+  async (req, res) => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const year = Number.parseInt(req.query.year, 10) || currentYear;
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        return res.status(400).json({ message: 'Año inválido.' });
+      }
+      const objetivoMensual = Math.max(0, Number(req.query.objetivo) || 0);
+
+      const [ingresosRows] = await pool.query(
+        `SELECT
+           MONTH(r.FechaCompra) AS mes,
+           SUM(CASE WHEN r.Cantidad > 0 THEN r.Cantidad ELSE 0 END) AS unidadesIngresadas,
+           SUM(
+             CASE
+               WHEN YEAR(hist.primerIngreso) = ? AND MONTH(hist.primerIngreso) = MONTH(r.FechaCompra)
+               THEN r.Cantidad
+               ELSE 0
+             END
+           ) AS unidadesNuevas,
+           SUM(
+             CASE
+               WHEN NOT (YEAR(hist.primerIngreso) = ? AND MONTH(hist.primerIngreso) = MONTH(r.FechaCompra))
+               THEN r.Cantidad
+               ELSE 0
+             END
+           ) AS unidadesReposicion,
+           COUNT(DISTINCT r.Articulo) AS articulosIngresados,
+           COUNT(DISTINCT CASE
+             WHEN YEAR(hist.primerIngreso) = ? AND MONTH(hist.primerIngreso) = MONTH(r.FechaCompra)
+             THEN r.Articulo
+           END) AS articulosNuevos,
+           COUNT(DISTINCT CASE
+             WHEN NOT (YEAR(hist.primerIngreso) = ? AND MONTH(hist.primerIngreso) = MONTH(r.FechaCompra))
+             THEN r.Articulo
+           END) AS articulosReposicion
+         FROM compras r
+         INNER JOIN (
+           SELECT Articulo, MIN(FechaCompra) AS primerIngreso
+           FROM compras
+           WHERE Cantidad > 0
+           GROUP BY Articulo
+         ) hist ON hist.Articulo = r.Articulo
+         WHERE YEAR(r.FechaCompra) = ?
+           AND r.Cantidad > 0
+         GROUP BY MONTH(r.FechaCompra)
+         ORDER BY mes`,
+        [year, year, year, year, year]
+      );
+
+      const [pedidosRows] = await pool.query(
+        `SELECT
+           MONTH(COALESCE(fh.Fecha, cp.ultactualizacion, cp.fecha)) AS mes,
+           COUNT(DISTINCT cp.nropedido) AS operaciones,
+           SUM(COALESCE(pt.Cantidad, 0)) AS unidades,
+           ROUND(SUM(COALESCE(pt.Cantidad, 0) * COALESCE(pt.PrecioUnitario, pt.PrecioVenta, 0)), 2) AS monto
+         FROM pedidotemp pt
+         INNER JOIN controlpedidos cp ON cp.nropedido = pt.NroPedido
+         LEFT JOIN facturah fh ON fh.NroFactura = cp.nrofactura
+         WHERE YEAR(COALESCE(fh.Fecha, cp.ultactualizacion, cp.fecha)) = ?
+           AND cp.estado <> 2
+           AND cp.total > 1
+           AND cp.ordenWeb IS NOT NULL
+           AND cp.ordenWeb <> 0
+         GROUP BY MONTH(COALESCE(fh.Fecha, cp.ultactualizacion, cp.fecha))
+         ORDER BY mes`,
+        [year]
+      );
+
+      const [salonRows] = await pool.query(
+        `SELECT
+           MONTH(fh.Fecha) AS mes,
+           COUNT(DISTINCT fh.NroFactura) AS operaciones,
+           SUM(COALESCE(fac.Cantidad, 0)) AS unidades,
+           ROUND(SUM(COALESCE(fac.Cantidad, 0) * COALESCE(fac.PrecioUnitario, fac.PrecioVenta, 0)), 2) AS monto
+         FROM factura fac
+         INNER JOIN facturah fh ON fh.NroFactura = fac.NroFactura
+         LEFT JOIN controlpedidos cp ON cp.nrofactura = fh.NroFactura
+         WHERE YEAR(fh.Fecha) = ?
+           AND (fh.Estado IS NULL OR fh.Estado <> 2)
+           AND fh.Total > 0
+           AND (cp.nrofactura IS NULL OR cp.ordenWeb IS NULL OR cp.ordenWeb = 0)
+         GROUP BY MONTH(fh.Fecha)
+         ORDER BY mes`,
+        [year]
+      );
+
+      const byMonth = (rows) =>
+        new Map((rows || []).map((row) => [Number(row.mes) || 0, row]));
+      const ingresosByMonth = byMonth(ingresosRows);
+      const pedidosByMonth = byMonth(pedidosRows);
+      const salonByMonth = byMonth(salonRows);
+
+      const avg = (values) => {
+        const nums = values.filter((value) => Number(value) > 0).map(Number);
+        if (!nums.length) return 0;
+        return nums.reduce((acc, value) => acc + value, 0) / nums.length;
+      };
+      const pctChange = (value, base) => (base > 0 ? Number((((value - base) / base) * 100).toFixed(1)) : null);
+      const round2 = (value) => Number((Number(value) || 0).toFixed(2));
+      const months = [];
+      const analysisMonthLimit = year === currentYear ? new Date().getMonth() + 1 : 12;
+
+      for (let mes = 1; mes <= 12; mes += 1) {
+        const ingreso = ingresosByMonth.get(mes) || {};
+        const pedidos = pedidosByMonth.get(mes) || {};
+        const salon = salonByMonth.get(mes) || {};
+        const pedidosMonto = Number(pedidos.monto) || 0;
+        const salonMonto = Number(salon.monto) || 0;
+        const totalMonto = pedidosMonto + salonMonto;
+        const unidadesIngresadas = Number(ingreso.unidadesIngresadas) || 0;
+        const prev = months.slice(0, mes - 1);
+        const promedioVentasPrevias = avg(prev.map((item) => item.totalMonto));
+        const promedioIngresosPrevios = avg(prev.map((item) => item.unidadesIngresadas));
+        const variacionVentasPct = pctChange(totalMonto, promedioVentasPrevias);
+        const variacionIngresosPct = pctChange(unidadesIngresadas, promedioIngresosPrevios);
+        let influencia = 'sin_datos';
+        let influenciaLabel = 'Sin base';
+        let alineacion = 'sin_base';
+        let alineacionLabel = 'Sin base';
+        if (mes > 1) {
+          if (unidadesIngresadas > 0 && variacionVentasPct != null && variacionVentasPct >= 15) {
+            influencia = 'alta';
+            influenciaLabel = 'Alta';
+          } else if (unidadesIngresadas > 0 && variacionVentasPct != null && variacionVentasPct >= 5) {
+            influencia = 'media';
+            influenciaLabel = 'Media';
+          } else if (unidadesIngresadas > 0 && variacionVentasPct != null && variacionVentasPct >= -5) {
+            influencia = 'baja';
+            influenciaLabel = 'Baja';
+          } else if (unidadesIngresadas > 0) {
+            influencia = 'sin_alza';
+            influenciaLabel = 'Sin alza';
+          } else if (variacionVentasPct != null && variacionVentasPct >= 10) {
+            influencia = 'ventas_sin_ingreso';
+            influenciaLabel = 'Ventas sin ingreso';
+          } else {
+            influencia = 'sin_senal';
+            influenciaLabel = 'Sin señal';
+          }
+          const prevMonth = months[months.length - 1];
+          if (mes <= analysisMonthLimit && prevMonth) {
+            const deltaIngresos = unidadesIngresadas - prevMonth.unidadesIngresadas;
+            const deltaVentas = totalMonto - prevMonth.totalMonto;
+            const hasMovement = deltaIngresos !== 0 || deltaVentas !== 0;
+            if (!hasMovement) {
+              alineacion = 'igual';
+              alineacionLabel = 'Sin cambios';
+            } else if (deltaIngresos === 0 || deltaVentas === 0) {
+              alineacion = 'parcial';
+              alineacionLabel = 'Parcial';
+            } else if (Math.sign(deltaIngresos) === Math.sign(deltaVentas)) {
+              alineacion = 'alineado';
+              alineacionLabel = deltaIngresos > 0 ? 'Suben juntos' : 'Bajan juntos';
+            } else {
+              alineacion = 'opuesto';
+              alineacionLabel = 'Movimiento opuesto';
+            }
+          } else if (mes > analysisMonthLimit) {
+            alineacion = 'futuro';
+            alineacionLabel = 'Sin datos';
+          }
+        }
+
+        months.push({
+          mes,
+          label: MONTH_NAMES_SHORT[mes - 1] || String(mes),
+          unidadesIngresadas: round2(unidadesIngresadas),
+          unidadesNuevas: round2(ingreso.unidadesNuevas),
+          unidadesReposicion: round2(ingreso.unidadesReposicion),
+          articulosIngresados: Number(ingreso.articulosIngresados) || 0,
+          articulosNuevos: Number(ingreso.articulosNuevos) || 0,
+          articulosReposicion: Number(ingreso.articulosReposicion) || 0,
+          pedidosOperaciones: Number(pedidos.operaciones) || 0,
+          pedidosUnidades: round2(pedidos.unidades),
+          pedidosMonto: round2(pedidosMonto),
+          salonOperaciones: Number(salon.operaciones) || 0,
+          salonUnidades: round2(salon.unidades),
+          salonMonto: round2(salonMonto),
+          totalOperaciones: (Number(pedidos.operaciones) || 0) + (Number(salon.operaciones) || 0),
+          totalUnidades: round2((Number(pedidos.unidades) || 0) + (Number(salon.unidades) || 0)),
+          totalMonto: round2(totalMonto),
+          promedioVentasPrevias: round2(promedioVentasPrevias),
+          promedioIngresosPrevios: round2(promedioIngresosPrevios),
+          variacionVentasPct,
+          variacionIngresosPct,
+          influencia,
+          influenciaLabel,
+          alineacion,
+          alineacionLabel,
+        });
+      }
+
+      const pearson = (xValues, yValues) => {
+        const pairs = xValues
+          .map((x, index) => [Number(x) || 0, Number(yValues[index]) || 0])
+          .filter(([x, y]) => x > 0 || y > 0);
+        if (pairs.length < 2) return null;
+        const xAvg = pairs.reduce((acc, [x]) => acc + x, 0) / pairs.length;
+        const yAvg = pairs.reduce((acc, [, y]) => acc + y, 0) / pairs.length;
+        let num = 0;
+        let denX = 0;
+        let denY = 0;
+        pairs.forEach(([x, y]) => {
+          const dx = x - xAvg;
+          const dy = y - yAvg;
+          num += dx * dy;
+          denX += dx * dx;
+          denY += dy * dy;
+        });
+        const den = Math.sqrt(denX * denY);
+        return den > 0 ? Number((num / den).toFixed(3)) : null;
+      };
+      const percentile = (values, p) => {
+        const nums = values.filter((value) => Number(value) > 0).map(Number).sort((a, b) => a - b);
+        if (!nums.length) return 0;
+        const index = (nums.length - 1) * p;
+        const lower = Math.floor(index);
+        const upper = Math.ceil(index);
+        if (lower === upper) return nums[lower];
+        return nums[lower] + (nums[upper] - nums[lower]) * (index - lower);
+      };
+
+      const totals = months.reduce(
+        (acc, item) => {
+          acc.unidadesIngresadas += item.unidadesIngresadas;
+          acc.unidadesNuevas += item.unidadesNuevas;
+          acc.unidadesReposicion += item.unidadesReposicion;
+          acc.totalMonto += item.totalMonto;
+          acc.pedidosMonto += item.pedidosMonto;
+          acc.salonMonto += item.salonMonto;
+          acc.mesesAlta += item.influencia === 'alta' ? 1 : 0;
+          acc.mesesMedia += item.influencia === 'media' ? 1 : 0;
+          acc.mesesAlineados += item.alineacion === 'alineado' ? 1 : 0;
+          acc.mesesComparables +=
+            item.alineacion === 'alineado' || item.alineacion === 'opuesto' || item.alineacion === 'parcial' || item.alineacion === 'igual'
+              ? 1
+              : 0;
+          return acc;
+        },
+        {
+          unidadesIngresadas: 0,
+          unidadesNuevas: 0,
+          unidadesReposicion: 0,
+          totalMonto: 0,
+          pedidosMonto: 0,
+          salonMonto: 0,
+          mesesAlta: 0,
+          mesesMedia: 0,
+          mesesAlineados: 0,
+          mesesComparables: 0,
+        }
+      );
+      Object.keys(totals).forEach((key) => {
+        if (typeof totals[key] === 'number') totals[key] = round2(totals[key]);
+      });
+      totals.correlacionIngresoVentas = pearson(
+        months.map((item) => item.unidadesIngresadas),
+        months.map((item) => item.totalMonto)
+      );
+
+      const estimatorMonths = months.filter(
+        (item) =>
+          item.mes <= analysisMonthLimit &&
+          item.totalMonto > 0 &&
+          item.unidadesIngresadas > 0 &&
+          item.articulosIngresados > 0
+      );
+      const ventaPorUnidadValues = estimatorMonths.map((item) => item.totalMonto / item.unidadesIngresadas);
+      const ventaPorArticuloValues = estimatorMonths.map((item) => item.totalMonto / item.articulosIngresados);
+      const estimatorUnits = estimatorMonths.reduce((acc, item) => acc + item.unidadesIngresadas, 0);
+      const estimatorNewUnits = estimatorMonths.reduce((acc, item) => acc + item.unidadesNuevas, 0);
+      const mixNuevoPct = estimatorUnits > 0 ? estimatorNewUnits / estimatorUnits : 0;
+      const correlation = Number(totals.correlacionIngresoVentas);
+      const confianzaLabel =
+        correlation >= 0.75 && estimatorMonths.length >= 4
+          ? 'Alta'
+          : correlation >= 0.5 && estimatorMonths.length >= 3
+            ? 'Media'
+            : 'Baja';
+      const makeScenario = (key, label, ventaPorUnidad, ventaPorArticulo) => {
+        const unidadesSugeridas = objetivoMensual > 0 && ventaPorUnidad > 0 ? Math.ceil(objetivoMensual / ventaPorUnidad) : 0;
+        const articulosSugeridos =
+          objetivoMensual > 0 && ventaPorArticulo > 0 ? Math.ceil(objetivoMensual / ventaPorArticulo) : 0;
+        const unidadesNuevasSugeridas = unidadesSugeridas > 0 ? Math.round(unidadesSugeridas * mixNuevoPct) : 0;
+        return {
+          key,
+          label,
+          ventaPorUnidad: round2(ventaPorUnidad),
+          ventaPorArticulo: round2(ventaPorArticulo),
+          unidadesSugeridas,
+          articulosSugeridos,
+          unidadesNuevasSugeridas,
+          unidadesReposicionSugeridas: Math.max(0, unidadesSugeridas - unidadesNuevasSugeridas),
+        };
+      };
+      const estimador = {
+        objetivoMensual: round2(objetivoMensual),
+        mesesBase: estimatorMonths.length,
+        confianzaLabel,
+        mixNuevoPct: round2(mixNuevoPct * 100),
+        mixReposicionPct: estimatorUnits > 0 ? round2((1 - mixNuevoPct) * 100) : 0,
+        escenarios: [
+          makeScenario('conservador', 'Conservador', percentile(ventaPorUnidadValues, 0.25), percentile(ventaPorArticuloValues, 0.25)),
+          makeScenario('promedio', 'Promedio', avg(ventaPorUnidadValues), avg(ventaPorArticuloValues)),
+          makeScenario('agresivo', 'Agresivo', percentile(ventaPorUnidadValues, 0.75), percentile(ventaPorArticuloValues, 0.75)),
+        ],
+      };
+
+      const analysisMonths = months.filter((item) => item.mes <= analysisMonthLimit && item.totalMonto > 0);
+      const monthlyImpact = analysisMonths
+        .filter((item) => item.mes > 1 && item.unidadesIngresadas > 0)
+        .map((item) => {
+          const prev = months[item.mes - 2] || {};
+          const ventasAntes = Number(prev.totalMonto) || 0;
+          const ventasDespues = Number(item.totalMonto) || 0;
+          const pedidosAntes = Number(prev.pedidosMonto) || 0;
+          const pedidosDespues = Number(item.pedidosMonto) || 0;
+          const salonAntes = Number(prev.salonMonto) || 0;
+          const salonDespues = Number(item.salonMonto) || 0;
+          const deltaPedidos = pedidosDespues - pedidosAntes;
+          const deltaSalon = salonDespues - salonAntes;
+          const canalMayorImpacto =
+            Math.abs(deltaPedidos) > Math.abs(deltaSalon)
+              ? 'Pedidos'
+              : Math.abs(deltaSalon) > Math.abs(deltaPedidos)
+                ? 'Salón'
+                : 'Parejo';
+          return {
+            mes: item.mes,
+            label: item.label,
+            unidadesIngresadas: item.unidadesIngresadas,
+            articulosIngresados: item.articulosIngresados,
+            ventasAntes: round2(ventasAntes),
+            ventasDespues: round2(ventasDespues),
+            variacionPct: pctChange(ventasDespues, ventasAntes),
+            pedidosVariacionPct: pctChange(pedidosDespues, pedidosAntes),
+            salonVariacionPct: pctChange(salonDespues, salonAntes),
+            canalMayorImpacto,
+            lectura:
+              ventasAntes > 0 && ventasDespues > ventasAntes
+                ? 'Ventas suben contra el mes previo'
+                : ventasAntes > 0 && ventasDespues < ventasAntes
+                  ? 'Ventas bajan contra el mes previo'
+                  : 'Sin cambio comparable',
+          };
+        });
+
+      const groupSource = [...analysisMonths].sort((a, b) => a.unidadesIngresadas - b.unidadesIngresadas);
+      const buildGroup = (key, label, items) => {
+        const count = items.length || 0;
+        const totalVentas = items.reduce((acc, item) => acc + item.totalMonto, 0);
+        const totalIngresos = items.reduce((acc, item) => acc + item.unidadesIngresadas, 0);
+        const totalPedidos = items.reduce((acc, item) => acc + item.pedidosMonto, 0);
+        const totalSalon = items.reduce((acc, item) => acc + item.salonMonto, 0);
+        const totalArticulos = items.reduce((acc, item) => acc + item.articulosIngresados, 0);
+        return {
+          key,
+          label,
+          meses: items.map((item) => item.label),
+          cantidadMeses: count,
+          ingresoPromedio: count ? round2(totalIngresos / count) : 0,
+          articulosPromedio: count ? round2(totalArticulos / count) : 0,
+          ventaPromedio: count ? round2(totalVentas / count) : 0,
+          pedidosPromedio: count ? round2(totalPedidos / count) : 0,
+          salonPromedio: count ? round2(totalSalon / count) : 0,
+        };
+      };
+      const groupSize = Math.max(1, Math.floor(groupSource.length / 3));
+      const lowGroup = groupSource.slice(0, groupSize);
+      const highGroup = groupSource.slice(Math.max(groupSize, groupSource.length - groupSize));
+      const middleGroup = groupSource.slice(groupSize, Math.max(groupSize, groupSource.length - groupSize));
+      const ingresoGroups = [
+        buildGroup('bajo', 'Bajo ingreso', lowGroup),
+        buildGroup('medio', 'Ingreso medio', middleGroup),
+        buildGroup('alto', 'Alto ingreso', highGroup),
+      ];
+      const lowSales = ingresoGroups[0]?.ventaPromedio || 0;
+      const highSales = ingresoGroups[2]?.ventaPromedio || 0;
+      const altoVsBajoPct = pctChange(highSales, lowSales);
+
+      const channelComparable = analysisMonths
+        .filter((item) => item.mes > 1)
+        .map((item) => {
+          const prev = months[item.mes - 2] || {};
+          return {
+            deltaIngresos: item.unidadesIngresadas - (Number(prev.unidadesIngresadas) || 0),
+            deltaPedidos: item.pedidosMonto - (Number(prev.pedidosMonto) || 0),
+            deltaSalon: item.salonMonto - (Number(prev.salonMonto) || 0),
+          };
+        })
+        .filter((item) => item.deltaIngresos !== 0);
+      const countAligned = (key) =>
+        channelComparable.filter((item) => item[key] !== 0 && Math.sign(item.deltaIngresos) === Math.sign(item[key])).length;
+      const pedidosAlineados = countAligned('deltaPedidos');
+      const salonAlineados = countAligned('deltaSalon');
+      const channelCount = channelComparable.length;
+      const channelAnalysis = {
+        mesesComparables: channelCount,
+        pedidosAlineados,
+        salonAlineados,
+        pedidosAlineadosPct: channelCount ? round2((pedidosAlineados / channelCount) * 100) : 0,
+        salonAlineadosPct: channelCount ? round2((salonAlineados / channelCount) * 100) : 0,
+        correlacionPedidos: pearson(
+          analysisMonths.map((item) => item.unidadesIngresadas),
+          analysisMonths.map((item) => item.pedidosMonto)
+        ),
+        correlacionSalon: pearson(
+          analysisMonths.map((item) => item.unidadesIngresadas),
+          analysisMonths.map((item) => item.salonMonto)
+        ),
+      };
+
+      const alineacionPct = totals.mesesComparables > 0 ? (totals.mesesAlineados / totals.mesesComparables) * 100 : 0;
+      let influenceScore = 0;
+      if (correlation >= 0.75) influenceScore += 35;
+      else if (correlation >= 0.5) influenceScore += 24;
+      else if (correlation >= 0.25) influenceScore += 12;
+      influenceScore += Math.min(25, alineacionPct * 0.25);
+      if (altoVsBajoPct != null && altoVsBajoPct > 20) influenceScore += 25;
+      else if (altoVsBajoPct != null && altoVsBajoPct > 5) influenceScore += 15;
+      else if (altoVsBajoPct != null && altoVsBajoPct > -5) influenceScore += 7;
+      influenceScore += Math.min(
+        15,
+        ((channelAnalysis.pedidosAlineadosPct + channelAnalysis.salonAlineadosPct) / 2) * 0.15
+      );
+      influenceScore = Math.round(Math.min(100, influenceScore));
+      const influenceLabel = influenceScore >= 75 ? 'Alta' : influenceScore >= 50 ? 'Media' : 'Baja';
+      const signalAnalysis = {
+        resumen: {
+          influenceScore,
+          influenceLabel,
+          lectura:
+            influenceLabel === 'Alta'
+              ? 'La señal anual es fuerte: ingresos y ventas se mueven mayormente juntos, aunque no prueba causalidad absoluta.'
+              : influenceLabel === 'Media'
+                ? 'La señal anual existe, pero necesita validarse contra otros factores del negocio.'
+                : 'La señal anual es débil o insuficiente para usarla como regla principal de compra.',
+          altoVsBajoPct,
+          alineacionPct: round2(alineacionPct),
+        },
+        monthlyImpact,
+        ingresoGroups,
+        channelAnalysis,
+      };
+
+      res.json({ year, months, totals, estimador, signalAnalysis });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar impacto de mercadería', error: error.message });
+    }
+  }
+);
+
+function resolveImpactoMercaderiaAiReportPath(year) {
+  const safeYear = Number.parseInt(year, 10);
+  if (!Number.isInteger(safeYear) || safeYear < 2000 || safeYear > 2100) {
+    throw new Error('Año inválido.');
+  }
+  return path.join(IMPACTO_MERCADERIA_AI_REPORTS_DIR, `${safeYear}.json`);
+}
+
+function compactImpactoMercaderiaPayload(payload = {}) {
+  return {
+    year: payload.year,
+    totals: payload.totals || {},
+    signalAnalysis: payload.signalAnalysis || {},
+    estimador: payload.estimador || {},
+    months: (payload.months || []).map((row) => ({
+      mes: row.mes,
+      label: row.label,
+      unidadesIngresadas: row.unidadesIngresadas,
+      unidadesNuevas: row.unidadesNuevas,
+      unidadesReposicion: row.unidadesReposicion,
+      articulosIngresados: row.articulosIngresados,
+      articulosNuevos: row.articulosNuevos,
+      articulosReposicion: row.articulosReposicion,
+      pedidosMonto: row.pedidosMonto,
+      salonMonto: row.salonMonto,
+      totalMonto: row.totalMonto,
+      variacionVentasPct: row.variacionVentasPct,
+      variacionIngresosPct: row.variacionIngresosPct,
+      alineacionLabel: row.alineacionLabel,
+    })),
+  };
+}
+
+function buildImpactoMercaderiaAiPrompt(data) {
+  return [
+    'Genera un informe comercial-explicativo en español claro para gerencia sobre Impacto Mercadería.',
+    'El informe debe ayudar a entender el tablero, no sólo resumirlo.',
+    'Pregunta central: ¿Cuando ingresa mercadería al negocio, las ventas responden?',
+    'Objetivo: explicar qué tan influyente parece ser el ingreso de mercadería nueva/reposición sobre las ventas del negocio y qué decisiones se pueden tomar.',
+    'Usa sólo los datos enviados. No inventes datos. Aclara que el análisis mide asociación/señal y no causalidad absoluta.',
+    'Las ventas de este informe están medidas por detalle bruto de artículos, no por facturación final con descuentos.',
+    'Explica en lenguaje simple qué significa cada indicador: correlación, influenceScore, alineación por canal, meses clave, mix nuevo/reposición y riesgos.',
+    'Incluye recomendaciones de inversión basadas en los meses con mejor relación ingreso/ventas, canal más sensible y mix nuevo/reposición.',
+    'Incluye también qué decisiones permite tomar el informe y qué decisiones NO conviene tomar todavía sin análisis adicional.',
+    'Devuelve sólo JSON válido con esta forma:',
+    'Todos los arrays deben ser arrays de strings simples, no objetos.',
+    '{"titulo":"","preguntaQueResponde":"","resumenEjecutivo":"","lecturaCorrelacion":"","lecturaInfluenceScore":"","lecturaAlineacion":"","impactoDetectado":"","mesesClave":[""],"canales":"","mixMercaderia":"","riesgos":[""],"decisionesQuePermite":[""],"decisionesQueNoPermite":[""],"recomendaciones":[""],"proximosAnalisis":[""],"conclusion":""}',
+    `Datos:\n${JSON.stringify(data)}`,
+  ].join('\n');
+}
+
+app.get(
+  '/api/dashboard/impacto-mercaderia/ai-report',
+  requireAuth,
+  requirePermission('dashboard-comparativo-impacto-mercaderia'),
+  async (req, res) => {
+    try {
+      const year = Number.parseInt(req.query.year, 10);
+      const filePath = resolveImpactoMercaderiaAiReportPath(year);
+      try {
+        const content = await fsp.readFile(filePath, 'utf8');
+        return res.json({ exists: true, report: JSON.parse(content) });
+      } catch (error) {
+        if (error.code === 'ENOENT') return res.json({ exists: false, report: null });
+        throw error;
+      }
+    } catch (error) {
+      res.status(500).json({ message: 'Error al cargar informe IA', error: error.message });
+    }
+  }
+);
+
+app.post(
+  '/api/dashboard/impacto-mercaderia/ai-report',
+  requireAuth,
+  requirePermission('dashboard-comparativo-impacto-mercaderia'),
+  async (req, res) => {
+    try {
+      if (!openai) return res.status(400).json({ message: 'OPENAI_API_KEY no configurada' });
+      const year = Number.parseInt(req.body?.year, 10);
+      const force = Boolean(req.body?.force);
+      const filePath = resolveImpactoMercaderiaAiReportPath(year);
+      if (!force) {
+        try {
+          const content = await fsp.readFile(filePath, 'utf8');
+          return res.json({ exists: true, generated: false, report: JSON.parse(content) });
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
+      }
+      const data = compactImpactoMercaderiaPayload(req.body?.payload || {});
+      if (!Number.isInteger(Number(data.year)) || Number(data.year) !== year || !Array.isArray(data.months) || !data.months.length) {
+        return res.status(400).json({ message: 'Datos insuficientes para generar el informe IA.' });
+      }
+      const inputHash = crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
+      const completion = await withRetry(() =>
+        openai.chat.completions.create({
+          model: IMPACTO_MERCADERIA_AI_MODEL,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Eres un analista comercial senior. Generas informes breves, claros y accionables. ' +
+                'Distingues señal/correlacion de causalidad, y no inventas informacion fuera de los datos.',
+            },
+            { role: 'user', content: buildImpactoMercaderiaAiPrompt(data) },
+          ],
+        })
+      );
+      const raw = String(completion.choices?.[0]?.message?.content || '{}').trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (error) {
+        parsed = {
+          titulo: `Impacto Mercadería ${year}`,
+          preguntaQueResponde: '¿Cuando ingresa mercadería al negocio, las ventas responden?',
+          resumenEjecutivo: raw || 'La IA no devolvió un JSON válido.',
+          lecturaCorrelacion: '',
+          lecturaInfluenceScore: '',
+          lecturaAlineacion: '',
+          impactoDetectado: '',
+          mesesClave: [],
+          canales: '',
+          mixMercaderia: '',
+          recomendaciones: [],
+          riesgos: ['No se pudo estructurar la respuesta de IA.'],
+          decisionesQuePermite: [],
+          decisionesQueNoPermite: [],
+          proximosAnalisis: [],
+          conclusion: '',
+        };
+      }
+      const report = {
+        tipo: 'impacto-mercaderia',
+        year,
+        generatedAt: new Date().toISOString(),
+        model: IMPACTO_MERCADERIA_AI_MODEL,
+        modelScope: 'Constante específica del informe Impacto Mercadería; no usa OPENAI_MODEL global.',
+        inputHash,
+        report: parsed,
+      };
+      await fsp.mkdir(IMPACTO_MERCADERIA_AI_REPORTS_DIR, { recursive: true });
+      await fsp.writeFile(filePath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+      res.json({ exists: true, generated: true, report });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al generar informe IA', error: error.message });
+    }
+  }
+);
 
 app.get('/api/pedidos/productividad', requireAuth, requirePermission('dashboard-pedidos-dia'), async (req, res) => {
   try {

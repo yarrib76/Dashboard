@@ -6,6 +6,12 @@ const chartState = {
   mensual: null,
   ventas: null,
   dashboardComparativo: null,
+  dashboardComparativoMercaderiaParticipacion: null,
+  dashboardComparativoMercaderiaCanales: null,
+  dashboardImpactoMercaderia: null,
+  dashboardImpactoMercaderiaCanales: null,
+  dashboardImpactoSignalGroups: null,
+  dashboardImpactoSignalChannels: null,
   fidFunnel: null,
   fidResultados: null,
   fidRazones: null,
@@ -364,6 +370,11 @@ let clientesTransicionModo = 'actuales';
 let clientesTransicionSort = { key: 'cliente', dir: 'asc' };
 let clientesReportesLoadSeq = 0;
 let currentView = '';
+let dcmPayload = null;
+let dcmLoaded = false;
+let dcmMetric = 'unidades';
+let dimPayload = null;
+let dimLoaded = false;
 let apisRows = [];
 let apisEditingId = 0;
 let apisLoaded = false;
@@ -486,6 +497,8 @@ const ecommerceLocalOptions = [
 ];
 const viewDashboard = document.getElementById('view-dashboard');
 const viewDashboardComparativo = document.getElementById('view-dashboard-comparativo');
+const viewDashboardComparativoMercaderia = document.getElementById('view-dashboard-comparativo-mercaderia');
+const viewDashboardImpactoMercaderia = document.getElementById('view-dashboard-comparativo-impacto-mercaderia');
 const viewPanelControl = document.getElementById('view-panel-control');
 const viewEmpleados = document.getElementById('view-empleados');
 const viewClientes = document.getElementById('view-clientes');
@@ -1408,6 +1421,54 @@ const dashboardComparativoEntityWrap = document.getElementById('dashboard-compar
 const dashboardComparativoAllYears = document.getElementById('dashboard-comparativo-all-years');
 const dashboardComparativoRefresh = document.getElementById('dashboard-comparativo-refresh');
 const dashboardComparativoSummary = document.getElementById('dashboard-comparativo-summary');
+const dcmVentaDesde = document.getElementById('dcm-venta-desde');
+const dcmVentaHasta = document.getElementById('dcm-venta-hasta');
+const dcmIngresoDesde = document.getElementById('dcm-ingreso-desde');
+const dcmIngresoHasta = document.getElementById('dcm-ingreso-hasta');
+const dcmMinIngreso = document.getElementById('dcm-min-ingreso');
+const dcmCanal = document.getElementById('dcm-canal');
+const dcmRefresh = document.getElementById('dcm-refresh');
+const dcmDetailOpen = document.getElementById('dcm-detail-open');
+const dcmKpiUnidades = document.getElementById('dcm-kpi-unidades');
+const dcmKpiMonto = document.getElementById('dcm-kpi-monto');
+const dcmKpiIngresoPct = document.getElementById('dcm-kpi-ingreso-pct');
+const dcmKpiIngresadas = document.getElementById('dcm-kpi-ingresadas');
+const dcmSummaryBody = document.getElementById('dcm-summary-body');
+const dcmStatus = document.getElementById('dcm-status');
+const dcmDetailOverlay = document.getElementById('dcm-detail-overlay');
+const dcmDetailClose = document.getElementById('dcm-detail-close');
+const dcmDetailSearch = document.getElementById('dcm-detail-search');
+const dcmDetailTipo = document.getElementById('dcm-detail-tipo');
+const dcmDetailExport = document.getElementById('dcm-detail-export');
+const dcmDetailBody = document.getElementById('dcm-detail-body');
+const dcmDetailStatus = document.getElementById('dcm-detail-status');
+const dimYear = document.getElementById('dim-year');
+const dimRefresh = document.getElementById('dim-refresh');
+const dimAiReportOpen = document.getElementById('dim-ai-report-open');
+const dimAiReportOverlay = document.getElementById('dim-ai-report-overlay');
+const dimAiReportClose = document.getElementById('dim-ai-report-close');
+const dimAiReportTitle = document.getElementById('dim-ai-report-title');
+const dimAiReportStatus = document.getElementById('dim-ai-report-status');
+const dimAiReportGenerate = document.getElementById('dim-ai-report-generate');
+const dimAiReportPdf = document.getElementById('dim-ai-report-pdf');
+const dimAiReportBody = document.getElementById('dim-ai-report-body');
+const dimKpiVentas = document.getElementById('dim-kpi-ventas');
+const dimKpiIngresos = document.getElementById('dim-kpi-ingresos');
+const dimKpiSenal = document.getElementById('dim-kpi-senal');
+const dimKpiCorrelacion = document.getElementById('dim-kpi-correlacion');
+const dimSignalScore = document.getElementById('dim-signal-score');
+const dimSignalScoreLabel = document.getElementById('dim-signal-score-label');
+const dimSignalLift = document.getElementById('dim-signal-lift');
+const dimSignalPedidos = document.getElementById('dim-signal-pedidos');
+const dimSignalSalon = document.getElementById('dim-signal-salon');
+const dimSignalStatus = document.getElementById('dim-signal-status');
+const dimSignalBody = document.getElementById('dim-signal-body');
+const dimObjetivo = document.getElementById('dim-objetivo');
+const dimEstimar = document.getElementById('dim-estimar');
+const dimEstimadorBody = document.getElementById('dim-estimador-body');
+const dimEstimadorStatus = document.getElementById('dim-estimador-status');
+const dimSummaryBody = document.getElementById('dim-summary-body');
+const dimStatus = document.getElementById('dim-status');
 let clientesPage = 1;
 let clientesPageSize = 10;
 let clientesTotalPages = 1;
@@ -13486,6 +13547,1052 @@ async function loadDashboardComparativo() {
   }
 }
 
+function dcmPercent(value) {
+  const num = Number(value) || 0;
+  return `${num.toFixed(1)}%`;
+}
+
+function dcmDateMinusDays(value, days) {
+  const date = value ? new Date(`${value}T00:00:00`) : new Date();
+  if (Number.isNaN(date.getTime())) return '';
+  date.setDate(date.getDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function initDashboardComparativoMercaderiaDates() {
+  if (!dcmVentaDesde || !dcmVentaHasta) return;
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const todayIso = today.toISOString().slice(0, 10);
+  if (!dcmVentaDesde.value) dcmVentaDesde.value = firstDay;
+  if (!dcmVentaHasta.value) dcmVentaHasta.value = todayIso;
+  if (dcmIngresoDesde && !dcmIngresoDesde.value) dcmIngresoDesde.value = dcmDateMinusDays(dcmVentaDesde.value, 15);
+  if (dcmIngresoHasta && !dcmIngresoHasta.value) dcmIngresoHasta.value = dcmVentaHasta.value;
+}
+
+function syncDashboardComparativoMercaderiaIngresoDates() {
+  if (dcmIngresoDesde && dcmVentaDesde?.value) dcmIngresoDesde.value = dcmDateMinusDays(dcmVentaDesde.value, 15);
+  if (dcmIngresoHasta && dcmVentaHasta?.value) dcmIngresoHasta.value = dcmVentaHasta.value;
+}
+
+function renderDashboardComparativoMercaderiaKpis(payload = {}) {
+  const totals = payload.totals || {};
+  const summary = payload.summary || [];
+  const nueva = summary.find((row) => row.key === 'nueva') || {};
+  const reposicion = summary.find((row) => row.key === 'reposicion') || {};
+  const ingresoPct = (Number(nueva.participacionUnidades) || 0) + (Number(reposicion.participacionUnidades) || 0);
+  if (dcmKpiUnidades) dcmKpiUnidades.textContent = Number(totals.unidades || 0).toLocaleString('es-AR');
+  if (dcmKpiMonto) dcmKpiMonto.textContent = formatMoney(totals.monto || 0);
+  if (dcmKpiIngresoPct) dcmKpiIngresoPct.textContent = dcmPercent(ingresoPct);
+  if (dcmKpiIngresadas) dcmKpiIngresadas.textContent = Number(totals.cantidadIngresada || 0).toLocaleString('es-AR');
+}
+
+function renderDashboardComparativoMercaderiaSummary(payload = {}) {
+  if (!dcmSummaryBody) return;
+  const rows = payload.summary || [];
+  dcmSummaryBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeAttr(row.label || '')}</td>
+          <td>${Number(row.unidades || 0).toLocaleString('es-AR')}</td>
+          <td>${formatMoney(row.monto || 0)}</td>
+          <td>${Number(row.pedidosUnidades || 0).toLocaleString('es-AR')} / ${formatMoney(row.pedidosMonto || 0)}</td>
+          <td>${Number(row.salonUnidades || 0).toLocaleString('es-AR')} / ${formatMoney(row.salonMonto || 0)}</td>
+          <td>${dcmMetric === 'monto' ? dcmPercent(row.participacionMonto) : dcmPercent(row.participacionUnidades)}</td>
+          <td>${row.cantidadIngresada ? Number(row.cantidadIngresada).toLocaleString('es-AR') : '-'}</td>
+          <td>${row.rotacionPct == null ? '-' : dcmPercent(row.rotacionPct)}</td>
+        </tr>`
+    )
+    .join('');
+}
+
+function renderDashboardComparativoMercaderiaCharts(payload = {}) {
+  const rows = payload.summary || [];
+  const labels = rows.map((row) => row.label);
+  const colors = ['#6be6a9', '#7bd7ff', '#fbbf24'];
+  const metricKey = dcmMetric === 'monto' ? 'monto' : 'unidades';
+  const participationCanvas = document.getElementById('chart-dcm-participacion');
+  if (participationCanvas && window.Chart) {
+    if (chartState.dashboardComparativoMercaderiaParticipacion) {
+      chartState.dashboardComparativoMercaderiaParticipacion.destroy();
+    }
+    chartState.dashboardComparativoMercaderiaParticipacion = new Chart(participationCanvas, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [
+          {
+            data: rows.map((row) => Number(row[metricKey]) || 0),
+            backgroundColor: colors,
+            borderColor: 'rgba(255,255,255,0.15)',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text') } },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw) || 0;
+                const total = context.dataset.data.reduce((acc, item) => acc + (Number(item) || 0), 0);
+                const pct = total > 0 ? (value / total) * 100 : 0;
+                const formatted = dcmMetric === 'monto' ? formatMoney(value) : value.toLocaleString('es-AR');
+                return `${context.label}: ${formatted} (${pct.toFixed(1)}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const canalesCanvas = document.getElementById('chart-dcm-canales');
+  if (canalesCanvas && window.Chart) {
+    if (chartState.dashboardComparativoMercaderiaCanales) chartState.dashboardComparativoMercaderiaCanales.destroy();
+    const pedidosKey = dcmMetric === 'monto' ? 'pedidosMonto' : 'pedidosUnidades';
+    const salonKey = dcmMetric === 'monto' ? 'salonMonto' : 'salonUnidades';
+    chartState.dashboardComparativoMercaderiaCanales = new Chart(canalesCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Pedidos', data: rows.map((row) => Number(row[pedidosKey]) || 0), backgroundColor: '#7bd7ff' },
+          { label: 'Salón', data: rows.map((row) => Number(row[salonKey]) || 0), backgroundColor: '#a78bfa' },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: getComputedStyle(document.body).getPropertyValue('--text') } },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw) || 0;
+                return `${context.dataset.label}: ${dcmMetric === 'monto' ? formatMoney(value) : value.toLocaleString('es-AR')}`;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback(value) {
+                return dcmMetric === 'monto' ? formatMoney(value) : value;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+  if (dcmStatus && payload.filters) {
+    const { ventaDesde, ventaHasta, ingresoDesde, ingresoHasta, minIngreso } = payload.filters;
+    const metricLabel = dcmMetric === 'monto' ? 'Importe' : 'Unidades';
+    dcmStatus.textContent = `${metricLabel} | Ventas ${ventaDesde} a ${ventaHasta} | Ingresos ${ingresoDesde} a ${ingresoHasta} | Min. ${minIngreso}`;
+    dcmStatus.className = 'status';
+  }
+}
+
+function getDashboardComparativoMercaderiaDetailRows() {
+  const term = String(dcmDetailSearch?.value || '').trim().toLowerCase();
+  const tipo = String(dcmDetailTipo?.value || 'todos');
+  return (dcmPayload?.detail || []).filter((row) => {
+    if (tipo !== 'todos' && row.tipo !== tipo) return false;
+    if (!term) return true;
+    return `${row.articulo || ''} ${row.detalle || ''} ${row.tipoLabel || ''}`.toLowerCase().includes(term);
+  });
+}
+
+function renderDashboardComparativoMercaderiaDetail() {
+  if (!dcmDetailBody) return;
+  const rows = getDashboardComparativoMercaderiaDetailRows();
+  dcmDetailBody.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeAttr(row.tipoLabel || '')}</td>
+          <td>${escapeAttr(row.articulo || '')}</td>
+          <td>${escapeAttr(row.detalle || '')}</td>
+          <td>${row.cantidadIngresada ? Number(row.cantidadIngresada).toLocaleString('es-AR') : '-'}</td>
+          <td>${Number(row.unidades || 0).toLocaleString('es-AR')}</td>
+          <td>${Number(row.pedidosUnidades || 0).toLocaleString('es-AR')} / ${formatMoney(row.pedidosMonto || 0)}</td>
+          <td>${Number(row.salonUnidades || 0).toLocaleString('es-AR')} / ${formatMoney(row.salonMonto || 0)}</td>
+          <td>${formatMoney(row.monto || 0)}</td>
+          <td>${escapeAttr(row.primerIngresoHistorico || '-')}</td>
+          <td>${escapeAttr([row.primerIngresoRango, row.ultimoIngresoRango].filter(Boolean).join(' a ') || '-')}</td>
+          <td>${row.rotacionPct == null ? '-' : dcmPercent(row.rotacionPct)}</td>
+        </tr>`
+    )
+    .join('');
+  if (dcmDetailStatus) dcmDetailStatus.textContent = rows.length ? `${rows.length} artículo(s)` : 'Sin resultados.';
+}
+
+function renderDashboardComparativoMercaderia(payload = {}) {
+  dcmPayload = payload;
+  renderDashboardComparativoMercaderiaKpis(payload);
+  renderDashboardComparativoMercaderiaSummary(payload);
+  renderDashboardComparativoMercaderiaCharts(payload);
+  renderDashboardComparativoMercaderiaDetail();
+}
+
+async function exportDashboardComparativoMercaderiaDetail() {
+  const rows = getDashboardComparativoMercaderiaDetailRows();
+  if (!rows.length) {
+    setStatusMessage(dcmDetailStatus, 'No hay detalle para exportar.', 'error');
+    return;
+  }
+  if (!window.XLSX) await loadXlsxLibrary();
+  if (!window.XLSX) {
+    setStatusMessage(dcmDetailStatus, 'XLSX no disponible.', 'error');
+    return;
+  }
+  const headers = [
+    'Tipo',
+    'Articulo',
+    'Detalle',
+    'Ingresadas',
+    'Vendidas',
+    'Pedidos unidades',
+    'Pedidos importe',
+    'Salon unidades',
+    'Salon importe',
+    'Importe',
+    'Primer ingreso historico',
+    'Primer ingreso rango',
+    'Ultimo ingreso rango',
+    'Rotacion %',
+  ];
+  const data = rows.map((row) => [
+    row.tipoLabel || '',
+    row.articulo || '',
+    row.detalle || '',
+    row.cantidadIngresada || 0,
+    row.unidades || 0,
+    row.pedidosUnidades || 0,
+    row.pedidosMonto || 0,
+    row.salonUnidades || 0,
+    row.salonMonto || 0,
+    row.monto || 0,
+    row.primerIngresoHistorico || '',
+    row.primerIngresoRango || '',
+    row.ultimoIngresoRango || '',
+    row.rotacionPct == null ? '' : row.rotacionPct,
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Comparativo mercaderia');
+  XLSX.writeFile(workbook, 'comparativo_mercaderia.xlsx');
+  setStatusMessage(dcmDetailStatus, `Exportado ${rows.length} artículo(s).`, 'ok');
+}
+
+async function loadDashboardComparativoMercaderia() {
+  if (!dcmVentaDesde || !dcmVentaHasta) return;
+  initDashboardComparativoMercaderiaDates();
+  try {
+    setStatusMessage(dcmStatus, 'Cargando...');
+    const params = new URLSearchParams({
+      ventaDesde: dcmVentaDesde.value,
+      ventaHasta: dcmVentaHasta.value,
+      ingresoDesde: dcmIngresoDesde?.value || '',
+      ingresoHasta: dcmIngresoHasta?.value || '',
+      minIngreso: String(Math.max(1, Number(dcmMinIngreso?.value) || 30)),
+      canal: dcmCanal?.value || 'todos',
+    });
+    const payload = await fetchJSON(`/api/dashboard/comparativo-mercaderia?${params.toString()}`);
+    dcmLoaded = true;
+    renderDashboardComparativoMercaderia(payload);
+  } catch (error) {
+    setStatusMessage(dcmStatus, error.message || 'Error al cargar comparativo de mercadería.', 'error');
+  }
+}
+
+function initDashboardComparativoMercaderia() {
+  if (!dcmVentaDesde || !dcmVentaHasta) return;
+  initDashboardComparativoMercaderiaDates();
+  dcmVentaDesde.addEventListener('change', syncDashboardComparativoMercaderiaIngresoDates);
+  dcmVentaHasta.addEventListener('change', syncDashboardComparativoMercaderiaIngresoDates);
+  if (dcmRefresh) dcmRefresh.addEventListener('click', loadDashboardComparativoMercaderia);
+  document.querySelectorAll('[data-dcm-metric]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      dcmMetric = btn.dataset.dcmMetric || 'unidades';
+      document.querySelectorAll('[data-dcm-metric]').forEach((item) => item.classList.remove('active'));
+      btn.classList.add('active');
+      if (dcmPayload) renderDashboardComparativoMercaderia(dcmPayload);
+    });
+  });
+  if (dcmDetailOpen) {
+    dcmDetailOpen.addEventListener('click', () => {
+      renderDashboardComparativoMercaderiaDetail();
+      dcmDetailOverlay?.classList.add('open');
+    });
+  }
+  if (dcmDetailClose) dcmDetailClose.addEventListener('click', () => dcmDetailOverlay?.classList.remove('open'));
+  if (dcmDetailOverlay) {
+    dcmDetailOverlay.addEventListener('click', (event) => {
+      if (event.target === dcmDetailOverlay) dcmDetailOverlay.classList.remove('open');
+    });
+  }
+  if (dcmDetailSearch) dcmDetailSearch.addEventListener('input', renderDashboardComparativoMercaderiaDetail);
+  if (dcmDetailTipo) dcmDetailTipo.addEventListener('change', renderDashboardComparativoMercaderiaDetail);
+  if (dcmDetailExport) dcmDetailExport.addEventListener('click', exportDashboardComparativoMercaderiaDetail);
+}
+
+function dimFormatVariation(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '-';
+  const num = Number(value);
+  return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
+}
+
+function dimInfluenceBadge(row = {}) {
+  const cls = `dim-badge dim-badge-${escapeAttr(row.alineacion || 'sin_base')}`;
+  return `<span class="${cls}">${escapeAttr(row.alineacionLabel || '-')}</span>`;
+}
+
+function renderDashboardImpactoMercaderiaKpis(payload = {}) {
+  const totals = payload.totals || {};
+  const mesesAlineados = Number(totals.mesesAlineados) || 0;
+  const mesesComparables = Number(totals.mesesComparables) || 0;
+  if (dimKpiVentas) dimKpiVentas.textContent = formatMoney(totals.totalMonto || 0);
+  if (dimKpiIngresos) dimKpiIngresos.textContent = Number(totals.unidadesIngresadas || 0).toLocaleString('es-AR');
+  if (dimKpiSenal) dimKpiSenal.textContent = mesesComparables ? `${mesesAlineados}/${mesesComparables}` : '0';
+  if (dimKpiCorrelacion) {
+    dimKpiCorrelacion.textContent =
+      totals.correlacionIngresoVentas == null ? '-' : Number(totals.correlacionIngresoVentas).toFixed(2);
+  }
+}
+
+function renderDashboardImpactoMercaderiaCharts(payload = {}) {
+  const rows = payload.months || [];
+  const labels = rows.map((row) => row.label);
+  const textColor = getComputedStyle(document.body).getPropertyValue('--text');
+  const impactCanvas = document.getElementById('chart-dim-impacto');
+  if (impactCanvas && window.Chart) {
+    if (chartState.dashboardImpactoMercaderia) chartState.dashboardImpactoMercaderia.destroy();
+    chartState.dashboardImpactoMercaderia = new Chart(impactCanvas, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Ingreso nuevo',
+            data: rows.map((row) => Number(row.unidadesNuevas) || 0),
+            backgroundColor: '#6be6a9',
+            stack: 'ingresos',
+            yAxisID: 'yIngresos',
+          },
+          {
+            type: 'bar',
+            label: 'Reposición',
+            data: rows.map((row) => Number(row.unidadesReposicion) || 0),
+            backgroundColor: '#7bd7ff',
+            stack: 'ingresos',
+            yAxisID: 'yIngresos',
+          },
+          {
+            type: 'line',
+            label: 'Ventas total',
+            data: rows.map((row) => Number(row.totalMonto) || 0),
+            borderColor: '#fbbf24',
+            backgroundColor: '#fbbf24',
+            tension: 0.25,
+            pointRadius: 4,
+            yAxisID: 'yVentas',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor } },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw) || 0;
+                return context.dataset.yAxisID === 'yVentas'
+                  ? `${context.dataset.label}: ${formatMoney(value)}`
+                  : `${context.dataset.label}: ${value.toLocaleString('es-AR')} u.`;
+              },
+              afterBody(items) {
+                const row = rows[items?.[0]?.dataIndex || 0];
+                return row ? [`Lectura: ${row.alineacionLabel}`, `Var. ventas: ${dimFormatVariation(row.variacionVentasPct)}`] : [];
+              },
+            },
+          },
+        },
+        scales: {
+          x: { stacked: true },
+          yIngresos: {
+            type: 'linear',
+            position: 'left',
+            stacked: true,
+            beginAtZero: true,
+            title: { display: true, text: 'Unidades ingresadas' },
+          },
+          yVentas: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Ventas' },
+            ticks: {
+              callback(value) {
+                return formatMoney(value);
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const canalesCanvas = document.getElementById('chart-dim-canales');
+  if (canalesCanvas && window.Chart) {
+    if (chartState.dashboardImpactoMercaderiaCanales) chartState.dashboardImpactoMercaderiaCanales.destroy();
+    chartState.dashboardImpactoMercaderiaCanales = new Chart(canalesCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Pedidos',
+            data: rows.map((row) => Number(row.pedidosMonto) || 0),
+            borderColor: '#7bd7ff',
+            backgroundColor: '#7bd7ff',
+            tension: 0.25,
+          },
+          {
+            label: 'Salón',
+            data: rows.map((row) => Number(row.salonMonto) || 0),
+            borderColor: '#a78bfa',
+            backgroundColor: '#a78bfa',
+            tension: 0.25,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor } },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                return `${context.dataset.label}: ${formatMoney(Number(context.raw) || 0)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback(value) {
+                return formatMoney(value);
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+}
+
+function renderDashboardImpactoMercaderiaTable(payload = {}) {
+  if (!dimSummaryBody) return;
+  dimSummaryBody.innerHTML = (payload.months || [])
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeAttr(row.label || '')}</td>
+          <td>${Number(row.unidadesNuevas || 0).toLocaleString('es-AR')} / ${Number(row.articulosNuevos || 0)} art.</td>
+          <td>${Number(row.unidadesReposicion || 0).toLocaleString('es-AR')} / ${Number(row.articulosReposicion || 0)} art.</td>
+          <td>${formatMoney(row.pedidosMonto || 0)}<br><small>${Number(row.pedidosOperaciones || 0)} pedidos</small></td>
+          <td>${formatMoney(row.salonMonto || 0)}<br><small>${Number(row.salonOperaciones || 0)} ventas</small></td>
+          <td>${formatMoney(row.totalMonto || 0)}</td>
+          <td>${dimFormatVariation(row.variacionVentasPct)}</td>
+          <td>${dimInfluenceBadge(row)}</td>
+        </tr>`
+    )
+    .join('');
+}
+
+function renderDashboardImpactoMercaderiaSignal(payload = {}) {
+  const analysis = payload.signalAnalysis || {};
+  const resumen = analysis.resumen || {};
+  const channel = analysis.channelAnalysis || {};
+  const groups = analysis.ingresoGroups || [];
+  const monthlyImpact = analysis.monthlyImpact || [];
+  if (dimSignalScore) dimSignalScore.textContent = `${Number(resumen.influenceScore || 0).toLocaleString('es-AR')}/100`;
+  if (dimSignalScore) {
+    const help =
+      'Resume qué tan fuerte parece la relación entre ingreso de mercadería y ventas. Más cerca de 100 significa que el ingreso acompaña mejor el movimiento de ventas.';
+    dimSignalScore.dataset.tooltip = help;
+    dimSignalScore.classList.add('dim-help');
+    dimSignalScore.tabIndex = 0;
+    const card = dimSignalScore.closest('.dim-signal-card');
+    if (card) {
+      card.dataset.tooltip = help;
+      card.tabIndex = 0;
+    }
+  }
+  if (dimSignalScoreLabel) dimSignalScoreLabel.textContent = resumen.influenceLabel ? `Señal ${resumen.influenceLabel}` : 'Sin datos';
+  if (dimSignalLift) dimSignalLift.textContent = resumen.altoVsBajoPct == null ? '-' : dimFormatVariation(resumen.altoVsBajoPct);
+  if (dimSignalLift) {
+    const help =
+      'Compara meses con mucho ingreso de mercadería contra meses con poco ingreso. Si es positivo, en meses con más ingreso se vendió más en promedio.';
+    dimSignalLift.dataset.tooltip = help;
+    dimSignalLift.classList.add('dim-help');
+    dimSignalLift.tabIndex = 0;
+    const card = dimSignalLift.closest('.dim-signal-card');
+    if (card) {
+      card.dataset.tooltip = help;
+      card.tabIndex = 0;
+    }
+  }
+  if (dimSignalPedidos) {
+    dimSignalPedidos.textContent = channel.mesesComparables
+      ? `${Number(channel.pedidosAlineados || 0)}/${Number(channel.mesesComparables || 0)}`
+      : '-';
+    const help =
+      'Indica en cuántos meses los pedidos se movieron en la misma dirección que el ingreso de mercadería. Ejemplo: sube ingreso y suben pedidos.';
+    dimSignalPedidos.dataset.tooltip = help;
+    dimSignalPedidos.classList.add('dim-help');
+    dimSignalPedidos.tabIndex = 0;
+    const card = dimSignalPedidos.closest('.dim-signal-card');
+    if (card) {
+      card.dataset.tooltip = help;
+      card.tabIndex = 0;
+    }
+  }
+  if (dimSignalSalon) {
+    dimSignalSalon.textContent = channel.mesesComparables
+      ? `${Number(channel.salonAlineados || 0)}/${Number(channel.mesesComparables || 0)}`
+      : '-';
+    const help =
+      'Indica en cuántos meses las ventas de salón se movieron en la misma dirección que el ingreso de mercadería. Sirve para ver si el salón reacciona al ingreso.';
+    dimSignalSalon.dataset.tooltip = help;
+    dimSignalSalon.classList.add('dim-help');
+    dimSignalSalon.tabIndex = 0;
+    const card = dimSignalSalon.closest('.dim-signal-card');
+    if (card) {
+      card.dataset.tooltip = help;
+      card.tabIndex = 0;
+    }
+  }
+  if (dimSignalStatus) {
+    dimSignalStatus.textContent =
+      resumen.lectura ||
+      'Este análisis cruza ingresos de mercadería, ventas mensuales y reacción por canal. Muestra asociación, no causalidad absoluta.';
+    dimSignalStatus.className = 'status dim-signal-status';
+  }
+
+  const textColor = getComputedStyle(document.body).getPropertyValue('--text');
+  const groupsCanvas = document.getElementById('chart-dim-signal-groups');
+  if (groupsCanvas && window.Chart) {
+    if (chartState.dashboardImpactoSignalGroups) chartState.dashboardImpactoSignalGroups.destroy();
+    chartState.dashboardImpactoSignalGroups = new Chart(groupsCanvas, {
+      type: 'bar',
+      data: {
+        labels: groups.map((item) => item.label),
+        datasets: [
+          {
+            label: 'Unidades ingresadas promedio',
+            data: groups.map((item) => Number(item.ingresoPromedio) || 0),
+            backgroundColor: '#7bd7ff',
+            yAxisID: 'yIngresos',
+          },
+          {
+            label: 'Ventas promedio',
+            data: groups.map((item) => Number(item.ventaPromedio) || 0),
+            backgroundColor: '#fbbf24',
+            yAxisID: 'yVentas',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: textColor } },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw) || 0;
+                return context.dataset.yAxisID === 'yVentas'
+                  ? `${context.dataset.label}: ${formatMoney(value)}`
+                  : `${context.dataset.label}: ${value.toLocaleString('es-AR')} u.`;
+              },
+              afterBody(items) {
+                const row = groups[items?.[0]?.dataIndex || 0];
+                return row ? [`Meses: ${(row.meses || []).join(', ') || '-'}`, `Variedad prom.: ${Number(row.articulosPromedio || 0).toLocaleString('es-AR')} art.`] : [];
+              },
+            },
+          },
+        },
+        scales: {
+          yIngresos: { beginAtZero: true, position: 'left', title: { display: true, text: 'Unidades' } },
+          yVentas: {
+            beginAtZero: true,
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'Ventas' },
+            ticks: {
+              callback(value) {
+                return formatMoney(value);
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  const channelsCanvas = document.getElementById('chart-dim-signal-channels');
+  if (channelsCanvas && window.Chart) {
+    if (chartState.dashboardImpactoSignalChannels) chartState.dashboardImpactoSignalChannels.destroy();
+    chartState.dashboardImpactoSignalChannels = new Chart(channelsCanvas, {
+      type: 'bar',
+      data: {
+        labels: ['Pedidos', 'Salón'],
+        datasets: [
+          {
+            label: 'Meses alineados',
+            data: [Number(channel.pedidosAlineadosPct) || 0, Number(channel.salonAlineadosPct) || 0],
+            backgroundColor: ['#7bd7ff', '#a78bfa'],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                return `${context.label}: ${(Number(context.raw) || 0).toFixed(1)}% de meses alineados`;
+              },
+              afterBody() {
+                return [
+                  `Corr. pedidos: ${channel.correlacionPedidos == null ? '-' : Number(channel.correlacionPedidos).toFixed(2)}`,
+                  `Corr. salón: ${channel.correlacionSalon == null ? '-' : Number(channel.correlacionSalon).toFixed(2)}`,
+                ];
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: {
+              callback(value) {
+                return `${value}%`;
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  if (dimSignalBody) {
+    dimSignalBody.innerHTML = monthlyImpact.length
+      ? monthlyImpact
+          .map(
+            (row) => `
+              <tr>
+                <td>${escapeAttr(row.label || '')}</td>
+                <td>${Number(row.unidadesIngresadas || 0).toLocaleString('es-AR')} u.<br><small>${Number(row.articulosIngresados || 0).toLocaleString('es-AR')} art.</small></td>
+                <td>${formatMoney(row.ventasAntes || 0)}</td>
+                <td>${formatMoney(row.ventasDespues || 0)}</td>
+                <td>${dimFormatVariation(row.variacionPct)}</td>
+                <td>${escapeAttr(row.canalMayorImpacto || '-')}</td>
+                <td>${escapeAttr(row.lectura || '-')}</td>
+              </tr>`
+          )
+          .join('')
+      : '<tr><td colspan="7">No hay meses con base suficiente para comparar contra el mes anterior.</td></tr>';
+  }
+}
+
+function dimEstimatorTooltip(content, help) {
+  const safeContent = escapeAttr(content);
+  const safeHelp = escapeAttr(help);
+  return `<span class="dim-help" tabindex="0" aria-label="${safeHelp}" data-tooltip="${safeHelp}">${safeContent}</span>`;
+}
+
+function dimEstimatorScenarioHelp(key) {
+  const helps = {
+    conservador:
+      'Escenario prudente: usa meses donde la mercadería rindió menos ventas por unidad/artículo. Por eso sugiere comprar más para llegar al objetivo.',
+    promedio:
+      'Escenario medio: usa el rendimiento promedio histórico entre mercadería ingresada y ventas mensuales.',
+    agresivo:
+      'Escenario optimista: usa meses donde la mercadería rindió más ventas por unidad/artículo. Por eso sugiere comprar menos para llegar al objetivo.',
+  };
+  return helps[key] || 'Escenario calculado con la relación histórica entre ingresos de mercadería y ventas.';
+}
+
+let dimTooltipEl = null;
+
+function hideDimTooltip() {
+  if (dimTooltipEl) dimTooltipEl.remove();
+  dimTooltipEl = null;
+}
+
+function showDimTooltip(target) {
+  const text = target?.dataset?.tooltip || '';
+  if (!text) return;
+  hideDimTooltip();
+  dimTooltipEl = document.createElement('div');
+  dimTooltipEl.className = 'dim-floating-tooltip';
+  dimTooltipEl.textContent = text;
+  document.body.appendChild(dimTooltipEl);
+  const targetRect = target.getBoundingClientRect();
+  const tooltipRect = dimTooltipEl.getBoundingClientRect();
+  const gap = 8;
+  const left = Math.min(
+    Math.max(gap, targetRect.left),
+    Math.max(gap, window.innerWidth - tooltipRect.width - gap)
+  );
+  let top = targetRect.bottom + gap;
+  if (top + tooltipRect.height > window.innerHeight - gap) {
+    top = Math.max(gap, targetRect.top - tooltipRect.height - gap);
+  }
+  dimTooltipEl.style.left = `${left}px`;
+  dimTooltipEl.style.top = `${top}px`;
+}
+
+function initDimTooltips() {
+  if (!viewDashboardImpactoMercaderia) return;
+  viewDashboardImpactoMercaderia.addEventListener('mouseover', (event) => {
+    const target = event.target.closest('.dim-help, .dim-signal-card[data-tooltip]');
+    if (target) showDimTooltip(target);
+  });
+  viewDashboardImpactoMercaderia.addEventListener('mouseout', (event) => {
+    if (event.target.closest('.dim-help, .dim-signal-card[data-tooltip]')) hideDimTooltip();
+  });
+  viewDashboardImpactoMercaderia.addEventListener('focusin', (event) => {
+    const target = event.target.closest('.dim-help, .dim-signal-card[data-tooltip]');
+    if (target) showDimTooltip(target);
+  });
+  viewDashboardImpactoMercaderia.addEventListener('focusout', (event) => {
+    if (event.target.closest('.dim-help, .dim-signal-card[data-tooltip]')) hideDimTooltip();
+  });
+  window.addEventListener('scroll', hideDimTooltip, true);
+  window.addEventListener('resize', hideDimTooltip);
+}
+
+function renderDashboardImpactoMercaderiaEstimator(payload = {}) {
+  if (!dimEstimadorBody) return;
+  const estimador = payload.estimador || {};
+  const objetivo = Number(estimador.objetivoMensual) || 0;
+  const escenarios = estimador.escenarios || [];
+  if (!objetivo) {
+    dimEstimadorBody.innerHTML = `
+      <tr>
+        <td colspan="6">Ingresá un objetivo mensual para estimar la compra necesaria.</td>
+      </tr>`;
+  } else if (!escenarios.length || !Number(estimador.mesesBase)) {
+    dimEstimadorBody.innerHTML = `
+      <tr>
+        <td colspan="6">No hay meses suficientes con ingresos y ventas para estimar.</td>
+      </tr>`;
+  } else {
+    dimEstimadorBody.innerHTML = escenarios
+      .map(
+        (item) => `
+          <tr>
+            <td>${dimEstimatorTooltip(item.label || '', dimEstimatorScenarioHelp(item.key))}</td>
+            <td>${dimEstimatorTooltip(
+              `${Number(item.unidadesSugeridas || 0).toLocaleString('es-AR')} u.`,
+              'Cantidad total de unidades sugeridas para comprar/ingresar si querés alcanzar el objetivo mensual con este escenario.'
+            )}</td>
+            <td>${dimEstimatorTooltip(
+              `${Number(item.articulosSugeridos || 0).toLocaleString('es-AR')} art.`,
+              'Variedad sugerida: cantidad aproximada de artículos distintos a ingresar para sostener el objetivo de ventas.'
+            )}</td>
+            <td>${dimEstimatorTooltip(
+              `${Number(item.unidadesNuevasSugeridas || 0).toLocaleString('es-AR')} u.`,
+              'Parte de las unidades sugeridas que convendría orientar a mercadería nueva, según el mix histórico del año.'
+            )}</td>
+            <td>${dimEstimatorTooltip(
+              `${Number(item.unidadesReposicionSugeridas || 0).toLocaleString('es-AR')} u.`,
+              'Parte de las unidades sugeridas que convendría orientar a reposición, según el mix histórico del año.'
+            )}</td>
+            <td>
+              ${dimEstimatorTooltip(
+                `${formatMoney(item.ventaPorUnidad || 0)} / unidad ingresada`,
+                'Base usada: ventas históricas estimadas por cada unidad ingresada. El objetivo se divide por este valor para sugerir unidades.'
+              )}<br>
+              <small>${dimEstimatorTooltip(
+                `${formatMoney(item.ventaPorArticulo || 0)} / artículo`,
+                'Base usada: ventas históricas estimadas por cada artículo distinto ingresado. El objetivo se divide por este valor para sugerir variedad.'
+              )}</small>
+            </td>
+          </tr>`
+      )
+      .join('');
+  }
+  if (dimEstimadorStatus) {
+    const mesesBase = Number(estimador.mesesBase) || 0;
+    const mixNuevo = Number(estimador.mixNuevoPct) || 0;
+    const mixReposicion = Number(estimador.mixReposicionPct) || 0;
+    dimEstimadorStatus.textContent = objetivo && mesesBase
+      ? `Objetivo: ${formatMoney(objetivo)}. Base: ${mesesBase} meses con ingresos y ventas. Confianza: ${
+          estimador.confianzaLabel || 'Baja'
+        }. Mix histórico: ${mixNuevo.toFixed(1)}% nuevo / ${mixReposicion.toFixed(1)}% reposición.`
+      : objetivo
+        ? 'No hay base histórica suficiente para estimar unidades y variedad.'
+      : 'El estimador usa ventas por unidad ingresada y ventas por variedad ingresada de los meses comparables.';
+    dimEstimadorStatus.className = 'status';
+  }
+}
+
+let dimAiReportCurrent = null;
+
+function formatDimAiReportItem(item) {
+  if (item == null) return '-';
+  if (typeof item === 'string') return item;
+  if (typeof item !== 'object') return String(item);
+  const label = item.label || item.mesLabel || item.mes || item.month || '';
+  const title = item.titulo || item.title || item.nombre || '';
+  const reason = item.razon || item.reason || item.detalle || item.descripcion || item.description || item.texto || '';
+  const parts = [];
+  if (label || title) parts.push([label, title].filter(Boolean).join(' - '));
+  if (reason) parts.push(reason);
+  Object.entries(item).forEach(([key, value]) => {
+    if (
+      ['label', 'mesLabel', 'mes', 'month', 'titulo', 'title', 'nombre', 'razon', 'reason', 'detalle', 'descripcion', 'description', 'texto'].includes(
+        key
+      )
+    ) {
+      return;
+    }
+    if (value == null || value === '') return;
+    if (typeof value === 'object') return;
+    parts.push(`${key}: ${value}`);
+  });
+  return parts.join('. ') || JSON.stringify(item);
+}
+
+function formatDimAiReportListText(items) {
+  if (!Array.isArray(items)) return formatDimAiReportItem(items);
+  return items.length ? items.map((item) => `• ${formatDimAiReportItem(item)}`).join('\n') : '-';
+}
+
+function renderDimAiReport(reportEnvelope) {
+  dimAiReportCurrent = reportEnvelope || null;
+  const report = reportEnvelope?.report || {};
+  if (dimAiReportTitle) dimAiReportTitle.textContent = report.titulo || `Informe IA - ${reportEnvelope?.year || dimYear?.value || ''}`;
+  if (!dimAiReportBody) return;
+  if (!reportEnvelope) {
+    dimAiReportBody.innerHTML = '<p class="status">No hay informe generado para este año.</p>';
+    return;
+  }
+  const list = (items) =>
+    Array.isArray(items) && items.length
+      ? `<ul>${items.map((item) => `<li>${escapeAttr(formatDimAiReportItem(item))}</li>`).join('')}</ul>`
+      : '<p>-</p>';
+  const section = (title, value, always = false) =>
+    always || value
+      ? `
+        <section>
+          <h4>${escapeAttr(title)}</h4>
+          <p>${escapeAttr(value || '-')}</p>
+        </section>`
+      : '';
+  const listSection = (title, items) =>
+    Array.isArray(items) && items.length
+      ? `
+        <section>
+          <h4>${escapeAttr(title)}</h4>
+          ${list(items)}
+        </section>`
+      : '';
+  dimAiReportBody.innerHTML = `
+    ${section('Pregunta que responde', report.preguntaQueResponde || '¿Cuando ingresa mercadería al negocio, las ventas responden?', true)}
+    ${section('Resumen ejecutivo', report.resumenEjecutivo, true)}
+    ${section('Qué significa la correlación', report.lecturaCorrelacion)}
+    ${section('Qué significa el Influence Score', report.lecturaInfluenceScore)}
+    ${section('Qué significa la alineación', report.lecturaAlineacion)}
+    ${section('Impacto detectado', report.impactoDetectado)}
+    ${listSection('Meses clave', report.mesesClave)}
+    ${section('Canales', report.canales)}
+    ${section('Mix nuevo / reposición', report.mixMercaderia)}
+    ${listSection('Riesgos y cautelas', report.riesgos)}
+    ${listSection('Decisiones que permite tomar', report.decisionesQuePermite)}
+    ${listSection('Decisiones que no permite tomar todavía', report.decisionesQueNoPermite)}
+    ${listSection('Recomendaciones', report.recomendaciones)}
+    ${listSection('Próximos análisis sugeridos', report.proximosAnalisis)}
+    ${section('Conclusión', report.conclusion)}
+    <p class="status">
+      Generado: ${escapeAttr(reportEnvelope.generatedAt || '-')} | Modelo: ${escapeAttr(reportEnvelope.model || '-')}<br>
+      ${escapeAttr(reportEnvelope.modelScope || 'Modelo definido para este informe.')}
+    </p>
+  `;
+}
+
+async function loadDimAiReport() {
+  if (!dimYear || !dimAiReportOverlay) return;
+  const year = dimYear.value || String(new Date().getFullYear());
+  dimAiReportOverlay.classList.add('open');
+  setStatusMessage(dimAiReportStatus, 'Buscando informe guardado...');
+  try {
+    const data = await fetchJSON(`/api/dashboard/impacto-mercaderia/ai-report?year=${encodeURIComponent(year)}`);
+    if (data.exists) {
+      renderDimAiReport(data.report);
+      setStatusMessage(dimAiReportStatus, 'Informe guardado cargado.');
+    } else {
+      renderDimAiReport(null);
+      setStatusMessage(dimAiReportStatus, 'No hay informe guardado. Podés generar uno nuevo.');
+    }
+  } catch (error) {
+    setStatusMessage(dimAiReportStatus, error.message || 'Error al cargar informe IA.', 'error');
+  }
+}
+
+async function generateDimAiReport(force = true) {
+  if (!dimPayload || !dimYear) {
+    setStatusMessage(dimAiReportStatus, 'Primero cargá el informe de Impacto Mercadería.', 'error');
+    return;
+  }
+  try {
+    setStatusMessage(dimAiReportStatus, 'Generando informe IA...');
+    const data = await fetchJSON('/api/dashboard/impacto-mercaderia/ai-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ year: Number(dimYear.value), payload: dimPayload, force }),
+    });
+    renderDimAiReport(data.report);
+    setStatusMessage(dimAiReportStatus, data.generated ? 'Informe IA generado y guardado.' : 'Informe guardado cargado.');
+  } catch (error) {
+    setStatusMessage(dimAiReportStatus, error.message || 'Error al generar informe IA.', 'error');
+  }
+}
+
+async function downloadDimAiReportPdf() {
+  if (!dimAiReportCurrent) {
+    setStatusMessage(dimAiReportStatus, 'No hay informe para bajar.', 'error');
+    return;
+  }
+  const ok = await ensureJsPdf();
+  if (!ok) {
+    setStatusMessage(dimAiReportStatus, 'PDF no disponible.', 'error');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const report = dimAiReportCurrent.report || {};
+  const margin = 14;
+  let y = 16;
+  const addText = (title, value) => {
+    if (y > 260) {
+      doc.addPage();
+      y = 16;
+    }
+    doc.setFontSize(12);
+    doc.text(String(title || ''), margin, y);
+    y += 6;
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(String(value || '-'), 180);
+    doc.text(lines, margin, y);
+    y += lines.length * 5 + 5;
+  };
+  doc.setFontSize(14);
+  doc.text(report.titulo || `Informe IA Impacto Mercadería ${dimAiReportCurrent.year}`, margin, y);
+  y += 8;
+  doc.setFontSize(9);
+  doc.text(`Modelo: ${dimAiReportCurrent.model || '-'} | ${dimAiReportCurrent.modelScope || 'Modelo definido para este informe.'}`, margin, y);
+  y += 8;
+  addText('Pregunta que responde', report.preguntaQueResponde || '¿Cuando ingresa mercadería al negocio, las ventas responden?');
+  addText('Resumen ejecutivo', report.resumenEjecutivo);
+  addText('Qué significa la correlación', report.lecturaCorrelacion);
+  addText('Qué significa el Influence Score', report.lecturaInfluenceScore);
+  addText('Qué significa la alineación', report.lecturaAlineacion);
+  addText('Impacto detectado', report.impactoDetectado);
+  addText('Meses clave', formatDimAiReportListText(report.mesesClave));
+  addText('Canales', report.canales);
+  addText('Mix nuevo / reposición', report.mixMercaderia);
+  addText('Riesgos y cautelas', formatDimAiReportListText(report.riesgos));
+  addText('Decisiones que permite tomar', formatDimAiReportListText(report.decisionesQuePermite));
+  addText('Decisiones que no permite tomar todavía', formatDimAiReportListText(report.decisionesQueNoPermite));
+  addText('Recomendaciones', formatDimAiReportListText(report.recomendaciones));
+  addText('Próximos análisis sugeridos', formatDimAiReportListText(report.proximosAnalisis));
+  addText('Conclusión', report.conclusion);
+  doc.save(`impacto-mercaderia-ia-${dimAiReportCurrent.year || dimYear.value}.pdf`);
+}
+
+function renderDashboardImpactoMercaderia(payload = {}) {
+  dimPayload = payload;
+  renderDashboardImpactoMercaderiaKpis(payload);
+  renderDashboardImpactoMercaderiaCharts(payload);
+  renderDashboardImpactoMercaderiaSignal(payload);
+  renderDashboardImpactoMercaderiaEstimator(payload);
+  renderDashboardImpactoMercaderiaTable(payload);
+  if (dimStatus) {
+    dimStatus.textContent =
+      'Meses alineados cuenta cuándo ingresos y ventas suben o bajan juntos respecto del mes anterior. La correlación resume la relación anual.';
+    dimStatus.className = 'status';
+  }
+}
+
+async function loadDashboardImpactoMercaderia() {
+  if (!dimYear) return;
+  try {
+    setStatusMessage(dimStatus, 'Cargando...');
+    const year = dimYear.value || String(new Date().getFullYear());
+    const params = new URLSearchParams({ year });
+    const objetivo = Number(dimObjetivo?.value) || 0;
+    if (objetivo > 0) params.set('objetivo', String(objetivo));
+    const payload = await fetchJSON(`/api/dashboard/impacto-mercaderia?${params.toString()}`);
+    dimLoaded = true;
+    renderDashboardImpactoMercaderia(payload);
+  } catch (error) {
+    setStatusMessage(dimStatus, error.message || 'Error al cargar impacto de mercadería.', 'error');
+  }
+}
+
+function initDashboardImpactoMercaderia() {
+  if (!dimYear) return;
+  const currentYear = new Date().getFullYear();
+  dimYear.innerHTML = '';
+  for (let year = currentYear; year >= currentYear - 6; year -= 1) {
+    const option = document.createElement('option');
+    option.value = String(year);
+    option.textContent = String(year);
+    dimYear.appendChild(option);
+  }
+  dimYear.value = String(currentYear);
+  if (dimRefresh) dimRefresh.addEventListener('click', loadDashboardImpactoMercaderia);
+  if (dimAiReportOpen) dimAiReportOpen.addEventListener('click', loadDimAiReport);
+  if (dimAiReportClose) dimAiReportClose.addEventListener('click', () => dimAiReportOverlay?.classList.remove('open'));
+  if (dimAiReportOverlay) {
+    dimAiReportOverlay.addEventListener('click', (event) => {
+      if (event.target === dimAiReportOverlay) dimAiReportOverlay.classList.remove('open');
+    });
+  }
+  if (dimAiReportGenerate) dimAiReportGenerate.addEventListener('click', () => generateDimAiReport(true));
+  if (dimAiReportPdf) dimAiReportPdf.addEventListener('click', downloadDimAiReportPdf);
+  if (dimEstimar) dimEstimar.addEventListener('click', loadDashboardImpactoMercaderia);
+  if (dimObjetivo) {
+    dimObjetivo.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') loadDashboardImpactoMercaderia();
+    });
+  }
+  initDimTooltips();
+  dimYear.addEventListener('change', loadDashboardImpactoMercaderia);
+}
+
 function renderPedidosClientes(rows) {
   if (!tablaPedidosClientesBody) return;
   tablaPedidosClientesBody.innerHTML = '';
@@ -16774,6 +17881,8 @@ async function exportCajasControlFacturasXlsx() {
 
 function resolvePermissionKey(target) {
   if (target === 'dashboard-comparativo') return 'dashboard-comparativo';
+  if (target === 'dashboard-comparativo-mercaderia') return 'dashboard-comparativo-mercaderia';
+  if (target === 'dashboard-comparativo-impacto-mercaderia') return 'dashboard-comparativo-impacto-mercaderia';
   if (target === 'fidelizacion-runs') return 'fidelizacion-dashboard';
   if (target === 'fidelizacion-dashboard') return 'fidelizacion-dashboard';
   if (target === 'ecommerce-imagenweb') return 'ecommerce-imagenweb';
@@ -16852,6 +17961,7 @@ function applyMenuPermissions(perms = {}) {
     const visibleItems = group.querySelectorAll('.menu-item[data-target]');
     const anyVisible = Array.from(visibleItems).some((btn) => btn.style.display !== 'none');
     const forcedGroupPerms = {
+      'dashboard-comparativo-menu': 'dashboard-comparativo-menu',
       clientes: 'clientes-menu',
       pedidos: 'pedidos-menu',
       fidelizacion: 'fidelizacion-menu',
@@ -16879,6 +17989,8 @@ function getFirstAllowedView(perms = {}) {
     const order = [
       'dashboard',
       'dashboard-comparativo',
+      'dashboard-comparativo-mercaderia',
+      'dashboard-comparativo-impacto-mercaderia',
       'panel-control',
       'cargar-ticket',
       'empleados',
@@ -16912,6 +18024,14 @@ function getFirstAllowedView(perms = {}) {
     'comisiones',
     'configuracion',
   ];
+    if (
+      perms['dashboard-comparativo-menu'] === true &&
+      !perms['dashboard-comparativo'] &&
+      !perms['dashboard-comparativo-mercaderia'] &&
+      !perms['dashboard-comparativo-impacto-mercaderia']
+    ) {
+      return 'dashboard-comparativo';
+    }
     if (
       perms['pedidos-menu'] === true &&
       !perms.pedidos &&
@@ -16965,6 +18085,7 @@ async function loadCurrentUser() {
     ecommerceWatermarkLogoUrl = getWatermarkLogoByLocal(data?.local);
     currentPermissions = { ...buildEmptyPermissions(), ...(data?.permissions || {}) };
     normalizeDashboardPermissions(currentPermissions, data?.permissions || {});
+    normalizeDashboardComparativoPermissions(currentPermissions);
     const hasEcommerceSubPerms =
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-imagenweb') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'ecommerce-panel') ||
@@ -18517,7 +19638,10 @@ const permissionGroups = [
         { key: 'dashboard-pedidos-vendedora', label: 'Dashboard - Pedidos por vendedora' },
         { key: 'dashboard-ventas-vendedora', label: 'Dashboard - Ventas por vendedora' },
         { key: 'dashboard-pedidos-clientes', label: 'Dashboard - Pedidos de Clientes' },
-        { key: 'dashboard-comparativo', label: 'Dashboard - Comparativo anual' },
+        { key: 'dashboard-comparativo-menu', label: 'Menu Comparativo' },
+        { key: 'dashboard-comparativo', label: 'Comparativo - General' },
+        { key: 'dashboard-comparativo-mercaderia', label: 'Comparativo - Mercaderia' },
+        { key: 'dashboard-comparativo-impacto-mercaderia', label: 'Comparativo - Impacto Mercaderia' },
         { key: 'panel-control', label: 'Panel de Control' },
         { key: 'cargar-ticket', label: 'CargarTicket' },
         { key: 'empleados', label: 'Empleados' },
@@ -18603,6 +19727,16 @@ const dashboardReportPermissions = [
   'dashboard-comparativo',
 ];
 
+const dashboardMenuReportPermissions = dashboardReportPermissions.filter(
+  (permission) => permission !== 'dashboard-comparativo'
+);
+
+const dashboardComparativoPermissions = [
+  'dashboard-comparativo',
+  'dashboard-comparativo-mercaderia',
+  'dashboard-comparativo-impacto-mercaderia',
+];
+
 function buildEmptyPermissions() {
   return Object.fromEntries(permissionGroups.flatMap((g) => g.items.map((i) => [i.key, false])));
 }
@@ -18615,6 +19749,22 @@ function normalizeDashboardPermissions(perms = {}, rawPerms = {}) {
   dashboardReportPermissions.forEach((permission) => {
     perms[permission] = true;
   });
+  return perms;
+}
+
+function normalizeDashboardComparativoPermissions(perms = {}) {
+  const hasComparativoSubPerms = dashboardComparativoPermissions.some((permission) => perms[permission] === true);
+  if (hasComparativoSubPerms && !perms['dashboard-comparativo-menu']) {
+    perms['dashboard-comparativo-menu'] = true;
+  }
+  if (
+    perms['dashboard-comparativo-menu'] === true &&
+    !perms['dashboard-comparativo'] &&
+    !perms['dashboard-comparativo-mercaderia'] &&
+    !perms['dashboard-comparativo-impacto-mercaderia']
+  ) {
+    perms['dashboard-comparativo'] = true;
+  }
   return perms;
 }
 
@@ -18717,6 +19867,7 @@ async function loadRolePermissions(roleId) {
     }
   });
   normalizeDashboardPermissions(perms, rawPerms);
+  normalizeDashboardComparativoPermissions(perms);
   normalizeEcommercePermissions(perms, hasEcommerceSubPerms);
   normalizeFidelizacionPermissions(perms, hasFidelizacionSubPerms, legacyFidelizacionEnabled);
   const role = rolesData.find((r) => r.id === roleId);
@@ -18754,7 +19905,8 @@ function renderPermissions() {
     });
   });
   const submenuMap = {
-    dashboard: dashboardReportPermissions,
+    dashboard: dashboardMenuReportPermissions,
+    'dashboard-comparativo-menu': dashboardComparativoPermissions,
     'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
@@ -22654,6 +23806,8 @@ function switchView(target) {
     const views = [
       viewDashboard,
       viewDashboardComparativo,
+      viewDashboardComparativoMercaderia,
+      viewDashboardImpactoMercaderia,
       viewCargarTicket,
       viewEmpleados,
       viewClientes,
@@ -22701,6 +23855,8 @@ function switchView(target) {
     const views = [
       viewDashboard,
       viewDashboardComparativo,
+      viewDashboardComparativoMercaderia,
+      viewDashboardImpactoMercaderia,
       viewPanelControl,
       viewCargarTicket,
       viewEmpleados,
@@ -22741,6 +23897,20 @@ function switchView(target) {
     viewDashboardComparativo.classList.remove('hidden');
     updateDashboardComparativoLabels();
     loadDashboardComparativo();
+  } else if (target === 'dashboard-comparativo-mercaderia') {
+    viewDashboardComparativoMercaderia.classList.remove('hidden');
+    if (!dcmLoaded) {
+      loadDashboardComparativoMercaderia();
+    } else if (dcmPayload) {
+      renderDashboardComparativoMercaderia(dcmPayload);
+    }
+  } else if (target === 'dashboard-comparativo-impacto-mercaderia') {
+    viewDashboardImpactoMercaderia.classList.remove('hidden');
+    if (!dimLoaded) {
+      loadDashboardImpactoMercaderia();
+    } else if (dimPayload) {
+      renderDashboardImpactoMercaderia(dimPayload);
+    }
   } else if (target === 'empleados') {
     viewEmpleados.classList.remove('hidden');
     const [year, month] = mesEmpleados.value.split('-');
@@ -22901,6 +24071,8 @@ if (dashboardComparativoYearB && defaultDashboardComparativoYearB) {
 initMonthRangeSelect(dashboardComparativoMonthFrom, 1);
 initMonthRangeSelect(dashboardComparativoMonthTo, 12);
 updateDashboardComparativoLabels();
+initDashboardComparativoMercaderia();
+initDashboardImpactoMercaderia();
 initMenu();
 initCollapsibles();
 initPaqueteriaModal();

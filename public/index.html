@@ -49,10 +49,27 @@
             <span class="icon">📊</span>
             <span class="label">Dashboard</span>
           </button>
-          <button class="menu-item" data-target="dashboard-comparativo">
-            <span class="icon">📈</span>
-            <span class="label">Comparativo</span>
-          </button>
+          <div class="menu-group" data-group="dashboard-comparativo-menu">
+            <button class="menu-item menu-parent" data-toggle="dashboard-comparativo-menu">
+              <span class="icon">📈</span>
+              <span class="label">Comparativo</span>
+              <span class="caret">></span>
+            </button>
+            <div class="submenu" data-parent="dashboard-comparativo-menu">
+              <button class="menu-item submenu-item" data-target="dashboard-comparativo">
+                <span class="icon">📊</span>
+                <span class="label">General</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="dashboard-comparativo-mercaderia">
+                <span class="icon">📦</span>
+                <span class="label">Mercadería</span>
+              </button>
+              <button class="menu-item submenu-item" data-target="dashboard-comparativo-impacto-mercaderia">
+                <span class="icon">⚡</span>
+                <span class="label">Impacto Mercadería</span>
+              </button>
+            </div>
+          </div>
           <button class="menu-item" data-target="panel-control">
             <span class="icon">🧭</span>
             <span class="label">Panel de Control</span>
@@ -531,6 +548,321 @@
           </div>
         </article>
       </section>
+
+      <section class="grid view hidden" id="view-dashboard-comparativo-mercaderia">
+        <article class="card wide">
+          <div class="actions dashboard-comparativo-mercaderia-header">
+            <div class="heading">
+              <h2>Comparativo - Mercadería</h2>
+              <p class="subtitle">Peso de mercadería nueva, reposición y artículos sin ingreso reciente sobre las ventas.</p>
+            </div>
+            <div class="dashboard-comparativo-mercaderia-controls">
+              <label class="dashboard-comparativo-field">
+                <span>Ventas desde</span>
+                <input type="date" id="dcm-venta-desde" />
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Ventas hasta</span>
+                <input type="date" id="dcm-venta-hasta" />
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Ingresos desde</span>
+                <input type="date" id="dcm-ingreso-desde" />
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Ingresos hasta</span>
+                <input type="date" id="dcm-ingreso-hasta" />
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Mín. ingresado</span>
+                <input type="number" id="dcm-min-ingreso" min="1" step="1" value="30" />
+              </label>
+              <label class="dashboard-comparativo-field">
+                <span>Canal</span>
+                <select id="dcm-canal">
+                  <option value="todos">Todos</option>
+                  <option value="pedidos">Pedidos</option>
+                  <option value="salon">Salón</option>
+                </select>
+              </label>
+              <button id="dcm-refresh" class="dashboard-comparativo-refresh" type="button">Actualizar</button>
+              <button id="dcm-detail-open" class="dashboard-comparativo-refresh" type="button">Ver detalle</button>
+            </div>
+          </div>
+          <div class="dcm-kpis">
+            <div class="stat">
+              <p class="label">Unidades vendidas</p>
+              <p class="value" id="dcm-kpi-unidades">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Importe vendido</p>
+              <p class="value" id="dcm-kpi-monto">$0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Nueva + reposición</p>
+              <p class="value" id="dcm-kpi-ingreso-pct">0%</p>
+            </div>
+            <div class="stat">
+              <p class="label">Unidades ingresadas</p>
+              <p class="value" id="dcm-kpi-ingresadas">0</p>
+            </div>
+          </div>
+          <div class="dcm-grid">
+            <article class="dcm-panel">
+              <div class="actions between">
+                <h3>Participación por tipo</h3>
+                <div class="segmented">
+                  <button type="button" class="active" data-dcm-metric="unidades">Unidades</button>
+                  <button type="button" data-dcm-metric="monto">Importe</button>
+                </div>
+              </div>
+              <div class="chart-wrap dcm-chart">
+                <canvas id="chart-dcm-participacion"></canvas>
+              </div>
+            </article>
+            <article class="dcm-panel">
+              <h3>Canal por tipo</h3>
+              <div class="chart-wrap dcm-chart">
+                <canvas id="chart-dcm-canales"></canvas>
+              </div>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table class="table dcm-summary-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Unidades</th>
+                  <th>Importe</th>
+                  <th>Pedidos</th>
+                  <th>Salón</th>
+                  <th>% ventas</th>
+                  <th>Ingresadas</th>
+                  <th>Rotación</th>
+                </tr>
+              </thead>
+              <tbody id="dcm-summary-body"></tbody>
+            </table>
+          </div>
+          <p class="status" id="dcm-status"></p>
+        </article>
+      </section>
+
+      <div class="modal-overlay" id="dcm-detail-overlay">
+        <div class="modal wide-modal">
+          <div class="modal-header">
+            <h3>Detalle de artículos</h3>
+            <button id="dcm-detail-close" class="close-btn" type="button">x</button>
+          </div>
+          <div class="modal-controls">
+            <input type="search" id="dcm-detail-search" placeholder="Buscar artículo o detalle..." />
+            <select id="dcm-detail-tipo">
+              <option value="todos">Todos</option>
+              <option value="nueva">Nueva</option>
+              <option value="reposicion">Reposición</option>
+              <option value="vieja">Vieja</option>
+            </select>
+            <button id="dcm-detail-export" type="button">XLSX</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="dcm-detail-table">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Artículo</th>
+                  <th>Detalle</th>
+                  <th>Ingresadas</th>
+                  <th>Vendidas</th>
+                  <th>Pedidos</th>
+                  <th>Salón</th>
+                  <th>Importe</th>
+                  <th>Primer ingreso</th>
+                  <th>Ingreso reciente</th>
+                  <th>Rotación</th>
+                </tr>
+              </thead>
+              <tbody id="dcm-detail-body"></tbody>
+            </table>
+          </div>
+          <p class="status" id="dcm-detail-status"></p>
+        </div>
+      </div>
+
+      <section class="grid view hidden" id="view-dashboard-comparativo-impacto-mercaderia">
+        <article class="card wide">
+          <div class="actions dashboard-comparativo-mercaderia-header">
+            <div class="heading">
+              <h2>Impacto Mercadería</h2>
+              <p class="subtitle">Evolución mensual de ingresos nuevos/reposición contra ventas de pedidos y salón.</p>
+            </div>
+            <div class="dashboard-impacto-mercaderia-controls">
+              <label class="dashboard-comparativo-field">
+                <span>Año</span>
+                <select id="dim-year"></select>
+              </label>
+              <button id="dim-refresh" class="dashboard-comparativo-refresh" type="button">Actualizar</button>
+              <button id="dim-ai-report-open" class="dashboard-comparativo-refresh" type="button">Informe IA</button>
+            </div>
+          </div>
+          <div class="dcm-kpis">
+            <div class="stat">
+              <p class="label">Ventas anuales</p>
+              <p class="value" id="dim-kpi-ventas">$0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Unidades ingresadas</p>
+              <p class="value" id="dim-kpi-ingresos">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Meses alineados</p>
+              <p class="value" id="dim-kpi-senal">0</p>
+            </div>
+            <div class="stat">
+              <p class="label">Correlación</p>
+              <p class="value" id="dim-kpi-correlacion">-</p>
+            </div>
+          </div>
+          <div class="dcm-grid dim-grid">
+            <article class="dcm-panel">
+              <h3>Ingresos vs ventas</h3>
+              <div class="chart-wrap dcm-chart dim-chart">
+                <canvas id="chart-dim-impacto"></canvas>
+              </div>
+            </article>
+            <article class="dcm-panel">
+              <h3>Ventas por canal</h3>
+              <div class="chart-wrap dcm-chart dim-chart">
+                <canvas id="chart-dim-canales"></canvas>
+              </div>
+            </article>
+          </div>
+          <article class="dcm-panel dim-signal-panel">
+            <div class="dim-section-heading">
+              <h3>Análisis de señal</h3>
+              <p class="subtitle">Valida qué tan consistente es la relación entre ingresos de mercadería y ventas.</p>
+            </div>
+            <div class="dim-signal-kpis">
+              <div class="dim-signal-card">
+                <span>Influencia estimada</span>
+                <strong id="dim-signal-score">-</strong>
+                <small id="dim-signal-score-label">Sin datos</small>
+              </div>
+              <div class="dim-signal-card">
+                <span>Alto vs bajo ingreso</span>
+                <strong id="dim-signal-lift">-</strong>
+                <small>Venta promedio mensual</small>
+              </div>
+              <div class="dim-signal-card">
+                <span>Pedidos alineados</span>
+                <strong id="dim-signal-pedidos">-</strong>
+                <small>Contra variación de ingresos</small>
+              </div>
+              <div class="dim-signal-card">
+                <span>Salón alineado</span>
+                <strong id="dim-signal-salon">-</strong>
+                <small>Contra variación de ingresos</small>
+              </div>
+            </div>
+            <p class="status dim-signal-status" id="dim-signal-status"></p>
+            <div class="dcm-grid dim-signal-grid">
+              <article class="dcm-panel">
+                <h3>Alto vs bajo ingreso</h3>
+                <div class="chart-wrap dcm-chart dim-signal-chart">
+                  <canvas id="chart-dim-signal-groups"></canvas>
+                </div>
+              </article>
+              <article class="dcm-panel">
+                <h3>Reacción por canal</h3>
+                <div class="chart-wrap dcm-chart dim-signal-chart">
+                  <canvas id="chart-dim-signal-channels"></canvas>
+                </div>
+              </article>
+            </div>
+            <div class="table-wrap">
+              <table class="table dcm-summary-table">
+                <thead>
+                  <tr>
+                    <th>Mes</th>
+                    <th>Unidades ingresadas</th>
+                    <th>Ventas mes previo</th>
+                    <th>Ventas mes ingreso</th>
+                    <th>Variación</th>
+                    <th>Canal más afectado</th>
+                    <th>Lectura</th>
+                  </tr>
+                </thead>
+                <tbody id="dim-signal-body"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="dcm-panel dim-estimator-panel">
+            <div class="actions between dim-estimator-header">
+              <div>
+                <h3>Estimador de compra</h3>
+                <p class="subtitle">Calcula unidades y variedad sugerida según la relación histórica entre ingresos y ventas.</p>
+              </div>
+              <div class="dashboard-impacto-estimator-controls">
+                <label class="dashboard-comparativo-field">
+                  <span>Objetivo mensual</span>
+                  <input id="dim-objetivo" type="number" min="0" step="1000" placeholder="0" />
+                </label>
+                <button id="dim-estimar" class="dashboard-comparativo-refresh" type="button">Estimar</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="table dcm-summary-table">
+                <thead>
+                  <tr>
+                    <th>Escenario</th>
+                    <th>Unidades sugeridas</th>
+                    <th>Variedad sugerida</th>
+                    <th>Nuevo</th>
+                    <th>Reposición</th>
+                    <th>Base usada</th>
+                  </tr>
+                </thead>
+                <tbody id="dim-estimador-body"></tbody>
+              </table>
+            </div>
+            <p class="status" id="dim-estimador-status"></p>
+          </article>
+          <div class="table-wrap">
+            <table class="table dcm-summary-table">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>Ingreso nuevo</th>
+                  <th>Reposición</th>
+                  <th>Ventas pedidos</th>
+                  <th>Ventas salón</th>
+                  <th>Ventas total</th>
+                  <th>Var. ventas</th>
+                  <th>Lectura</th>
+                </tr>
+              </thead>
+              <tbody id="dim-summary-body"></tbody>
+            </table>
+          </div>
+          <p class="status" id="dim-status"></p>
+        </article>
+      </section>
+
+      <div class="modal-overlay" id="dim-ai-report-overlay">
+        <div class="modal-content dim-ai-report-modal">
+          <div class="modal-header">
+            <h3 id="dim-ai-report-title">Informe IA</h3>
+            <button id="dim-ai-report-close" type="button">&times;</button>
+          </div>
+          <div class="actions between dim-ai-report-actions">
+            <p class="status" id="dim-ai-report-status">Cargando informe...</p>
+            <div class="actions">
+              <button id="dim-ai-report-generate" type="button">Generar nuevo informe</button>
+              <button id="dim-ai-report-pdf" type="button">Bajar PDF</button>
+            </div>
+          </div>
+          <div class="dim-ai-report-body" id="dim-ai-report-body"></div>
+        </div>
+      </div>
 
       <section class="view hidden" id="view-empleados">
         <article class="card wide">
