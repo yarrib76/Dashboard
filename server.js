@@ -876,13 +876,91 @@ function cleanTnubeDescriptionText(value) {
     .trim();
 }
 
-function buildTnubeStatusRows(products) {
+function normalizeTnubeCategoryToken(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function cleanTnubeCategoryText(value) {
+  return String(value || '')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function resolveTnubeProductCategoryLabel(category, categoryLookup) {
+  if (category == null) return '';
+  if (typeof category === 'string' || typeof category === 'number') {
+    return categoryLookup?.get(Number(category)) || String(category);
+  }
+  const id = Number(category.id || category.category_id);
+  if (id && categoryLookup?.has(id)) return categoryLookup.get(id);
+  const directName = getTnubeCategoryName(category);
+  if (directName) return directName;
+  if (category.label) return String(category.label);
+  return id ? String(id) : '';
+}
+
+function collapseTnubeCategoryLabels(labels) {
+  return labels.filter((label, index) => {
+    const normalized = normalizeTnubeCategoryToken(label);
+    return !labels.some((other, otherIndex) => {
+      if (otherIndex === index) return false;
+      const otherNormalized = normalizeTnubeCategoryToken(other);
+      return otherNormalized.startsWith(`${normalized} > `) || otherNormalized.startsWith(`${normalized} - `);
+    });
+  });
+}
+
+function buildTnubeProductCategoryInfo(product, categoryLookup) {
+  const categories = Array.isArray(product?.categories) ? product.categories : [];
+  const labels = categories
+    .map((category) => cleanTnubeCategoryText(resolveTnubeProductCategoryLabel(category, categoryLookup)))
+    .filter(Boolean);
+  const uniqueLabels = Array.from(new Map(labels.map((label) => [normalizeTnubeCategoryToken(label), label])).values());
+  const categoriasWebRaw = uniqueLabels.join(' | ');
+  const excluded = new Set(['NOVEDADES', 'OFERTAS']);
+  const filtered = collapseTnubeCategoryLabels(
+    uniqueLabels.filter((label) => !excluded.has(normalizeTnubeCategoryToken(label)))
+  );
+  const categoriaWeb = filtered.join(' - ').replace(/\s*>\s*/g, ' - ').slice(0, 255);
+  return {
+    categoriaWeb,
+    categoriasWebRaw,
+  };
+}
+
+async function fetchTnubeCategoryLookup(connection) {
+  try {
+    const categories = await fetchTnubeCategories(connection);
+    return new Map(
+      (categories || []).map((category) => [
+        Number(category.id),
+        cleanTnubeCategoryText(category.label || category.name || category.id).replace(/\s*>\s*/g, ' - '),
+      ])
+    );
+  } catch (error) {
+    traceEcommerceSchedule('category-lookup-error', { error: error.message || error });
+    return new Map();
+  }
+}
+
+function buildTnubeStatusRows(products, categoryLookup = new Map()) {
   const rows = [];
   (products || []).forEach((product) => {
     const variants = Array.isArray(product?.variants) ? product.variants : [];
     const imageSrc = Array.isArray(product?.images) && product.images[0]?.src ? String(product.images[0].src) : '';
     const hasImages = imageSrc || (Array.isArray(product?.images) && product.images.length > 0) ? 1 : 0;
     const descripcionWeb = cleanTnubeDescriptionText(product?.description?.es || '');
+    const { categoriaWeb, categoriasWebRaw } = buildTnubeProductCategoryInfo(product, categoryLookup);
     variants.forEach((variant) => {
       const variantValues = Array.isArray(variant?.values) ? variant.values : [];
       const variantValue = variantValues
@@ -902,6 +980,8 @@ function buildTnubeStatusRows(products) {
         stockTn: variant?.stock == null ? null : Number(variant.stock),
         positionVariante: variant?.position == null ? null : Number(variant.position),
         descripcionWeb,
+        categoriaWeb,
+        categoriasWebRaw,
       });
     });
   });
@@ -964,6 +1044,7 @@ async function fetchTnubeImportRows(connection, tipoBajada, onProgress) {
   const endYear = now.getFullYear();
   const rows = [];
   const years = [];
+  const categoryLookup = await fetchTnubeCategoryLookup(connection);
   onProgress?.({ phase: 'Calculando paginas', percent: 2 });
   for (let year = TNUBE_IMPORT_START_YEAR; year <= endYear; year += 1) {
     const total = await fetchTnubeProductCount(connection, tipoBajada, year);
@@ -980,7 +1061,7 @@ async function fetchTnubeImportRows(connection, tipoBajada, onProgress) {
   for (const item of years) {
     for (let page = 1; page <= item.pages; page += 1) {
       const products = await fetchTnubeProductsPage(connection, tipoBajada, item.year, page);
-      rows.push(...buildTnubeStatusRows(products));
+      rows.push(...buildTnubeStatusRows(products, categoryLookup));
       processedPages += 1;
       const downloadPercent = totalPages ? 5 + (processedPages / totalPages) * 80 : 80;
       onProgress?.({
@@ -1017,16 +1098,18 @@ async function insertTnubeStatusRows(conn, idProvecomerce, rows, onProgress) {
           row.valorVariante,
           row.images,
           row.imagessrc,
-          row.descripcionWeb || null
+          row.descripcionWeb || null,
+          row.categoriaWeb || null,
+          row.categoriasWebRaw || null
         );
-        return '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        return '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
       })
       .join(', ');
     await conn.query(
       `INSERT INTO ${DB_NAME}.statusecomercesincro
        (id_provecomerce, status, fecha, articulo, product_id, articulo_id, visible,
         visible_variante, published_padre, stock_tn, position_variante, valor_variante,
-        images, imagessrc, descripcionWeb)
+        images, imagessrc, descripcionWeb, categoriaWeb, categoriasWebRaw)
        VALUES ${placeholders}`,
       values
     );
