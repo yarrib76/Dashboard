@@ -1858,6 +1858,10 @@ body.theme-dark .dim-ai-report-body section {
   display: flex;
 }
 
+#merc-img-overlay {
+  z-index: 12000;
+}
+
 #clientes-new-overlay {
   z-index: 70;
 }
@@ -7527,6 +7531,221 @@ body.pedido-foto-open::after {
   max-width: 140px;
 }
 
+.redes-form-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.35fr) minmax(160px, 0.65fr) minmax(180px, 0.85fr) minmax(180px, 0.85fr);
+  gap: 10px 12px;
+  align-items: start;
+}
+
+.redes-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.redes-form-grid input,
+.redes-form-grid select {
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+}
+
+.redes-form-grid select,
+.redes-form-grid select option {
+  font-weight: 700;
+  color: #fff;
+}
+
+.redes-form-grid select {
+  color: #fff;
+  background: #0c0f1a;
+}
+
+.redes-field-nombre {
+  grid-column: 1;
+}
+
+.redes-field-tipo {
+  grid-column: 2;
+}
+
+.redes-field-nro {
+  grid-column: 3;
+}
+
+.redes-field-fecha {
+  grid-column: 4;
+}
+
+.redes-field-articulo {
+  grid-column: 1 / span 2;
+}
+
+.redes-field-estado {
+  grid-column: 3;
+}
+
+.redes-field-umbral {
+  grid-column: 4;
+}
+
+.redes-field-detalle {
+  grid-column: 1 / span 2;
+}
+
+.redes-field-stock {
+  grid-column: 3;
+}
+
+.redes-field-plataformas {
+  grid-column: 4;
+  grid-row: 3 / span 2;
+}
+
+.redes-field-plataformas select {
+  min-height: 98px;
+}
+
+.redes-field-plataformas option:checked {
+  background: #2563eb !important;
+  box-shadow: 0 0 0 100px #2563eb inset;
+  color: #fff !important;
+}
+
+.redes-field-plataformas select:not(:focus) option:checked {
+  background: #2563eb !important;
+  box-shadow: 0 0 0 100px #2563eb inset;
+  color: #fff !important;
+}
+
+.redes-articulo-preview {
+  display: grid;
+  grid-template-columns: 160px max-content;
+  align-items: end;
+  gap: 12px;
+  grid-column: 1 / span 2;
+}
+
+.redes-articulo-preview img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.redes-thumb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  cursor: pointer;
+}
+
+.redes-thumb-btn img {
+  max-width: 54px;
+  max-height: 54px;
+  object-fit: contain;
+}
+
+.redes-modal-footer-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.redes-modal-footer-actions > button {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  column-gap: 16px;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header-actions,
+#view-redes-publicaciones .redes-publicaciones-row-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+  width: auto;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header-actions > button,
+#view-redes-publicaciones .redes-publicaciones-row-actions .abm-action {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: none;
+}
+
+#redes-publicaciones-table th:last-child,
+#redes-publicaciones-table td:last-child {
+  min-width: 170px;
+}
+
+tr.redes-alert-row > td {
+  background: rgba(210, 49, 49, 0.2) !important;
+  color: var(--text);
+}
+
+body.theme-light tr.redes-alert-row > td {
+  background: rgba(210, 49, 49, 0.16) !important;
+}
+
+@media (max-width: 720px) {
+  .redes-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .redes-field-nombre,
+  .redes-field-tipo,
+  .redes-field-nro,
+  .redes-field-fecha,
+  .redes-field-articulo,
+  .redes-field-estado,
+  .redes-field-umbral,
+  .redes-field-detalle,
+  .redes-field-stock,
+  .redes-field-plataformas,
+  .redes-articulo-preview {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .redes-articulo-preview {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1024px) {
   .pedido-legacy-row {
     grid-template-columns: 1fr;
@@ -7542,4 +7761,31 @@ body.pedido-foto-open::after {
     width: 100%;
     top: 0;
   }
+}
+
+#view-redes-publicaciones .redes-publicaciones-header {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+  align-items: center !important;
+  gap: 16px !important;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  width: auto !important;
+  margin-left: auto !important;
+  white-space: nowrap !important;
+}
+
+#view-redes-publicaciones .redes-publicaciones-header-actions > button {
+  display: inline-flex !important;
+  width: auto !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
 }

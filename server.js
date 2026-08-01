@@ -2311,6 +2311,8 @@ const ROLE_PERMISSIONS = [
   'mercaderia-catalogo',
   'abm',
   'control-ordenes',
+  'redes',
+  'redes-publicaciones',
   'ecommerce',
   'ecommerce-imagenweb',
   'ecommerce-panel',
@@ -2381,6 +2383,12 @@ function normalizeEcommercePermissions(permissions = {}, hasEcommerceSubPerms = 
   return permissions;
 }
 
+function normalizeRedesPermissions(permissions = {}, hasRedesSubPerms = true) {
+  if (hasRedesSubPerms || permissions.redes !== true) return permissions;
+  permissions['redes-publicaciones'] = true;
+  return permissions;
+}
+
 async function getPermissionsForUser(userId) {
   if (!userId) return {};
   const [rows] = await pool.query(
@@ -2400,9 +2408,11 @@ async function getPermissionsForUser(userId) {
   const hasEcommerceSubPerms = ECOMMERCE_SUB_PERMISSIONS.some((permission) =>
     Object.prototype.hasOwnProperty.call(permissions, permission)
   );
+  const hasRedesSubPerms = Object.prototype.hasOwnProperty.call(permissions, 'redes-publicaciones');
   normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
   normalizeDashboardComparativoPermissions(permissions);
   normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
+  normalizeRedesPermissions(permissions, hasRedesSubPerms);
   return permissions;
 }
 
@@ -6146,6 +6156,8 @@ app.get('/api/me', (req, res) => {
         Object.prototype.hasOwnProperty.call(permissions, permission)
       );
       normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
+      const hasRedesSubPerms = Object.prototype.hasOwnProperty.call(permissions, 'redes-publicaciones');
+      normalizeRedesPermissions(permissions, hasRedesSubPerms);
       const hasFidelizacionSubPerms =
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-panel') ||
         Object.prototype.hasOwnProperty.call(permissions, 'fidelizacion-mis') ||
@@ -12119,6 +12131,575 @@ app.get('/api/mercaderia/abm/pedidos', async (req, res) => {
     res.status(500).json({ message: 'Error al cargar pedidos del articulo', error: error.message });
   }
 });
+
+const REDES_ESTADOS = ['Pendiente', 'En Proceso', 'Finalizado'];
+
+function normalizeRedesEstado(value) {
+  const raw = String(value || '').trim();
+  return REDES_ESTADOS.includes(raw) ? raw : 'Pendiente';
+}
+
+function mapRedesPublicacionRow(row) {
+  const plataformas = String(row.plataformas || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const plataformaIds = String(row.plataformaIds || '')
+    .split(',')
+    .map((item) => Number(item))
+    .filter(Number.isFinite);
+  return {
+    id: Number(row.id) || 0,
+    nroPublicacion: Number(row.nroPublicacion) || 0,
+    nombre: row.nombre || '',
+    fecha: row.fecha || '',
+    tipoId: Number(row.tipoId) || 0,
+    tipo: row.tipo || '',
+    estado: row.estado || 'Pendiente',
+    umbralAlerta: Number(row.umbralAlerta) || 0,
+    plataformas,
+    plataformaIds,
+    articulosCount: Number(row.articulosCount) || 0,
+    alertaStock: Number(row.alertaStock) === 1,
+  };
+}
+
+function mapRedesArticuloRow(row, umbralAlerta = 0) {
+  const stock = Number(row.stock) || 0;
+  const enPedido = Number(row.enPedido) || 0;
+  const stockDisponible = Number(row.stockDisponible ?? stock - enPedido) || 0;
+  const imageSrc = row.imageSrc || row.imagessrc || '';
+  return {
+    articulo: row.articulo || '',
+    detalle: row.detalle || '',
+    stock,
+    enPedido,
+    stockDisponible,
+    imageSrc,
+    alertaStock: Number(row.alertaStock) === 1 || stockDisponible < Number(umbralAlerta || 0),
+  };
+}
+
+async function getNextRedesPublicacionNumber(conn) {
+  const [[counterRow]] = await conn.query(
+    `SELECT nro_publicacion AS nroPublicacion
+     FROM ${DB_NAME}.redes_nro_publicacion
+     WHERE id = 1
+     LIMIT 1`
+  );
+  const [[maxRow]] = await conn.query(
+    `SELECT MAX(nro_publicacion) AS maxNro
+     FROM ${DB_NAME}.redes_publicaciones`
+  );
+  return Math.max(Number(counterRow?.nroPublicacion) || 0, Number(maxRow?.maxNro) || 0) + 1;
+}
+
+async function reserveRedesPublicacionNumber(conn) {
+  const [[counterRow]] = await conn.query(
+    `SELECT nro_publicacion AS nroPublicacion
+     FROM ${DB_NAME}.redes_nro_publicacion
+     WHERE id = 1
+     LIMIT 1
+     FOR UPDATE`
+  );
+  if (!counterRow) {
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.redes_nro_publicacion (id, nro_publicacion)
+       VALUES (1, 0)`
+    );
+  }
+  const [[maxRow]] = await conn.query(
+    `SELECT MAX(nro_publicacion) AS maxNro
+     FROM ${DB_NAME}.redes_publicaciones`
+  );
+  let nroPublicacion = Math.max(Number(counterRow?.nroPublicacion) || 0, Number(maxRow?.maxNro) || 0) + 1;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [[exists]] = await conn.query(
+      `SELECT 1
+       FROM ${DB_NAME}.redes_publicaciones
+       WHERE nro_publicacion = ?
+       LIMIT 1`,
+      [nroPublicacion]
+    );
+    if (!exists) {
+      await conn.query(
+        `UPDATE ${DB_NAME}.redes_nro_publicacion
+         SET nro_publicacion = ?
+         WHERE id = 1`,
+        [nroPublicacion]
+      );
+      return nroPublicacion;
+    }
+    nroPublicacion += 1;
+  }
+  throw new Error('No se pudo reservar un nroPublicacion libre');
+}
+
+async function fetchRedesPublicaciones(conn) {
+  const [rows] = await conn.query(
+    `SELECT
+       pub.id,
+       pub.nro_publicacion AS nroPublicacion,
+       pub.nombre,
+       DATE_FORMAT(pub.fecha, '%Y-%m-%d') AS fecha,
+       pub.tipo_id AS tipoId,
+       tipo.nombre AS tipo,
+       pub.estado,
+       pub.umbral_alerta AS umbralAlerta,
+       COALESCE(plataformas.plataformas, '') AS plataformas,
+       COALESCE(plataformas.plataformaIds, '') AS plataformaIds,
+       COALESCE(articulosAgg.articulosCount, 0) AS articulosCount,
+       CASE
+         WHEN pub.estado <> 'Finalizado'
+          AND COALESCE(articulosAgg.alertaCount, 0) > 0
+         THEN 1 ELSE 0
+       END AS alertaStock
+     FROM ${DB_NAME}.redes_publicaciones pub
+     INNER JOIN ${DB_NAME}.redes_publicacion_tipos tipo ON tipo.id = pub.tipo_id
+     LEFT JOIN (
+       SELECT
+         rpp.publicacion_id,
+         GROUP_CONCAT(rp.nombre ORDER BY rp.nombre SEPARATOR ', ') AS plataformas,
+         GROUP_CONCAT(rp.id ORDER BY rp.nombre SEPARATOR ',') AS plataformaIds
+       FROM ${DB_NAME}.redes_publicacion_plataformas rpp
+       INNER JOIN ${DB_NAME}.redes_plataformas rp ON rp.id = rpp.plataforma_id
+       GROUP BY rpp.publicacion_id
+     ) plataformas ON plataformas.publicacion_id = pub.id
+     LEFT JOIN (
+       SELECT
+         rpa.publicacion_id,
+         COUNT(*) AS articulosCount,
+         SUM(
+           CASE
+             WHEN (COALESCE(art.Cantidad, 0) - COALESCE(ped.enPedido, 0)) < COALESCE(pub2.umbral_alerta, 0)
+             THEN 1 ELSE 0
+           END
+         ) AS alertaCount
+       FROM ${DB_NAME}.redes_publicacion_articulos rpa
+       INNER JOIN ${DB_NAME}.redes_publicaciones pub2 ON pub2.id = rpa.publicacion_id
+       INNER JOIN ${DB_NAME}.articulos art ON art.Articulo = rpa.articulo
+       LEFT JOIN (
+         SELECT
+           pt.Articulo,
+           SUM(pt.Cantidad) AS enPedido
+         FROM ${DB_NAME}.pedidotemp pt
+         INNER JOIN ${DB_NAME}.controlpedidos cp ON cp.nropedido = pt.NroPedido
+         WHERE cp.estado = 1
+         GROUP BY pt.Articulo
+       ) ped ON ped.Articulo = rpa.articulo
+       GROUP BY rpa.publicacion_id, pub2.umbral_alerta
+     ) articulosAgg ON articulosAgg.publicacion_id = pub.id
+     ORDER BY pub.nro_publicacion DESC`
+  );
+  return (rows || []).map(mapRedesPublicacionRow);
+}
+
+async function fetchRedesPublicacionDetalle(conn, id) {
+  const [rows] = await conn.query(
+    `SELECT
+       pub.id,
+       pub.nro_publicacion AS nroPublicacion,
+       pub.nombre,
+       DATE_FORMAT(pub.fecha, '%Y-%m-%d') AS fecha,
+       pub.tipo_id AS tipoId,
+       tipo.nombre AS tipo,
+       pub.estado,
+       pub.umbral_alerta AS umbralAlerta,
+       COALESCE(plataformas.plataformas, '') AS plataformas,
+       COALESCE(plataformas.plataformaIds, '') AS plataformaIds,
+       COALESCE(articulosAgg.articulosCount, 0) AS articulosCount,
+       CASE
+         WHEN pub.estado <> 'Finalizado'
+          AND COALESCE(articulosAgg.alertaCount, 0) > 0
+         THEN 1 ELSE 0
+       END AS alertaStock
+     FROM ${DB_NAME}.redes_publicaciones pub
+     INNER JOIN ${DB_NAME}.redes_publicacion_tipos tipo ON tipo.id = pub.tipo_id
+     LEFT JOIN (
+       SELECT
+         rpp.publicacion_id,
+         GROUP_CONCAT(rp.nombre ORDER BY rp.nombre SEPARATOR ', ') AS plataformas,
+         GROUP_CONCAT(rp.id ORDER BY rp.nombre SEPARATOR ',') AS plataformaIds
+       FROM ${DB_NAME}.redes_publicacion_plataformas rpp
+       INNER JOIN ${DB_NAME}.redes_plataformas rp ON rp.id = rpp.plataforma_id
+       WHERE rpp.publicacion_id = ?
+       GROUP BY rpp.publicacion_id
+     ) plataformas ON plataformas.publicacion_id = pub.id
+     LEFT JOIN (
+       SELECT
+         rpa.publicacion_id,
+         COUNT(*) AS articulosCount,
+         SUM(
+           CASE
+             WHEN (COALESCE(art.Cantidad, 0) - COALESCE(ped.enPedido, 0)) < COALESCE(pub2.umbral_alerta, 0)
+             THEN 1 ELSE 0
+           END
+         ) AS alertaCount
+       FROM ${DB_NAME}.redes_publicacion_articulos rpa
+       INNER JOIN ${DB_NAME}.redes_publicaciones pub2 ON pub2.id = rpa.publicacion_id
+       INNER JOIN ${DB_NAME}.articulos art ON art.Articulo = rpa.articulo
+       LEFT JOIN (
+         SELECT
+           pt.Articulo,
+           SUM(pt.Cantidad) AS enPedido
+         FROM ${DB_NAME}.pedidotemp pt
+         INNER JOIN ${DB_NAME}.controlpedidos cp ON cp.nropedido = pt.NroPedido
+         WHERE cp.estado = 1
+         GROUP BY pt.Articulo
+       ) ped ON ped.Articulo = rpa.articulo
+       WHERE rpa.publicacion_id = ?
+       GROUP BY rpa.publicacion_id, pub2.umbral_alerta
+     ) articulosAgg ON articulosAgg.publicacion_id = pub.id
+     WHERE pub.id = ?
+     LIMIT 1`,
+    [id, id, id]
+  );
+  const publicacion = rows[0] ? mapRedesPublicacionRow(rows[0]) : null;
+  if (!publicacion) return null;
+  const [articulos] = await conn.query(
+    `SELECT
+       rpa.articulo,
+       art.Detalle AS detalle,
+       COALESCE(art.Cantidad, 0) AS stock,
+       COALESCE(ped.enPedido, 0) AS enPedido,
+       (COALESCE(art.Cantidad, 0) - COALESCE(ped.enPedido, 0)) AS stockDisponible,
+       COALESCE(img.imagessrc, '') AS imageSrc,
+       CASE
+         WHEN (COALESCE(art.Cantidad, 0) - COALESCE(ped.enPedido, 0)) < ?
+         THEN 1 ELSE 0
+       END AS alertaStock
+     FROM ${DB_NAME}.redes_publicacion_articulos rpa
+     INNER JOIN ${DB_NAME}.articulos art ON art.Articulo = rpa.articulo
+     LEFT JOIN (
+       SELECT
+         pt.Articulo,
+         SUM(pt.Cantidad) AS enPedido
+       FROM ${DB_NAME}.pedidotemp pt
+       INNER JOIN ${DB_NAME}.controlpedidos cp ON cp.nropedido = pt.NroPedido
+       WHERE cp.estado = 1
+       GROUP BY pt.Articulo
+     ) ped ON ped.Articulo = rpa.articulo
+     LEFT JOIN (
+       SELECT s1.articulo, s1.imagessrc
+       FROM ${DB_NAME}.statusecomercesincro s1
+       INNER JOIN (
+         SELECT MAX(id_provecomerce) AS id_provecomerce
+         FROM ${DB_NAME}.statusecomercesincro
+       ) latest ON latest.id_provecomerce = s1.id_provecomerce
+     ) img ON img.articulo = rpa.articulo
+     WHERE rpa.publicacion_id = ?
+     ORDER BY rpa.articulo`,
+    [publicacion.umbralAlerta, id]
+  );
+  return {
+    ...publicacion,
+    articulos: (articulos || []).map((row) => mapRedesArticuloRow(row, publicacion.umbralAlerta)),
+  };
+}
+
+function normalizeRedesIds(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )
+  );
+}
+
+function normalizeRedesArticulos(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((item) => String(item?.articulo || item || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function assertRedesCatalogos(conn, tipoId, plataformaIds) {
+  const [[tipo]] = await conn.query(
+    `SELECT id FROM ${DB_NAME}.redes_publicacion_tipos WHERE id = ? AND activo = 1 LIMIT 1`,
+    [tipoId]
+  );
+  if (!tipo) {
+    const error = new Error('Tipo de publicacion invalido');
+    error.status = 400;
+    throw error;
+  }
+  if (!plataformaIds.length) {
+    const error = new Error('Selecciona al menos una plataforma');
+    error.status = 400;
+    throw error;
+  }
+  const placeholders = plataformaIds.map(() => '?').join(',');
+  const [plataformas] = await conn.query(
+    `SELECT id FROM ${DB_NAME}.redes_plataformas WHERE activo = 1 AND id IN (${placeholders})`,
+    plataformaIds
+  );
+  if ((plataformas || []).length !== plataformaIds.length) {
+    const error = new Error('Plataforma invalida');
+    error.status = 400;
+    throw error;
+  }
+}
+
+async function assertRedesArticulos(conn, articulos) {
+  if (!articulos.length) {
+    const error = new Error('Agrega al menos un articulo');
+    error.status = 400;
+    throw error;
+  }
+  const placeholders = articulos.map(() => '?').join(',');
+  const [rows] = await conn.query(
+    `SELECT Articulo FROM ${DB_NAME}.articulos WHERE Articulo IN (${placeholders})`,
+    articulos
+  );
+  if ((rows || []).length !== articulos.length) {
+    const error = new Error('Uno o mas articulos no existen');
+    error.status = 400;
+    throw error;
+  }
+}
+
+app.get('/api/redes/catalogos', requireAuth, requirePermission('redes-publicaciones'), async (_req, res) => {
+  try {
+    const [tipos] = await pool.query(
+      `SELECT id, nombre
+       FROM ${DB_NAME}.redes_publicacion_tipos
+       WHERE activo = 1
+       ORDER BY nombre`
+    );
+    const [plataformas] = await pool.query(
+      `SELECT id, nombre
+       FROM ${DB_NAME}.redes_plataformas
+       WHERE activo = 1
+       ORDER BY nombre`
+    );
+    res.json({ tipos: tipos || [], plataformas: plataformas || [], estados: REDES_ESTADOS });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogos de redes', error: error.message });
+  }
+});
+
+app.get('/api/redes/publicaciones', requireAuth, requirePermission('redes-publicaciones'), async (_req, res) => {
+  try {
+    const data = await fetchRedesPublicaciones(pool);
+    res.json({ total: data.length, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar publicaciones de redes', error: error.message });
+  }
+});
+
+app.get('/api/redes/publicaciones/next', requireAuth, requirePermission('redes-publicaciones'), async (_req, res) => {
+  try {
+    const nroPublicacion = await getNextRedesPublicacionNumber(pool);
+    res.json({ nroPublicacion });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar nro publicacion', error: error.message });
+  }
+});
+
+app.get('/api/redes/articulos/pick', requireAuth, requirePermission('redes-publicaciones'), async (_req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         COALESCE(art.Cantidad, 0) AS stock,
+         COALESCE(ped.enPedido, 0) AS enPedido,
+         (COALESCE(art.Cantidad, 0) - COALESCE(ped.enPedido, 0)) AS stockDisponible,
+         COALESCE(img.imagessrc, '') AS imageSrc
+       FROM ${DB_NAME}.articulos art
+       LEFT JOIN (
+         SELECT
+           pt.Articulo,
+           SUM(pt.Cantidad) AS enPedido
+         FROM ${DB_NAME}.pedidotemp pt
+         INNER JOIN ${DB_NAME}.controlpedidos cp ON cp.nropedido = pt.NroPedido
+         WHERE cp.estado = 1
+         GROUP BY pt.Articulo
+       ) ped ON ped.Articulo = art.Articulo
+       LEFT JOIN (
+         SELECT s1.articulo, s1.imagessrc
+         FROM ${DB_NAME}.statusecomercesincro s1
+         INNER JOIN (
+           SELECT MAX(id_provecomerce) AS id_provecomerce
+           FROM ${DB_NAME}.statusecomercesincro
+         ) latest ON latest.id_provecomerce = s1.id_provecomerce
+       ) img ON img.articulo = art.Articulo
+       ORDER BY art.Articulo`
+    );
+    res.json({ total: rows.length, data: (rows || []).map((row) => mapRedesArticuloRow(row)) });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar articulos para redes', error: error.message });
+  }
+});
+
+app.get('/api/redes/publicaciones/:id', requireAuth, requirePermission('redes-publicaciones'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'id invalido' });
+    const data = await fetchRedesPublicacionDetalle(pool, id);
+    if (!data) return res.status(404).json({ message: 'Publicacion no encontrada' });
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar publicacion de redes', error: error.message });
+  }
+});
+
+app.post('/api/redes/publicaciones', requireAuth, requirePermission('redes-publicaciones'), async (req, res) => {
+  let conn;
+  try {
+    const body = req.body || {};
+    const nombre = String(body.nombre || '').trim();
+    const fecha = String(body.fecha || '').trim();
+    const tipoId = Number(body.tipoId);
+    const estado = normalizeRedesEstado(body.estado);
+    const umbralAlerta = Math.max(0, Math.trunc(Number(body.umbralAlerta) || 0));
+    const plataformaIds = normalizeRedesIds(body.plataformaIds);
+    const articulos = normalizeRedesArticulos(body.articulos);
+    if (!nombre) return res.status(400).json({ message: 'Nombre requerido' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ message: 'Fecha invalida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await assertRedesCatalogos(conn, tipoId, plataformaIds);
+    await assertRedesArticulos(conn, articulos);
+    const nroPublicacion = await reserveRedesPublicacionNumber(conn);
+    const [result] = await conn.query(
+      `INSERT INTO ${DB_NAME}.redes_publicaciones
+         (nro_publicacion, nombre, fecha, tipo_id, estado, umbral_alerta, creado_por, actualizado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nroPublicacion, nombre, fecha, tipoId, estado, umbralAlerta, req.user?.id || null, req.user?.id || null]
+    );
+    const publicacionId = result.insertId;
+    for (const plataformaId of plataformaIds) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_publicacion_plataformas (publicacion_id, plataforma_id)
+         VALUES (?, ?)`,
+        [publicacionId, plataformaId]
+      );
+    }
+    for (const articulo of articulos) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_publicacion_articulos (publicacion_id, articulo)
+         VALUES (?, ?)`,
+        [publicacionId, articulo]
+      );
+    }
+    await conn.commit();
+    const data = await fetchRedesPublicacionDetalle(pool, publicacionId);
+    const next = await getNextRedesPublicacionNumber(pool);
+    res.status(201).json({ ok: true, data, nextNroPublicacion: next });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(error.status || 500).json({ message: error.message || 'Error al crear publicacion de redes' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/redes/publicaciones/:id', requireAuth, requirePermission('redes-publicaciones'), async (req, res) => {
+  let conn;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'id invalido' });
+    const body = req.body || {};
+    const nombre = String(body.nombre || '').trim();
+    const fecha = String(body.fecha || '').trim();
+    const tipoId = Number(body.tipoId);
+    const estado = normalizeRedesEstado(body.estado);
+    const umbralAlerta = Math.max(0, Math.trunc(Number(body.umbralAlerta) || 0));
+    const plataformaIds = normalizeRedesIds(body.plataformaIds);
+    const articulos = normalizeRedesArticulos(body.articulos);
+    if (!nombre) return res.status(400).json({ message: 'Nombre requerido' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ message: 'Fecha invalida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [[actual]] = await conn.query(
+      `SELECT id FROM ${DB_NAME}.redes_publicaciones WHERE id = ? FOR UPDATE`,
+      [id]
+    );
+    if (!actual) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Publicacion no encontrada' });
+    }
+    await assertRedesCatalogos(conn, tipoId, plataformaIds);
+    await assertRedesArticulos(conn, articulos);
+    await conn.query(
+      `UPDATE ${DB_NAME}.redes_publicaciones
+       SET nombre = ?,
+           fecha = ?,
+           tipo_id = ?,
+           estado = ?,
+           umbral_alerta = ?,
+           actualizado_por = ?
+       WHERE id = ?`,
+      [nombre, fecha, tipoId, estado, umbralAlerta, req.user?.id || null, id]
+    );
+    await conn.query(`DELETE FROM ${DB_NAME}.redes_publicacion_plataformas WHERE publicacion_id = ?`, [id]);
+    for (const plataformaId of plataformaIds) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_publicacion_plataformas (publicacion_id, plataforma_id)
+         VALUES (?, ?)`,
+        [id, plataformaId]
+      );
+    }
+    await conn.query(`DELETE FROM ${DB_NAME}.redes_publicacion_articulos WHERE publicacion_id = ?`, [id]);
+    for (const articulo of articulos) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_publicacion_articulos (publicacion_id, articulo)
+         VALUES (?, ?)`,
+        [id, articulo]
+      );
+    }
+    await conn.commit();
+    const data = await fetchRedesPublicacionDetalle(pool, id);
+    res.json({ ok: true, data });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(error.status || 500).json({ message: error.message || 'Error al actualizar publicacion de redes' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete(
+  '/api/redes/publicaciones/:id/articulos/:articulo',
+  requireAuth,
+  requirePermission('redes-publicaciones'),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const articulo = String(req.params.articulo || '').trim();
+      if (!Number.isFinite(id) || id <= 0 || !articulo) {
+        return res.status(400).json({ message: 'Datos invalidos' });
+      }
+      const [result] = await pool.query(
+        `DELETE FROM ${DB_NAME}.redes_publicacion_articulos
+         WHERE publicacion_id = ? AND articulo = ?`,
+        [id, articulo]
+      );
+      if (!result.affectedRows) return res.status(404).json({ message: 'Articulo no encontrado en la publicacion' });
+      const data = await fetchRedesPublicacionDetalle(pool, id);
+      res.json({ ok: true, data });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al eliminar articulo de la publicacion', error: error.message });
+    }
+  }
+);
 
 app.get('/api/mercaderia/top', async (req, res) => {
   try {

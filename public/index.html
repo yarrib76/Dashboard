@@ -107,6 +107,19 @@
             <span class="icon">🏬</span>
             <span class="label">Salón</span>
           </button>
+          <div class="menu-group" data-group="redes">
+            <button class="menu-item menu-parent" data-toggle="redes">
+              <span class="icon">#</span>
+              <span class="label">Redes</span>
+              <span class="caret">></span>
+            </button>
+            <div class="submenu" data-parent="redes">
+              <button class="menu-item submenu-item" data-target="redes-publicaciones">
+                <span class="icon">📣</span>
+                <span class="label">Publicaciones</span>
+              </button>
+            </div>
+          </div>
           <div class="menu-group" data-group="fidelizacion">
             <button class="menu-item menu-parent" data-toggle="fidelizacion">
               <span class="icon">🎯</span>
@@ -954,7 +967,7 @@
 
   <section class="view hidden" id="view-clientes-reportes">
     <article class="card wide clientes-reportes">
-      <div class="actions between abm-actions-header">
+      <div class="actions between abm-actions-header redes-publicaciones-header">
         <h2>Reportes de Clientes</h2>
         <div class="actions inline compact clients-controls">
           <label class="client-inline">
@@ -3636,6 +3649,39 @@
     </article>
   </section>
 
+  <section class="view hidden" id="view-redes-publicaciones">
+    <article class="card wide">
+      <div class="actions between abm-actions-header">
+        <div class="abm-header-left">
+          <h2>Redes - Publicaciones</h2>
+          <p class="status">Registro de publicaciones y articulos asociados.</p>
+        </div>
+        <div class="redes-publicaciones-header-actions">
+          <button id="redes-publicacion-new" type="button">Nueva</button>
+          <button id="redes-publicacion-refresh" type="button">Actualizar</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table" id="redes-publicaciones-table">
+          <thead>
+            <tr>
+              <th>NroPublicacion</th>
+              <th>Nombre</th>
+              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Estado</th>
+              <th>Plataformas</th>
+              <th>Umbral Alerta</th>
+              <th>Accion</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="status" id="redes-publicaciones-status"></p>
+    </article>
+  </section>
+
   <section class="view hidden" id="view-control-ordenes">
     <article class="card wide">
       <div class="actions between">
@@ -4684,6 +4730,146 @@
   </div>
 
   <div class="abm-loading-overlay" id="abm-pick-loading">Cargando...</div>
+
+  <div class="modal-overlay" id="redes-publicacion-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="redes-publicacion-title">Nueva Publicacion</h3>
+        <button id="redes-publicacion-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="redes-publicacion-form">
+          <div class="redes-form-grid">
+            <label class="redes-field-nombre">
+              <span>Nombre de Publicacion</span>
+              <input type="text" id="redes-publicacion-nombre" maxlength="180" required />
+            </label>
+            <label class="redes-field-tipo">
+              <span>Tipo</span>
+              <select id="redes-publicacion-tipo" required></select>
+            </label>
+            <label class="redes-field-nro">
+              <span>NroPublicacion</span>
+              <input type="number" id="redes-publicacion-nro" readonly />
+            </label>
+            <label class="redes-field-fecha">
+              <span>Fecha</span>
+              <input type="date" id="redes-publicacion-fecha" required />
+            </label>
+            <label class="redes-field-articulo">
+              <span>Articulo</span>
+              <div class="abm-inline-group">
+                <input type="text" id="redes-articulo" readonly />
+                <button type="button" id="redes-articulo-search" class="abm-icon-btn" title="Buscar articulo">🔍</button>
+              </div>
+            </label>
+            <label class="redes-field-estado">
+              <span>Estado</span>
+              <select id="redes-publicacion-estado" required></select>
+            </label>
+            <label class="redes-field-umbral">
+              <span>Umbral Alerta</span>
+              <input type="number" id="redes-publicacion-umbral" min="0" step="1" value="1" required />
+            </label>
+            <label class="redes-field-detalle">
+              <span>Detalle</span>
+              <input type="text" id="redes-articulo-detalle" readonly />
+            </label>
+            <label class="redes-field-stock">
+              <span>Stock</span>
+              <input type="number" id="redes-articulo-stock" readonly />
+            </label>
+            <label class="redes-field-plataformas">
+              <span>Plataformas</span>
+              <select id="redes-publicacion-plataformas" multiple required></select>
+            </label>
+            <div class="redes-articulo-preview">
+              <img id="redes-articulo-foto" src="/sinfoto.png" alt="Foto de articulo" />
+              <button type="button" id="redes-articulo-foto-open" class="abm-link-btn">Ampliar foto</button>
+            </div>
+          </div>
+          <div class="abm-form-actions">
+            <button type="button" id="redes-articulo-add">Agregar articulo</button>
+          </div>
+          <p class="status" id="redes-publicacion-form-status"></p>
+        </form>
+
+        <div class="table-wrap abm-batch-table-wrap">
+          <table class="table" id="redes-publicacion-articulos-table">
+            <thead>
+              <tr>
+                <th>Articulo/SKU</th>
+                <th>Detalle</th>
+                <th>Stock</th>
+                <th>Foto</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="actions inline abm-footer-actions redes-modal-footer-actions">
+          <button type="button" id="redes-publicacion-save">Guardar</button>
+          <button type="button" id="redes-publicacion-cancel">Cancelar</button>
+        </div>
+        <p class="status" id="redes-publicacion-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="redes-articulo-pick-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Seleccionar Articulo</h3>
+        <button id="redes-articulo-pick-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="redes-articulo-pick-table">
+            <thead>
+              <tr>
+                <th>Foto</th>
+                <th>Articulo/SKU</th>
+                <th>Detalle</th>
+                <th>Stock</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="redes-articulo-pick-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="redes-articulos-overlay">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="redes-articulos-title">Articulos de la Publicacion</h3>
+        <button id="redes-articulos-close" class="close-btn" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrap">
+          <table class="table" id="redes-articulos-table">
+            <thead>
+              <tr>
+                <th>Articulo/SKU</th>
+                <th>Detalle</th>
+                <th>Stock</th>
+                <th>Foto</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="status" id="redes-articulos-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="abm-loading-overlay" id="redes-articulo-pick-loading">Cargando...</div>
 
   <div class="modal-overlay" id="abm-batch-calc-overlay">
     <div class="modal">

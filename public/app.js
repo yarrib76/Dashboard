@@ -405,6 +405,18 @@ let ecommerceTnRows = [];
 let ecommerceTnMeta = null;
 let ecommerceAsigRows = [];
 let ecommerceAsigVendedoras = [];
+let redesPublicacionesLoaded = false;
+let redesPublicacionesTable = null;
+let redesArticuloPickTable = null;
+let redesPublicacionArticulosTable = null;
+let redesArticulosViewTable = null;
+let redesCatalogosLoaded = false;
+let redesTipos = [];
+let redesPlataformas = [];
+let redesEstados = ['Pendiente', 'En Proceso', 'Finalizado'];
+let redesPublicacionEditingId = null;
+let redesCurrentArticulo = null;
+let redesPublicacionArticulos = [];
 const ecommerceAsigSelected = new Set();
 let currentLocalName = '';
 let currentTnubeStoreId = '';
@@ -518,6 +530,7 @@ const viewMercaderiaFotos = document.getElementById('view-mercaderia-fotos');
 const viewMercaderiaCatalogo = document.getElementById('view-mercaderia-catalogo');
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
+const viewRedesPublicaciones = document.getElementById('view-redes-publicaciones');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
 const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
 const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
@@ -613,6 +626,43 @@ const mercArtProvStatus = document.getElementById('merc-art-prov-status');
 const mercArtProvTableEl = document.getElementById('merc-art-prov-table');
 const mercTableBody = document.querySelector('#merc-table tbody');
 const mercStatus = document.getElementById('merc-status');
+const redesPublicacionNewBtn = document.getElementById('redes-publicacion-new');
+const redesPublicacionRefreshBtn = document.getElementById('redes-publicacion-refresh');
+const redesPublicacionesStatus = document.getElementById('redes-publicaciones-status');
+const redesPublicacionesTableEl = document.getElementById('redes-publicaciones-table');
+const redesPublicacionOverlay = document.getElementById('redes-publicacion-overlay');
+const redesPublicacionTitle = document.getElementById('redes-publicacion-title');
+const redesPublicacionClose = document.getElementById('redes-publicacion-close');
+const redesPublicacionCancel = document.getElementById('redes-publicacion-cancel');
+const redesPublicacionSave = document.getElementById('redes-publicacion-save');
+const redesPublicacionForm = document.getElementById('redes-publicacion-form');
+const redesPublicacionNroInput = document.getElementById('redes-publicacion-nro');
+const redesPublicacionFechaInput = document.getElementById('redes-publicacion-fecha');
+const redesPublicacionNombreInput = document.getElementById('redes-publicacion-nombre');
+const redesPublicacionTipoSelect = document.getElementById('redes-publicacion-tipo');
+const redesPublicacionEstadoSelect = document.getElementById('redes-publicacion-estado');
+const redesPublicacionUmbralInput = document.getElementById('redes-publicacion-umbral');
+const redesPublicacionPlataformasSelect = document.getElementById('redes-publicacion-plataformas');
+const redesArticuloInput = document.getElementById('redes-articulo');
+const redesArticuloDetalleInput = document.getElementById('redes-articulo-detalle');
+const redesArticuloStockInput = document.getElementById('redes-articulo-stock');
+const redesArticuloFoto = document.getElementById('redes-articulo-foto');
+const redesArticuloFotoOpen = document.getElementById('redes-articulo-foto-open');
+const redesArticuloSearch = document.getElementById('redes-articulo-search');
+const redesArticuloAdd = document.getElementById('redes-articulo-add');
+const redesPublicacionArticulosTableEl = document.getElementById('redes-publicacion-articulos-table');
+const redesPublicacionFormStatus = document.getElementById('redes-publicacion-form-status');
+const redesPublicacionStatus = document.getElementById('redes-publicacion-status');
+const redesArticuloPickOverlay = document.getElementById('redes-articulo-pick-overlay');
+const redesArticuloPickClose = document.getElementById('redes-articulo-pick-close');
+const redesArticuloPickTableEl = document.getElementById('redes-articulo-pick-table');
+const redesArticuloPickStatus = document.getElementById('redes-articulo-pick-status');
+const redesArticuloPickLoading = document.getElementById('redes-articulo-pick-loading');
+const redesArticulosOverlay = document.getElementById('redes-articulos-overlay');
+const redesArticulosTitle = document.getElementById('redes-articulos-title');
+const redesArticulosClose = document.getElementById('redes-articulos-close');
+const redesArticulosTableEl = document.getElementById('redes-articulos-table');
+const redesArticulosStatus = document.getElementById('redes-articulos-status');
 const statPendientesControl = document.getElementById('stat-pendientes-control');
 const statSinTransporteControl = document.getElementById('stat-sin-transporte-control');
 const statVencidosControl = document.getElementById('stat-vencidos-control');
@@ -7084,6 +7134,585 @@ async function openAbmPedidos(articulo, detalle) {
   } catch (error) {
     if (abmPedidosStatus) abmPedidosStatus.textContent = error.message || 'Error al cargar pedidos.';
     abmPedidosOverlay.classList.add('open');
+  }
+}
+
+function getRedesTodayValue() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getRedesImageSrc(row = {}) {
+  return row.imageSrc || row.imagessrc || '/sinfoto.png';
+}
+
+function renderRedesThumb(src, articulo = '') {
+  const imageSrc = src || '/sinfoto.png';
+  return `<button type="button" class="redes-thumb-btn" data-src="${escapeAttr(imageSrc)}" title="Ampliar foto">
+    <img src="${escapeAttr(imageSrc)}" alt="Foto ${escapeAttr(articulo)}" loading="lazy" onerror="this.onerror=null;this.src='/sinfoto.png';">
+  </button>`;
+}
+
+function getSelectedRedesPlataformas() {
+  return Array.from(redesPublicacionPlataformasSelect?.selectedOptions || [])
+    .map((option) => Number(option.value))
+    .filter(Number.isFinite);
+}
+
+function setSelectedRedesPlataformas(values = []) {
+  const normalizedValues = Array.isArray(values) ? values : [];
+  const selectedIds = new Set(normalizedValues.map((id) => String(id)));
+  const selectedNames = new Set(normalizedValues.map((name) => String(name).trim().toLowerCase()).filter(Boolean));
+  Array.from(redesPublicacionPlataformasSelect?.options || []).forEach((option) => {
+    const optionValue = String(option.value);
+    const optionName = String(option.textContent || '').trim().toLowerCase();
+    option.selected = selectedIds.has(optionValue) || selectedNames.has(optionName);
+  });
+}
+
+function applySelectedRedesPlataformas(values = []) {
+  setSelectedRedesPlataformas(values);
+  requestAnimationFrame(() => setSelectedRedesPlataformas(values));
+  setTimeout(() => setSelectedRedesPlataformas(values), 0);
+}
+
+function setRedesOptions(select, rows = [], selectedValue = '') {
+  if (!select) return;
+  select.innerHTML = '';
+  rows.forEach((row) => {
+    const option = document.createElement('option');
+    option.value = String(row.id ?? row);
+    option.textContent = row.nombre ?? row;
+    select.appendChild(option);
+  });
+  if (selectedValue !== '') select.value = String(selectedValue);
+}
+
+async function loadRedesCatalogos(force = false) {
+  if (redesCatalogosLoaded && !force) return;
+  const res = await fetchJSON('/api/redes/catalogos');
+  redesTipos = Array.isArray(res.tipos) ? res.tipos : [];
+  redesPlataformas = Array.isArray(res.plataformas) ? res.plataformas : [];
+  redesEstados = Array.isArray(res.estados) && res.estados.length ? res.estados : redesEstados;
+  setRedesOptions(redesPublicacionTipoSelect, redesTipos);
+  setRedesOptions(
+    redesPublicacionEstadoSelect,
+    redesEstados.map((estado) => ({ id: estado, nombre: estado })),
+    'Pendiente'
+  );
+  setRedesOptions(redesPublicacionPlataformasSelect, redesPlataformas);
+  redesCatalogosLoaded = true;
+}
+
+async function loadRedesNextNumber() {
+  const res = await fetchJSON('/api/redes/publicaciones/next');
+  if (redesPublicacionNroInput) redesPublicacionNroInput.value = res.nroPublicacion || '';
+}
+
+function normalizeRedesArticulo(row = {}) {
+  const stock = Number(row.stock ?? row.Cantidad ?? row.cantidad) || 0;
+  const enPedido = Number(row.enPedido) || 0;
+  const stockDisponible = Number(row.stockDisponible ?? stock - enPedido) || 0;
+  return {
+    articulo: String(row.articulo || row.Articulo || '').trim(),
+    detalle: row.detalle || row.Detalle || '',
+    stock,
+    enPedido,
+    stockDisponible,
+    imageSrc: getRedesImageSrc(row),
+    alertaStock: !!row.alertaStock,
+  };
+}
+
+function clearRedesArticuloForm() {
+  redesCurrentArticulo = null;
+  if (redesArticuloInput) redesArticuloInput.value = '';
+  if (redesArticuloDetalleInput) redesArticuloDetalleInput.value = '';
+  if (redesArticuloStockInput) redesArticuloStockInput.value = '';
+  if (redesArticuloFoto) redesArticuloFoto.src = '/sinfoto.png';
+}
+
+function setRedesArticuloForm(row) {
+  const articulo = normalizeRedesArticulo(row);
+  redesCurrentArticulo = articulo;
+  if (redesArticuloInput) redesArticuloInput.value = articulo.articulo;
+  if (redesArticuloDetalleInput) redesArticuloDetalleInput.value = articulo.detalle;
+  if (redesArticuloStockInput) redesArticuloStockInput.value = articulo.stockDisponible;
+  if (redesArticuloFoto) redesArticuloFoto.src = articulo.imageSrc || '/sinfoto.png';
+}
+
+function getRedesUmbralValue() {
+  return Math.max(0, Math.trunc(Number(redesPublicacionUmbralInput?.value) || 0));
+}
+
+function getRedesArticulosRows() {
+  const umbral = getRedesUmbralValue();
+  return redesPublicacionArticulos.map((item) => ({
+    ...item,
+    alertaStock: Number(item.stockDisponible) < umbral,
+  }));
+}
+
+function renderRedesPublicacionArticulos() {
+  if (!redesPublicacionArticulosTableEl) return;
+  const rows = getRedesArticulosRows();
+  if (redesPublicacionArticulosTable) {
+    redesPublicacionArticulosTable.clear();
+    redesPublicacionArticulosTable.rows.add(rows);
+    redesPublicacionArticulosTable.draw();
+  } else if (window.DataTable) {
+    redesPublicacionArticulosTable = new DataTable('#redes-publicacion-articulos-table', {
+      data: rows,
+      columns: [
+        { data: 'articulo' },
+        { data: 'detalle' },
+        { data: 'stockDisponible' },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) => renderRedesThumb(row.imageSrc, row.articulo),
+        },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) =>
+            `<button type="button" class="abm-link-btn redes-articulo-remove" data-articulo="${escapeAttr(row.articulo)}">Eliminar</button>`,
+        },
+      ],
+      pageLength: 10,
+      lengthMenu: [10, 25, 50],
+      deferRender: true,
+      order: [[0, 'asc']],
+      autoWidth: false,
+      rowCallback: (tr, row) => {
+        tr.classList.toggle('redes-alert-row', !!row.alertaStock);
+      },
+    });
+  }
+}
+
+function addRedesArticulo(row) {
+  const articulo = normalizeRedesArticulo(row);
+  if (!articulo.articulo) return;
+  if (redesPublicacionArticulos.some((item) => item.articulo === articulo.articulo)) {
+    if (redesPublicacionFormStatus) redesPublicacionFormStatus.textContent = 'El articulo ya fue agregado a esta publicacion.';
+    return;
+  }
+  redesPublicacionArticulos.push(articulo);
+  renderRedesPublicacionArticulos();
+  clearRedesArticuloForm();
+  if (redesPublicacionFormStatus) redesPublicacionFormStatus.textContent = 'Articulo agregado.';
+}
+
+function removeRedesArticulo(articulo) {
+  const key = String(articulo || '');
+  redesPublicacionArticulos = redesPublicacionArticulos.filter((item) => item.articulo !== key);
+  renderRedesPublicacionArticulos();
+}
+
+function renderRedesArticulosView(rows = [], publicacionId = 0) {
+  if (!redesArticulosTableEl) return;
+  const dataRows = rows.map((row) => ({ ...row, publicacionId }));
+  if (redesArticulosViewTable) {
+    redesArticulosViewTable.clear();
+    redesArticulosViewTable.rows.add(dataRows);
+    redesArticulosViewTable.draw();
+  } else if (window.DataTable) {
+    redesArticulosViewTable = new DataTable('#redes-articulos-table', {
+      data: dataRows,
+      columns: [
+        { data: 'articulo' },
+        { data: 'detalle' },
+        { data: 'stockDisponible' },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) => renderRedesThumb(row.imageSrc, row.articulo),
+        },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) =>
+            `<button type="button" class="abm-link-btn redes-articulos-delete" data-publicacion-id="${row.publicacionId}" data-articulo="${escapeAttr(row.articulo)}">Eliminar</button>`,
+        },
+      ],
+      pageLength: 10,
+      lengthMenu: [10, 25, 50],
+      deferRender: true,
+      order: [[0, 'asc']],
+      autoWidth: false,
+      rowCallback: (tr, row) => {
+        tr.classList.toggle('redes-alert-row', !!row.alertaStock);
+      },
+    });
+  }
+}
+
+function resetRedesPublicacionForm() {
+  redesPublicacionEditingId = null;
+  redesPublicacionArticulos = [];
+  if (redesPublicacionTitle) redesPublicacionTitle.textContent = 'Nueva Publicacion';
+  if (redesPublicacionNombreInput) redesPublicacionNombreInput.value = '';
+  if (redesPublicacionFechaInput) redesPublicacionFechaInput.value = getRedesTodayValue();
+  if (redesPublicacionTipoSelect && redesTipos[0]) redesPublicacionTipoSelect.value = String(redesTipos[0].id);
+  if (redesPublicacionEstadoSelect) redesPublicacionEstadoSelect.value = 'Pendiente';
+  if (redesPublicacionUmbralInput) redesPublicacionUmbralInput.value = '1';
+  const defaultPlataformaId = redesPlataformas[0]?.id ? [redesPlataformas[0].id] : [];
+  applySelectedRedesPlataformas(defaultPlataformaId);
+  clearRedesArticuloForm();
+  renderRedesPublicacionArticulos();
+  if (redesPublicacionFormStatus) redesPublicacionFormStatus.textContent = '';
+  if (redesPublicacionStatus) redesPublicacionStatus.textContent = '';
+}
+
+async function openRedesPublicacionNew() {
+  if (!redesPublicacionOverlay) return;
+  await loadRedesCatalogos();
+  resetRedesPublicacionForm();
+  await loadRedesNextNumber();
+  redesPublicacionOverlay.classList.add('open');
+}
+
+async function openRedesPublicacionEdit(id) {
+  if (!redesPublicacionOverlay || !id) return;
+  await loadRedesCatalogos();
+  if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Cargando...';
+  redesPublicacionOverlay.classList.add('open');
+  const res = await fetchJSON(`/api/redes/publicaciones/${encodeURIComponent(id)}`);
+  const data = res.data || {};
+  redesPublicacionEditingId = Number(data.id) || 0;
+  redesPublicacionArticulos = (data.articulos || []).map(normalizeRedesArticulo);
+  if (redesPublicacionTitle) redesPublicacionTitle.textContent = `Modificar Publicacion ${data.nroPublicacion || ''}`;
+  if (redesPublicacionNroInput) redesPublicacionNroInput.value = data.nroPublicacion || '';
+  if (redesPublicacionNombreInput) redesPublicacionNombreInput.value = data.nombre || '';
+  if (redesPublicacionFechaInput) redesPublicacionFechaInput.value = data.fecha || getRedesTodayValue();
+  if (redesPublicacionTipoSelect) redesPublicacionTipoSelect.value = String(data.tipoId || '');
+  if (redesPublicacionEstadoSelect) redesPublicacionEstadoSelect.value = data.estado || 'Pendiente';
+  if (redesPublicacionUmbralInput) redesPublicacionUmbralInput.value = data.umbralAlerta ?? 1;
+  const plataformasSeleccionadas = data.plataformaIds?.length ? data.plataformaIds : data.plataformas || [];
+  applySelectedRedesPlataformas(plataformasSeleccionadas);
+  clearRedesArticuloForm();
+  renderRedesPublicacionArticulos();
+  if (redesPublicacionFormStatus) redesPublicacionFormStatus.textContent = '';
+  if (redesPublicacionStatus) redesPublicacionStatus.textContent = '';
+}
+
+function closeRedesPublicacionModal() {
+  if (redesPublicacionOverlay) redesPublicacionOverlay.classList.remove('open');
+}
+
+function getRedesPublicacionPayload() {
+  return {
+    nombre: redesPublicacionNombreInput?.value || '',
+    fecha: redesPublicacionFechaInput?.value || '',
+    tipoId: Number(redesPublicacionTipoSelect?.value) || 0,
+    estado: redesPublicacionEstadoSelect?.value || 'Pendiente',
+    umbralAlerta: getRedesUmbralValue(),
+    plataformaIds: getSelectedRedesPlataformas(),
+    articulos: redesPublicacionArticulos.map((item) => ({ articulo: item.articulo })),
+  };
+}
+
+async function saveRedesPublicacion() {
+  if (!redesPublicacionSave) return;
+  const payload = getRedesPublicacionPayload();
+  if (!payload.nombre.trim()) {
+    if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Nombre requerido.';
+    return;
+  }
+  if (!payload.plataformaIds.length) {
+    if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Selecciona al menos una plataforma.';
+    return;
+  }
+  if (!payload.articulos.length) {
+    if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Agrega al menos un articulo.';
+    return;
+  }
+  const isEdit = !!redesPublicacionEditingId;
+  redesPublicacionSave.disabled = true;
+  if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Guardando...';
+  try {
+    const url = isEdit
+      ? `/api/redes/publicaciones/${encodeURIComponent(redesPublicacionEditingId)}`
+      : '/api/redes/publicaciones';
+    const res = await fetchJSON(url, {
+      method: isEdit ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    await loadRedesPublicaciones(true);
+    if (isEdit) {
+      if (redesPublicacionesStatus) redesPublicacionesStatus.textContent = 'Publicacion actualizada.';
+      closeRedesPublicacionModal();
+      return;
+    }
+    resetRedesPublicacionForm();
+    if (redesPublicacionNroInput) redesPublicacionNroInput.value = res.nextNroPublicacion || '';
+    if (redesPublicacionStatus) redesPublicacionStatus.textContent = 'Publicacion creada.';
+  } catch (error) {
+    if (redesPublicacionStatus) redesPublicacionStatus.textContent = error.message || 'Error al guardar.';
+  } finally {
+    redesPublicacionSave.disabled = false;
+  }
+}
+
+async function loadRedesPublicaciones(force = false) {
+  if (!redesPublicacionesTableEl) return;
+  if (redesPublicacionesLoaded && !force) return;
+  try {
+    if (redesPublicacionesStatus) redesPublicacionesStatus.textContent = 'Cargando...';
+    const res = await fetchJSON('/api/redes/publicaciones');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    if (redesPublicacionesTable) {
+      redesPublicacionesTable.clear();
+      redesPublicacionesTable.rows.add(rows);
+      redesPublicacionesTable.draw();
+    } else {
+      const dtAvailable = window.DataTable || (await ensureDataTable());
+      if (dtAvailable) {
+        redesPublicacionesTable = new DataTable('#redes-publicaciones-table', {
+          data: rows,
+          columns: [
+            { data: 'nroPublicacion' },
+            { data: 'nombre' },
+            { data: 'fecha', render: (value) => escapeAttr(formatDate(value || '')) },
+            { data: 'tipo' },
+            { data: 'estado' },
+            { data: 'plataformas', render: (value) => (Array.isArray(value) ? value.join(', ') : value || '') },
+            { data: 'umbralAlerta' },
+            {
+              data: null,
+              orderable: false,
+              render: (_data, _type, row) => `
+                <div class="abm-actions redes-publicaciones-row-actions">
+                  <button type="button" class="abm-action redes-pub-action" data-action="edit" data-id="${row.id}">Modificar</button>
+                  <button type="button" class="abm-action redes-pub-action" data-action="items" data-id="${row.id}">Ver Articulos</button>
+                </div>
+              `,
+            },
+          ],
+          pageLength: 10,
+          lengthMenu: [10, 25, 50, 100],
+          deferRender: true,
+          order: [[0, 'desc']],
+          autoWidth: false,
+          rowCallback: (tr, row) => {
+            tr.classList.toggle('redes-alert-row', !!row.alertaStock);
+          },
+        });
+      }
+    }
+    redesPublicacionesLoaded = true;
+    if (redesPublicacionesStatus) {
+      redesPublicacionesStatus.textContent = rows.length ? `Total publicaciones: ${rows.length}` : 'Sin publicaciones.';
+    }
+  } catch (error) {
+    if (redesPublicacionesStatus) redesPublicacionesStatus.textContent = error.message || 'Error al cargar publicaciones.';
+  }
+}
+
+async function loadRedesArticuloPickTable() {
+  if (!redesArticuloPickTableEl) return;
+  try {
+    if (redesArticuloPickStatus) redesArticuloPickStatus.textContent = 'Cargando...';
+    if (redesArticuloPickLoading) redesArticuloPickLoading.style.display = 'flex';
+    const res = await fetchJSON('/api/redes/articulos/pick');
+    const rows = Array.isArray(res.data) ? res.data.map(normalizeRedesArticulo) : [];
+    const dtAvailable = window.DataTable || (await ensureDataTable());
+    if (!dtAvailable) return;
+    if (redesArticuloPickTable) {
+      redesArticuloPickTable.clear();
+      redesArticuloPickTable.rows.add(rows);
+      redesArticuloPickTable.draw();
+    } else {
+      redesArticuloPickTable = new DataTable('#redes-articulo-pick-table', {
+        data: rows,
+        columns: [
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) => renderRedesThumb(row.imageSrc, row.articulo),
+          },
+          { data: 'articulo' },
+          { data: 'detalle' },
+          { data: 'stockDisponible' },
+          {
+            data: null,
+            orderable: false,
+            render: (_data, _type, row) =>
+              `<button type="button" class="abm-link-btn redes-pick-add" data-articulo="${escapeAttr(row.articulo)}">Agregar</button>`,
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        deferRender: true,
+        order: [[1, 'asc']],
+        autoWidth: false,
+      });
+    }
+    if (redesArticuloPickTable) redesArticuloPickTable.search('').draw();
+    if (redesArticuloPickStatus) redesArticuloPickStatus.textContent = rows.length ? `Total articulos: ${rows.length}` : 'Sin resultados';
+  } catch (error) {
+    if (redesArticuloPickStatus) redesArticuloPickStatus.textContent = error.message || 'Error al cargar articulos.';
+  } finally {
+    if (redesArticuloPickLoading) redesArticuloPickLoading.style.display = 'none';
+  }
+}
+
+async function openRedesArticuloPick() {
+  if (!redesArticuloPickOverlay) return;
+  redesArticuloPickOverlay.classList.add('open');
+  await loadRedesArticuloPickTable();
+}
+
+function closeRedesArticuloPick() {
+  if (redesArticuloPickOverlay) redesArticuloPickOverlay.classList.remove('open');
+}
+
+async function openRedesArticulosView(id) {
+  if (!redesArticulosOverlay || !id) return;
+  try {
+    if (redesArticulosStatus) redesArticulosStatus.textContent = 'Cargando...';
+    redesArticulosOverlay.classList.add('open');
+    const res = await fetchJSON(`/api/redes/publicaciones/${encodeURIComponent(id)}`);
+    const data = res.data || {};
+    if (redesArticulosTitle) {
+      redesArticulosTitle.textContent = `Articulos - Publicacion ${data.nroPublicacion || ''}`;
+    }
+    renderRedesArticulosView(data.articulos || [], Number(data.id) || 0);
+    if (redesArticulosStatus) {
+      redesArticulosStatus.textContent = data.articulos?.length ? `Articulos: ${data.articulos.length}` : 'Sin articulos.';
+    }
+  } catch (error) {
+    if (redesArticulosStatus) redesArticulosStatus.textContent = error.message || 'Error al cargar articulos.';
+  }
+}
+
+async function deleteRedesArticulo(publicacionId, articulo) {
+  if (!publicacionId || !articulo) return;
+  if (!confirm(`Eliminar articulo ${articulo} de la publicacion?`)) return;
+  try {
+    if (redesArticulosStatus) redesArticulosStatus.textContent = 'Eliminando...';
+    const res = await fetchJSON(
+      `/api/redes/publicaciones/${encodeURIComponent(publicacionId)}/articulos/${encodeURIComponent(articulo)}`,
+      { method: 'DELETE' }
+    );
+    const data = res.data || {};
+    renderRedesArticulosView(data.articulos || [], Number(data.id) || publicacionId);
+    await loadRedesPublicaciones(true);
+    if (redesArticulosStatus) {
+      redesArticulosStatus.textContent = data.articulos?.length ? `Articulos: ${data.articulos.length}` : 'Sin articulos.';
+    }
+  } catch (error) {
+    if (redesArticulosStatus) redesArticulosStatus.textContent = error.message || 'Error al eliminar articulo.';
+  }
+}
+
+function initRedesPublicaciones() {
+  if (!viewRedesPublicaciones) return;
+  if (redesPublicacionRefreshBtn) {
+    redesPublicacionRefreshBtn.addEventListener('click', () => {
+      redesPublicacionesLoaded = false;
+      loadRedesPublicaciones(true);
+    });
+  }
+  if (redesPublicacionNewBtn) redesPublicacionNewBtn.addEventListener('click', openRedesPublicacionNew);
+  if (redesPublicacionClose) redesPublicacionClose.addEventListener('click', closeRedesPublicacionModal);
+  if (redesPublicacionCancel) redesPublicacionCancel.addEventListener('click', closeRedesPublicacionModal);
+  if (redesPublicacionOverlay) {
+    redesPublicacionOverlay.addEventListener('click', (event) => {
+      if (event.target === redesPublicacionOverlay) closeRedesPublicacionModal();
+    });
+  }
+  if (redesPublicacionForm) {
+    redesPublicacionForm.addEventListener('submit', (event) => event.preventDefault());
+  }
+  if (redesPublicacionSave) redesPublicacionSave.addEventListener('click', saveRedesPublicacion);
+  if (redesArticuloSearch) redesArticuloSearch.addEventListener('click', openRedesArticuloPick);
+  if (redesArticuloAdd) {
+    redesArticuloAdd.addEventListener('click', () => {
+      if (!redesCurrentArticulo) {
+        if (redesPublicacionFormStatus) redesPublicacionFormStatus.textContent = 'Selecciona un articulo.';
+        return;
+      }
+      addRedesArticulo(redesCurrentArticulo);
+    });
+  }
+  if (redesPublicacionUmbralInput) {
+    redesPublicacionUmbralInput.addEventListener('input', renderRedesPublicacionArticulos);
+  }
+  if (redesArticuloFotoOpen) {
+    redesArticuloFotoOpen.addEventListener('click', () => {
+      openMercImage(redesArticuloFoto?.src || '/sinfoto.png');
+    });
+  }
+  if (redesPublicacionesTableEl) {
+    redesPublicacionesTableEl.addEventListener('click', async (event) => {
+      const btn = event.target.closest('.redes-pub-action');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      if (btn.dataset.action === 'edit') {
+        await openRedesPublicacionEdit(id);
+      } else if (btn.dataset.action === 'items') {
+        await openRedesArticulosView(id);
+      }
+    });
+  }
+  if (redesPublicacionArticulosTableEl) {
+    redesPublicacionArticulosTableEl.addEventListener('click', (event) => {
+      const thumb = event.target.closest('.redes-thumb-btn');
+      if (thumb) {
+        openMercImage(thumb.dataset.src || '/sinfoto.png');
+        return;
+      }
+      const btn = event.target.closest('.redes-articulo-remove');
+      if (btn) removeRedesArticulo(btn.dataset.articulo);
+    });
+  }
+  if (redesArticuloPickClose) redesArticuloPickClose.addEventListener('click', closeRedesArticuloPick);
+  if (redesArticuloPickOverlay) {
+    redesArticuloPickOverlay.addEventListener('click', (event) => {
+      if (event.target === redesArticuloPickOverlay) closeRedesArticuloPick();
+    });
+  }
+  if (redesArticuloPickTableEl) {
+    redesArticuloPickTableEl.addEventListener('click', (event) => {
+      const thumb = event.target.closest('.redes-thumb-btn');
+      if (thumb) {
+        openMercImage(thumb.dataset.src || '/sinfoto.png');
+        return;
+      }
+      const btn = event.target.closest('.redes-pick-add');
+      if (!btn || !redesArticuloPickTable) return;
+      const articulo = btn.dataset.articulo;
+      let selected = null;
+      redesArticuloPickTable.rows().every(function findRow() {
+        const row = this.data();
+        if (String(row.articulo) === String(articulo)) selected = row;
+      });
+      if (selected) setRedesArticuloForm(selected);
+      closeRedesArticuloPick();
+    });
+  }
+  if (redesArticulosClose) redesArticulosClose.addEventListener('click', () => closeOverlay(redesArticulosOverlay));
+  if (redesArticulosOverlay) {
+    redesArticulosOverlay.addEventListener('click', (event) => {
+      if (event.target === redesArticulosOverlay) closeOverlay(redesArticulosOverlay);
+    });
+  }
+  if (redesArticulosTableEl) {
+    redesArticulosTableEl.addEventListener('click', (event) => {
+      const thumb = event.target.closest('.redes-thumb-btn');
+      if (thumb) {
+        openMercImage(thumb.dataset.src || '/sinfoto.png');
+        return;
+      }
+      const btn = event.target.closest('.redes-articulos-delete');
+      if (btn) deleteRedesArticulo(Number(btn.dataset.publicacionId), btn.dataset.articulo);
+    });
   }
 }
 
@@ -17890,6 +18519,7 @@ function resolvePermissionKey(target) {
   if (target === 'ecommerce-publicaciones') return 'ecommerce-publicaciones';
   if (target === 'ecommerce-ordenes-tn') return 'ecommerce-ordenes-tn';
   if (target === 'ecommerce-asignacion-pedidos') return 'ecommerce-asignacion-pedidos';
+  if (target === 'redes-publicaciones') return 'redes-publicaciones';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
@@ -17965,6 +18595,7 @@ function applyMenuPermissions(perms = {}) {
       clientes: 'clientes-menu',
       pedidos: 'pedidos-menu',
       fidelizacion: 'fidelizacion-menu',
+      redes: 'redes',
     };
     const forcedPermKey = forcedGroupPerms[groupKey] || '';
     const forcedVisible = forcedPermKey ? perms[forcedPermKey] === true : false;
@@ -18005,6 +18636,7 @@ function getFirstAllowedView(perms = {}) {
       'pedidos',
       'pedidos-todos',
       'pedidos-nuevo',
+      'redes-publicaciones',
       'mercaderia',
       'mercaderia-articulos-proveedor',
       'mercaderia-fotos',
@@ -18097,7 +18729,9 @@ async function loadCurrentUser() {
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-mis') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-admin') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-dashboard');
+    const hasRedesSubPerms = Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'redes-publicaciones');
     normalizeEcommercePermissions(currentPermissions, hasEcommerceSubPerms);
+    normalizeRedesPermissions(currentPermissions, hasRedesSubPerms);
     normalizeFidelizacionPermissions(
       currentPermissions,
       hasFidelizacionSubPerms,
@@ -19650,6 +20284,8 @@ const permissionGroups = [
         { key: 'clientes-reportes', label: 'Clientes - Reportes' },
         { key: 'ia', label: 'IA' },
         { key: 'salon', label: 'Salon' },
+        { key: 'redes', label: 'Redes' },
+        { key: 'redes-publicaciones', label: 'Redes - Publicaciones' },
         { key: 'fidelizacion-menu', label: 'Menu Fidelizacion' },
         { key: 'fidelizacion-panel', label: 'Fidelizacion - Panel' },
         { key: 'fidelizacion-mis', label: 'Fidelizacion - Mis Fidelizaciones' },
@@ -19787,6 +20423,12 @@ function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
   return perms;
 }
 
+function normalizeRedesPermissions(perms = {}, hasSubPerms = true) {
+  if (hasSubPerms || !perms.redes) return perms;
+  perms['redes-publicaciones'] = true;
+  return perms;
+}
+
 function normalizeFidelizacionPermissions(perms = {}, hasSubPerms = true, legacyEnabled = false) {
   if (hasSubPerms) return perms;
   if (legacyEnabled) {
@@ -19838,6 +20480,7 @@ async function loadRolePermissions(roleId) {
   const perms = buildEmptyPermissions();
   const rawPerms = {};
   let hasEcommerceSubPerms = false;
+  let hasRedesSubPerms = false;
   let hasFidelizacionSubPerms = false;
   let legacyFidelizacionEnabled = false;
   (res.data || []).forEach((row) => {
@@ -19852,6 +20495,9 @@ async function loadRolePermissions(roleId) {
         row.permiso === 'ecommerce-asignacion-pedidos'
       ) {
         hasEcommerceSubPerms = true;
+      }
+      if (row.permiso === 'redes-publicaciones') {
+        hasRedesSubPerms = true;
       }
       if (
         row.permiso === 'fidelizacion-panel' ||
@@ -19869,6 +20515,7 @@ async function loadRolePermissions(roleId) {
   normalizeDashboardPermissions(perms, rawPerms);
   normalizeDashboardComparativoPermissions(perms);
   normalizeEcommercePermissions(perms, hasEcommerceSubPerms);
+  normalizeRedesPermissions(perms, hasRedesSubPerms);
   normalizeFidelizacionPermissions(perms, hasFidelizacionSubPerms, legacyFidelizacionEnabled);
   const role = rolesData.find((r) => r.id === roleId);
   if (role) role.permissions = perms;
@@ -19910,6 +20557,7 @@ function renderPermissions() {
     'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
+    redes: ['redes-publicaciones'],
     mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'mercaderia-catalogo', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones', 'ecommerce-ordenes-tn', 'ecommerce-asignacion-pedidos'],
@@ -23818,6 +24466,7 @@ function switchView(target) {
       viewFidelizacionMis,
       viewFidelizacionAdmin,
       viewFidelizacionRuns,
+      viewRedesPublicaciones,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -23868,6 +24517,7 @@ function switchView(target) {
       viewFidelizacionMis,
       viewFidelizacionAdmin,
       viewFidelizacionRuns,
+      viewRedesPublicaciones,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -23961,6 +24611,9 @@ function switchView(target) {
     } else {
       loadFidelizacionRuns({ silent: true });
     }
+  } else if (target === 'redes-publicaciones') {
+    viewRedesPublicaciones.classList.remove('hidden');
+    loadRedesPublicaciones();
   } else if (target === 'pedidos') {
       viewPedidos.classList.remove('hidden');
       loadPedidosResumen();
@@ -24091,6 +24744,7 @@ initMercaderia();
 initMercaderiaArticulosProveedor();
 initMercaderiaFotos();
 initMercaderiaCatalogo();
+initRedesPublicaciones();
 initAbm();
 initControlOrdenes();
 initEcommerceImagenweb();
