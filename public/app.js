@@ -398,6 +398,7 @@ let ecommercePublicacionCategoriasLoaded = false;
 let ecommercePublicacionVariantes = [];
 let ecommercePublicacionEditingId = null;
 let ecommercePublicacionVarianteEditingIndex = null;
+let ecommercePublicacionDetalleOriginal = '';
 let ecommercePublicacionProductImages = [];
 let ecommercePublicacionImageTarget = null;
 let ecommercePublicacionPreviewTarget = null;
@@ -1177,6 +1178,8 @@ const ecommercePubArticuloOpen = document.getElementById('ecommerce-pub-articulo
 const ecommercePubArticulosList = document.getElementById('ecommerce-pub-articulos-list');
 const ecommercePubNombre = document.getElementById('ecommerce-pub-nombre');
 const ecommercePubDescripcion = document.getElementById('ecommerce-pub-descripcion');
+const ecommercePubDetalle = document.getElementById('ecommerce-pub-detalle');
+const ecommercePubDetalleSave = document.getElementById('ecommerce-pub-detalle-save');
 const ecommercePubDescripcionEditor = document.getElementById('ecommerce-pub-descripcion-editor');
 const ecommercePubDescripcionPanel = document.getElementById('ecommerce-pub-descripcion-panel');
 const ecommercePubDescripcionExpanded = document.getElementById('ecommerce-pub-descripcion-expanded');
@@ -9459,6 +9462,55 @@ function setEcommercePrincipalArticulo(row) {
   if (ecommercePubDescripcion) {
     ecommercePubDescripcion.value = row.descripcionWeb || row.DescripcionWeb || row.detalle || '';
   }
+  ecommercePublicacionDetalleOriginal = row.detalle || row.Detalle || '';
+  if (ecommercePubDetalle) ecommercePubDetalle.value = ecommercePublicacionDetalleOriginal;
+  updateEcommerceDetalleSaveButton();
+}
+
+function updateEcommerceDetalleSaveButton(saved = false) {
+  if (!ecommercePubDetalleSave || !ecommercePubDetalle) return;
+  const changed = String(ecommercePubDetalle.value || '') !== String(ecommercePublicacionDetalleOriginal || '');
+  ecommercePubDetalleSave.hidden = !changed && !saved;
+  ecommercePubDetalleSave.classList.toggle('saved', saved);
+}
+
+async function saveEcommerceArticuloDetalle() {
+  const articulo = getArticuloFromInput(ecommercePubArticuloSearch?.value);
+  const detalle = String(ecommercePubDetalle?.value || '').trim();
+  if (!articulo) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Selecciona el articulo principal.';
+    return;
+  }
+  if (!detalle) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'El detalle no puede quedar vacio.';
+    return;
+  }
+  try {
+    if (ecommercePubDetalleSave) ecommercePubDetalleSave.disabled = true;
+    await fetchJSON(`/api/ecommerce/publicaciones/articulos/${encodeURIComponent(articulo)}/detalle`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ detalle }),
+    });
+    ecommercePublicacionDetalleOriginal = detalle;
+    const cached = findCachedEcommerceArticulo(articulo);
+    if (cached) cached.detalle = detalle;
+    ecommercePublicacionVariantes.forEach((row) => {
+      if (String(row.articulo || '').toUpperCase() === String(articulo || '').toUpperCase()) {
+        row.detalle = detalle;
+      }
+    });
+    renderEcommercePubDatalist(ecommercePubArticulosList, ecommercePublicacionArticuloCache);
+    renderEcommercePubDatalist(ecommercePubVariantesList, ecommercePublicacionArticuloCache);
+    renderEcommercePubVariants();
+    updateEcommerceDetalleSaveButton(true);
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = 'Detalle actualizado.';
+    setTimeout(() => updateEcommerceDetalleSaveButton(false), 1200);
+  } catch (error) {
+    if (ecommercePubFormStatus) ecommercePubFormStatus.textContent = error.message || 'No se pudo actualizar el detalle.';
+  } finally {
+    if (ecommercePubDetalleSave) ecommercePubDetalleSave.disabled = false;
+  }
 }
 
 function setEcommerceVarianteArticulo(row) {
@@ -9969,6 +10021,9 @@ function clearEcommercePubForm() {
   if (ecommercePubArticuloSearch) ecommercePubArticuloSearch.value = '';
   if (ecommercePubNombre) ecommercePubNombre.value = '';
   if (ecommercePubDescripcion) ecommercePubDescripcion.value = '';
+  if (ecommercePubDetalle) ecommercePubDetalle.value = '';
+  ecommercePublicacionDetalleOriginal = '';
+  updateEcommerceDetalleSaveButton();
   if (ecommercePubMarca) ecommercePubMarca.value = '';
   if (ecommercePubTags) ecommercePubTags.value = '';
   setSelectedEcommerceCategorias([]);
@@ -10054,12 +10109,13 @@ async function saveEcommercePublicacion() {
   }
   if (!ecommercePublicacionVariantes.length) {
     const cached = findCachedEcommerceArticulo(articuloPrincipal);
+    const detalleArticulo = ecommercePubDetalle?.value || cached?.detalle || '';
     ecommercePublicacionVariantes.push({
       articulo: articuloPrincipal,
       sku: articuloPrincipal,
-      detalle: cached?.detalle || '',
+      detalle: detalleArticulo,
       atributo1Nombre: 'Articulo',
-      atributo1Valor: cached?.detalle || articuloPrincipal,
+      atributo1Valor: detalleArticulo || articuloPrincipal,
       precio: cached?.precio == null ? 0 : Number(cached.precio),
       stock: cached?.stock == null ? 0 : Number(cached.stock),
     });
@@ -10070,6 +10126,7 @@ async function saveEcommercePublicacion() {
     articuloPrincipal,
     nombre: ecommercePubNombre?.value || '',
     descripcion: ecommercePubDescripcion?.value || principal?.detalle || '',
+    detalle: ecommercePubDetalle?.value || principal?.detalle || '',
     marca: ecommercePubMarca?.value || '',
     tags: ecommercePubTags?.value || '',
     categorias: getSelectedEcommerceCategorias(),
@@ -10125,6 +10182,12 @@ async function editEcommercePublicacion(id) {
     }
     if (ecommercePubNombre) ecommercePubNombre.value = pub.nombre || '';
     if (ecommercePubDescripcion) ecommercePubDescripcion.value = pub.descripcion || '';
+    if (ecommercePubDetalle) {
+      const cached = findCachedEcommerceArticulo(pub.articuloPrincipal);
+      ecommercePublicacionDetalleOriginal = pub.detalleArticulo || cached?.detalle || '';
+      ecommercePubDetalle.value = ecommercePublicacionDetalleOriginal;
+      updateEcommerceDetalleSaveButton();
+    }
     if (ecommercePubMarca) ecommercePubMarca.value = pub.marca || '';
     if (ecommercePubTags) ecommercePubTags.value = pub.tags || '';
     setSelectedEcommerceCategorias(String(pub.categorias || '').split(','));
@@ -10445,6 +10508,12 @@ function initEcommercePublicaciones() {
   }
   if (ecommercePubDescripcionClose) {
     ecommercePubDescripcionClose.addEventListener('click', closeEcommerceDescripcionEditor);
+  }
+  if (ecommercePubDetalle) {
+    ecommercePubDetalle.addEventListener('input', () => updateEcommerceDetalleSaveButton());
+  }
+  if (ecommercePubDetalleSave) {
+    ecommercePubDetalleSave.addEventListener('click', saveEcommerceArticuloDetalle);
   }
   if (ecommercePubArticuloOpen) ecommercePubArticuloOpen.addEventListener('click', () => openEcommercePubPick('principal'));
   if (ecommercePubVarianteSearch) {

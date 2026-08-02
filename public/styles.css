@@ -2392,17 +2392,63 @@ body.theme-light .abm-actions-menu {
   line-height: 1.2;
 }
 
+.ecommerce-publicacion-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ecommerce-detail-save-field {
+  position: relative;
+  width: 100%;
+}
+
+.ecommerce-detail-save-field input {
+  padding-right: 42px;
+}
+
+.ecommerce-detail-save-btn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid #b8c0ce;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #eaf6ff, #ece7ff);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ecommerce-detail-save-btn.saved {
+  border-color: #22c55e;
+  background: #22c55e;
+  color: #fff;
+}
+
+.ecommerce-detail-save-btn:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+
 .ecommerce-description-editor {
   position: relative;
   width: 100%;
 }
 
 .ecommerce-description-panel {
-  position: absolute;
+  position: fixed;
   z-index: 70;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(960px, calc(100vw - 48px));
+  top: 24vh;
+  left: 50%;
+  width: min(1080px, calc(100vw - 48px));
+  max-height: calc(100vh - 28vh);
+  transform: translateX(-50%);
   display: none;
   border: 1px solid #c9ced8;
   border-radius: 8px;
@@ -2466,6 +2512,7 @@ body.theme-light .abm-actions-menu {
 .ecommerce-description-panel textarea {
   width: 100%;
   min-height: 230px;
+  max-height: calc(100vh - 28vh - 48px);
   padding: 24px 38px;
   border: 0;
   border-radius: 0;

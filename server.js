@@ -1828,6 +1828,7 @@ function mapPublicacionRow(row) {
     articuloPrincipal: row.articulo_principal || '',
     nombre: row.nombre || '',
     descripcion: row.descripcion || '',
+    detalleArticulo: row.articulo_detalle || row.detalle_articulo || '',
     marca: row.marca || '',
     categorias: row.categorias || '',
     categoriaLabel: row.categoria_label || '',
@@ -16388,6 +16389,26 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
     }
   });
 
+  app.put('/api/ecommerce/publicaciones/articulos/:articulo/detalle', requirePermission('ecommerce-publicaciones'), async (req, res) => {
+    try {
+      const articulo = normalizeSku(req.params.articulo);
+      const detalle = String(req.body?.detalle || '').trim();
+      if (!articulo) return res.status(400).json({ message: 'articulo requerido' });
+      if (!detalle) return res.status(400).json({ message: 'detalle requerido' });
+      const [result] = await pool.query(
+        `UPDATE ${DB_NAME}.articulos
+         SET Detalle = ?
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [detalle, articulo]
+      );
+      if (!result.affectedRows) return res.status(404).json({ message: 'Articulo no encontrado' });
+      res.json({ ok: true, articulo, detalle });
+    } catch (error) {
+      res.status(500).json({ message: 'Error al actualizar detalle', error: error.message });
+    }
+  });
+
   app.get('/api/ecommerce/publicaciones/categorias', requirePermission('ecommerce-publicaciones'), async (_req, res) => {
     try {
       const tnubeConnection = getConfiguredTnubeConnection();
@@ -16423,7 +16444,12 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ message: 'id invalido' });
       const [[publicacion]] = await pool.query(
-        `SELECT * FROM ${DB_NAME}.tiendanube_publicaciones WHERE id = ? LIMIT 1`,
+        `SELECT pub.*,
+                art.Detalle AS articulo_detalle
+         FROM ${DB_NAME}.tiendanube_publicaciones AS pub
+         LEFT JOIN ${DB_NAME}.articulos AS art ON art.Articulo = pub.articulo_principal
+         WHERE pub.id = ?
+         LIMIT 1`,
         [id]
       );
       if (!publicacion) return res.status(404).json({ message: 'Publicacion no encontrada' });
@@ -16462,8 +16488,23 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
       if (!variantes.length) return res.status(400).json({ message: 'Agrega al menos una variante' });
       const tnubeConnection = getConfiguredTnubeConnection();
       const nombre = String(body.nombre || '').trim() || articuloPrincipal;
+      const detalleArticulo = String(body.detalle || '').trim();
       conn = await pool.getConnection();
       await conn.beginTransaction();
+      await conn.query(
+        `UPDATE ${DB_NAME}.articulos
+         SET Detalle = COALESCE(NULLIF(?, ''), Detalle),
+             NbreWeb = ?,
+             DescripcionWeb = ?
+         WHERE Articulo = ?
+         LIMIT 1`,
+        [
+          detalleArticulo || '',
+          nombre || null,
+          String(body.descripcion || '').trim() || null,
+          articuloPrincipal,
+        ]
+      );
       const [result] = await conn.query(
         `INSERT INTO ${DB_NAME}.tiendanube_publicaciones
            (store_id, tienda, articulo_principal, nombre, descripcion, marca, categorias, tags, estado, creado_por)
@@ -16582,14 +16623,16 @@ app.post('/api/ocr/openai', requireAuth, express.json({ limit: '25mb' }), async 
         return res.status(409).json({ message: 'No se puede cambiar el articulo padre de una publicacion sincronizada.' });
       }
       const descripcion = String(body.descripcion || '').trim();
+      const detalleArticulo = String(body.detalle || '').trim();
 
       await conn.query(
         `UPDATE ${DB_NAME}.articulos
-         SET NbreWeb = ?,
+         SET Detalle = COALESCE(NULLIF(?, ''), Detalle),
+             NbreWeb = ?,
              DescripcionWeb = ?
          WHERE Articulo = ?
          LIMIT 1`,
-        [nombre || null, descripcion || null, articuloPrincipal]
+        [detalleArticulo || '', nombre || null, descripcion || null, articuloPrincipal]
       );
 
       let previousVariantsBySku = new Map();
