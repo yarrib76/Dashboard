@@ -6551,6 +6551,38 @@ app.post('/api/config/ecommerce-import-schedule/run', requireAuth, async (req, r
   }
 });
 
+const TN_ANILLO_WHATSAPP_LINE =
+  '• Una vez finalizado el pedido, las medidas serán seleccionadas por el cliente cuando la vendedora se comunique a través de WhatsApp para la preparación del mismo';
+
+function normalizeTnDescriptionForMatch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function enforceTnAiDescriptionRules(descripcion, context = {}) {
+  let lines = String(descripcion || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const text = normalizeTnDescriptionForMatch(
+    `${context.nombreWeb || ''} ${context.detalle || ''} ${context.descripcionWeb || ''}`
+  );
+  const isAnillo = /\banillo(s)?\b/.test(text);
+  if (!isAnillo) return lines.join('\n');
+
+  const hasWhatsappLine = lines.some((line) =>
+    normalizeTnDescriptionForMatch(line).includes('una vez finalizado el pedido')
+  );
+  if (!hasWhatsappLine) {
+    const cierreIndex = lines.findIndex((line) => normalizeTnDescriptionForMatch(line).includes('samira bijou mayorista'));
+    const insertIndex = cierreIndex >= 0 ? cierreIndex : Math.min(1, lines.length);
+    lines.splice(insertIndex, 0, TN_ANILLO_WHATSAPP_LINE);
+  }
+  return lines.join('\n');
+}
+
 app.post('/api/ecommerce/publicaciones/descripcion-ia', requireAuth, async (req, res) => {
   try {
     if (!openai) {
@@ -6600,7 +6632,11 @@ app.post('/api/ecommerce/publicaciones/descripcion-ia', requireAuth, async (req,
         ],
       })
     );
-    const descripcion = String(completion.choices?.[0]?.message?.content || '').trim();
+    const descripcion = enforceTnAiDescriptionRules(String(completion.choices?.[0]?.message?.content || '').trim(), {
+      nombreWeb,
+      descripcionWeb,
+      detalle,
+    });
     if (!descripcion) return res.status(500).json({ message: 'OpenAI no devolvio descripcion.' });
     res.json({ ok: true, descripcion });
   } catch (error) {
