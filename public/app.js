@@ -6541,6 +6541,37 @@ async function generateAbmWebDescriptionWithIa() {
   }
 }
 
+function handleAbmWebDescripcionEnter(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+  const textarea = event.currentTarget;
+  if (!textarea) return;
+  const value = textarea.value;
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  const lineStart = value.lastIndexOf('\n', Math.max(0, selectionStart - 1)) + 1;
+  const nextLineBreak = value.indexOf('\n', selectionStart);
+  const lineEnd = nextLineBreak === -1 ? value.length : nextLineBreak;
+  const currentLine = value.slice(lineStart, lineEnd);
+
+  if (/^\s*\u2022\s*$/.test(currentLine)) {
+    event.preventDefault();
+    textarea.setRangeText('\n', lineStart, lineEnd, 'end');
+    return;
+  }
+
+  const lineBeforeCursor = value.slice(lineStart, selectionStart);
+  if (!lineBeforeCursor.trim()) return;
+
+  const indent = currentLine.match(/^\s*/)?.[0] || '';
+  const replacement = `\n${indent}\u2022 `;
+  const maxLength = Number(textarea.maxLength) || -1;
+  const nextLength = value.length - (selectionEnd - selectionStart) + replacement.length;
+  if (maxLength > -1 && nextLength > maxLength) return;
+
+  event.preventDefault();
+  textarea.setRangeText(replacement, selectionStart, selectionEnd, 'end');
+}
+
 async function openAbmCreateCalc() {
   if (!abmCalcOverlay) return;
   if (abmCalcStatus) abmCalcStatus.textContent = '';
@@ -11655,6 +11686,9 @@ function initAbm() {
   if (abmWebCancel) abmWebCancel.addEventListener('click', closeAbmWebModal);
   if (abmWebIaBtn) {
     abmWebIaBtn.addEventListener('click', generateAbmWebDescriptionWithIa);
+  }
+  if (abmWebDescripcionInput) {
+    abmWebDescripcionInput.addEventListener('keydown', handleAbmWebDescripcionEnter);
   }
   if (abmWebForm) {
     abmWebForm.addEventListener('submit', (e) => {
