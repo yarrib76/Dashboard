@@ -10141,12 +10141,13 @@ async function saveEcommercePublicacion() {
   if (!ecommercePublicacionVariantes.length) {
     const cached = findCachedEcommerceArticulo(articuloPrincipal);
     const detalleArticulo = ecommercePubDetalle?.value || cached?.detalle || '';
+    const nombreEnTienda = String(ecommercePubNombre?.value || '').trim();
     ecommercePublicacionVariantes.push({
       articulo: articuloPrincipal,
       sku: articuloPrincipal,
       detalle: detalleArticulo,
       atributo1Nombre: 'Articulo',
-      atributo1Valor: detalleArticulo || articuloPrincipal,
+      atributo1Valor: nombreEnTienda || detalleArticulo || articuloPrincipal,
       precio: cached?.precio == null ? 0 : Number(cached.precio),
       stock: cached?.stock == null ? 0 : Number(cached.stock),
     });
@@ -10271,6 +10272,7 @@ function renderEcommercePublicacionesFallback(rows) {
           <td>${escapeAttr(row.nombre)}</td>
           <td>${escapeAttr(row.estado)}</td>
           <td>${escapeAttr(row.variantes)} / OK ${escapeAttr(row.variantesOk)}</td>
+          <td>${escapeAttr(countEcommercePublicacionCategorias(row))}</td>
           <td>${escapeAttr(row.productId)}</td>
           <td>${escapeAttr(formatDateTime(row.actualizadoEn || ''))}</td>
           <td>
@@ -10283,6 +10285,13 @@ function renderEcommercePublicacionesFallback(rows) {
       `
     )
     .join('');
+}
+
+function countEcommercePublicacionCategorias(row) {
+  return String(row?.categorias || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean).length;
 }
 
 function filterEcommercePublicacionesRows(rows) {
@@ -10328,6 +10337,7 @@ function renderEcommercePublicacionesRows(rows) {
           data: null,
           render: (row) => `${row.variantes || 0} / OK ${row.variantesOk || 0} / Error ${row.variantesError || 0}`,
         },
+        { data: null, render: (row) => countEcommercePublicacionCategorias(row) },
         { data: 'productId' },
         { data: 'actualizadoEn', render: (value) => formatDateTime(value || '') },
         {
@@ -10344,7 +10354,7 @@ function renderEcommercePublicacionesRows(rows) {
       ],
       pageLength: 10,
       lengthMenu: [10, 25, 50, 100],
-      order: [[6, 'desc']],
+      order: [[7, 'desc']],
       autoWidth: false,
     });
   } else {
