@@ -1372,6 +1372,7 @@ const abmBatchGananciaProveedorInput = document.getElementById('abm-batch-gananc
 const abmBatchOrdenInput = document.getElementById('abm-batch-orden');
 const abmBatchObservacionesInput = document.getElementById('abm-batch-observaciones');
 const abmBatchSearchBtn = document.getElementById('abm-batch-search');
+const abmBatchArticuloFotoOpen = document.getElementById('abm-batch-articulo-foto-open');
 const abmBatchTableEl = document.getElementById('abm-batch-table');
 const abmPickOverlay = document.getElementById('abm-pick-overlay');
 const abmPickClose = document.getElementById('abm-pick-close');
@@ -1393,6 +1394,7 @@ const abmPedidosTableBody = document.querySelector('#abm-pedidos-table tbody');
 const abmPedidosStatus = document.getElementById('abm-pedidos-status');
 const abmPedidosDetalle = document.getElementById('abm-pedidos-detalle');
 const abmArticuloInput = document.getElementById('abm-articulo');
+const abmArticuloFotoOpen = document.getElementById('abm-articulo-foto-open');
 const abmDetalleInput = document.getElementById('abm-detalle');
 const abmProveedorSkuInput = document.getElementById('abm-proveedor-sku');
 const abmCantidadActualInput = document.getElementById('abm-cantidad-actual');
@@ -6366,6 +6368,11 @@ function setAbmCreateModo(opcion) {
 
 function clearAbmBatchForm() {
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = '';
+  if (abmBatchArticuloFotoOpen) {
+    abmBatchArticuloFotoOpen.src = '/sinfoto.png';
+    abmBatchArticuloFotoOpen.dataset.articulo = '';
+    abmBatchArticuloFotoOpen.dataset.loadedArticulo = '';
+  }
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = '';
   if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = '';
@@ -6795,6 +6802,7 @@ async function openAbmEdit(articulo) {
       if (abmProveedorLoading) abmProveedorLoading.style.display = 'none';
     }
     if (abmArticuloInput) abmArticuloInput.value = row.Articulo || row.articulo || articulo || '';
+    loadAbmArticuloFotoPreview(abmArticuloInput, abmCurrentArticulo, abmArticuloFotoOpen);
     if (abmDetalleInput) abmDetalleInput.value = row.Detalle || row.detalle || '';
     if (abmProveedorSkuInput) abmProveedorSkuInput.value = row.ProveedorSKU || row.proveedorSku || '';
     if (abmCantidadActualInput) abmCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
@@ -6863,6 +6871,63 @@ function closeAbmCreate() {
 
 function closeAbmEdit() {
   if (abmEditOverlay) abmEditOverlay.classList.remove('open');
+}
+
+async function loadAbmArticuloFotoPreview(inputEl, fallbackArticulo, imgEl) {
+  if (!imgEl) return '';
+  const articulo = inputEl?.value || fallbackArticulo;
+  imgEl.src = '/sinfoto.png';
+  imgEl.dataset.articulo = articulo || '';
+  if (!articulo) return '';
+  try {
+    const res = await fetchJSON(`/api/mercaderia/abm/image?articulo=${encodeURIComponent(articulo)}`);
+    const src = res.imagessrc || '/sinfoto.png';
+    if (imgEl.dataset.articulo !== String(articulo)) return '';
+    imgEl.src = src;
+    imgEl.dataset.loadedArticulo = articulo;
+    return src;
+  } catch (_error) {
+    if (imgEl.dataset.articulo !== String(articulo)) return '';
+    imgEl.src = '/sinfoto.png';
+    imgEl.dataset.loadedArticulo = articulo;
+    return '';
+  }
+}
+
+async function openAbmArticuloFotoFrom(inputEl, fallbackArticulo, statusEl, imgEl) {
+  const articulo = inputEl?.value || fallbackArticulo;
+  if (!articulo) {
+    if (statusEl) statusEl.textContent = 'Selecciona un articulo.';
+    return;
+  }
+  const previousStatus = statusEl?.textContent || '';
+  if (imgEl) imgEl.classList.add('is-loading');
+  if (statusEl) statusEl.textContent = 'Cargando foto...';
+  try {
+    const src =
+      imgEl?.dataset.loadedArticulo === String(articulo)
+        ? imgEl.src
+        : await loadAbmArticuloFotoPreview(inputEl, fallbackArticulo, imgEl);
+    openMercImage(src || '/sinfoto.png');
+    if (statusEl) statusEl.textContent = previousStatus;
+  } catch (error) {
+    if (statusEl) statusEl.textContent = error.message || 'Error al cargar foto';
+  } finally {
+    if (imgEl) imgEl.classList.remove('is-loading');
+  }
+}
+
+function openAbmArticuloFoto() {
+  return openAbmArticuloFotoFrom(abmArticuloInput, abmCurrentArticulo, abmEditStatus, abmArticuloFotoOpen);
+}
+
+function openAbmBatchArticuloFoto() {
+  return openAbmArticuloFotoFrom(
+    abmBatchArticuloInput,
+    abmBatchCurrentArticulo,
+    abmBatchFormStatus,
+    abmBatchArticuloFotoOpen
+  );
 }
 
 async function openAbmBatch() {
@@ -6947,6 +7012,7 @@ function setBatchFormFromArticulo(row) {
   if (!row) return;
   abmBatchCurrentArticulo = row.Articulo || row.articulo || '';
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = row.Articulo || row.articulo || '';
+  loadAbmArticuloFotoPreview(abmBatchArticuloInput, abmBatchCurrentArticulo, abmBatchArticuloFotoOpen);
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = row.Detalle || row.detalle || '';
   if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = row.ProveedorSKU || row.proveedorSku || '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = row.Cantidad ?? row.cantidad ?? 0;
@@ -6979,6 +7045,7 @@ function setBatchFormFromItem(item) {
   if (!item) return;
   abmBatchCurrentArticulo = item.articulo || '';
   if (abmBatchArticuloInput) abmBatchArticuloInput.value = item.articulo || '';
+  loadAbmArticuloFotoPreview(abmBatchArticuloInput, abmBatchCurrentArticulo, abmBatchArticuloFotoOpen);
   if (abmBatchDetalleInput) abmBatchDetalleInput.value = item.detalle || '';
   if (abmBatchProveedorSkuInput) abmBatchProveedorSkuInput.value = item.proveedorSku || '';
   if (abmBatchCantidadActualInput) abmBatchCantidadActualInput.value = item.cantidadActual ?? '';
@@ -11799,6 +11866,14 @@ function initAbm() {
     });
   if (abmEditClose) abmEditClose.addEventListener('click', closeAbmEdit);
   if (abmEditCancel) abmEditCancel.addEventListener('click', closeAbmEdit);
+  if (abmArticuloFotoOpen) abmArticuloFotoOpen.addEventListener('click', openAbmArticuloFoto);
+  if (abmBatchArticuloFotoOpen) abmBatchArticuloFotoOpen.addEventListener('click', openAbmBatchArticuloFoto);
+  [abmArticuloFotoOpen, abmBatchArticuloFotoOpen].forEach((img) => {
+    if (!img) return;
+    img.addEventListener('error', () => {
+      if (!img.src.endsWith('/sinfoto.png')) img.src = '/sinfoto.png';
+    });
+  });
   if (abmEditOverlay)
     abmEditOverlay.addEventListener('click', (e) => {
       if (e.target === abmEditOverlay) closeAbmEdit();

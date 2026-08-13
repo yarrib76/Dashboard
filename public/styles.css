@@ -5361,6 +5361,29 @@ body.theme-light .pedido-notas-badge {
   border-color: rgba(123, 215, 255, 0.6);
 }
 
+.abm-tools-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  align-self: end;
+  min-height: 36px;
+}
+
+.abm-articulo-thumb {
+  width: 44px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
+.abm-articulo-thumb.is-loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .abm-web-row {
   display: flex;
   align-items: center;
