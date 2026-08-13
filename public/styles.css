@@ -1860,6 +1860,7 @@ body.theme-dark .dim-ai-report-body section {
 
 #merc-img-overlay {
   z-index: 12000;
+  padding: 12px;
 }
 
 #clientes-new-overlay {
@@ -6630,8 +6631,12 @@ body.theme-light select:focus {
 }
 
 .modal-img {
-  max-width: 90vw;
-  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  width: calc(100vw - 24px);
+  height: calc(100vh - 24px);
+  max-width: none;
+  max-height: none;
 }
 
 .modal .chart-body {
@@ -6645,15 +6650,18 @@ body.theme-light select:focus {
 }
 
 .img-body {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
   background: #0b0e16;
+  overflow: auto;
+  padding: 16px;
 }
 
 .img-body img {
   max-width: 100%;
-  max-height: 80vh;
+  max-height: 100%;
   transform-origin: center;
   transition: transform 0.1s ease;
 }
