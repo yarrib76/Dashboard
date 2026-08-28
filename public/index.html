@@ -118,6 +118,10 @@
                 <span class="icon">📣</span>
                 <span class="label">Publicaciones</span>
               </button>
+              <button class="menu-item submenu-item" data-target="redes-promociones">
+                <span class="icon">%</span>
+                <span class="label">Promociones</span>
+              </button>
             </div>
           </div>
           <div class="menu-group" data-group="fidelizacion">
@@ -2207,6 +2211,12 @@
                 </select>
               </label>
               <label>
+                <span>Promoción</span>
+                <select id="pedido-promocion-select">
+                  <option value="">Sin promoción</option>
+                </select>
+              </label>
+              <label>
                 <span>Total</span>
                 <input type="text" id="pedido-total" readonly />
               </label>
@@ -2475,6 +2485,19 @@
       </div>
       <div class="modal-body">
         <p class="status merc-catalogo-desc-text" id="merc-catalogo-desc-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="redes-promo-articulos-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Artículos seleccionados</h3>
+        <button id="redes-promo-articulos-close" class="close-btn" type="button">x</button>
+      </div>
+      <div class="modal-body">
+        <div class="abm-catalog-selected-list" id="redes-promo-articulos-selected-list"></div>
+        <p class="status" id="redes-promo-articulos-status"></p>
       </div>
     </div>
   </div>
@@ -3703,6 +3726,202 @@
     </article>
   </section>
 
+  <section class="view hidden" id="view-redes-promociones">
+    <article class="card wide">
+      <div class="actions between abm-actions-header redes-promociones-header">
+        <div class="abm-header-left">
+          <h2>Redes - Promociones</h2>
+          <p class="status">Simulador y registro de ofertas publicadas.</p>
+        </div>
+        <div class="redes-publicaciones-header-actions">
+          <button id="redes-promocion-new" type="button">Nueva</button>
+          <button id="redes-promocion-save" type="submit" form="redes-promocion-form">Guardar promoción</button>
+          <button id="redes-promocion-cancel" type="button">Cancelar</button>
+        </div>
+      </div>
+      <div class="promo-layout">
+        <form id="redes-promocion-form" class="promo-form">
+          <input type="hidden" id="redes-promocion-id" />
+          <label class="promo-span-2">
+            <span>Nombre</span>
+            <input type="text" id="redes-promocion-nombre" maxlength="140" placeholder="Ej: 15% OFF + envío gratis" />
+          </label>
+          <label>
+            <span>Código</span>
+            <input type="text" id="redes-promocion-codigo" maxlength="40" placeholder="IG15ENVIO" />
+          </label>
+          <label>
+            <span>Estado</span>
+            <select id="redes-promocion-estado">
+              <option value="borrador">Borrador</option>
+              <option value="activa">Activa</option>
+              <option value="pausada">Pausada</option>
+              <option value="finalizada">Finalizada</option>
+            </select>
+          </label>
+          <label>
+            <span>Fecha inicio</span>
+            <input type="date" id="redes-promocion-fecha-inicio" />
+          </label>
+          <label>
+            <span>Fecha fin</span>
+            <input type="date" id="redes-promocion-fecha-fin" />
+          </label>
+          <label>
+            <span>% descuento</span>
+            <input type="number" id="redes-promocion-descuento" min="0" max="100" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Ganancia mercadería</span>
+            <input type="number" id="redes-promocion-ganancia" min="0" step="0.01" value="1.8" />
+          </label>
+          <label>
+            <span>Comisión empleados %</span>
+            <input type="number" id="redes-promocion-comision-empleados" min="0" max="100" step="0.01" value="1.5" />
+          </label>
+          <label>
+            <span>Comisión cobro %</span>
+            <input type="number" id="redes-promocion-comision-cobro" min="0" max="100" step="0.01" value="0" />
+          </label>
+          <label class="promo-check">
+            <input type="checkbox" id="redes-promocion-envio-gratis" />
+            <span>Envío gratis</span>
+          </label>
+          <label>
+            <span>Costo envío estimado</span>
+            <input type="number" id="redes-promocion-costo-envio" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Margen objetivo %</span>
+            <input type="number" id="redes-promocion-margen-objetivo" min="0" max="100" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Mínimo publicado</span>
+            <input type="number" id="redes-promocion-minimo-publicado" min="0" step="0.01" value="0" />
+          </label>
+          <label class="promo-span-2">
+            <span>Canales</span>
+            <select id="redes-promocion-canales" multiple></select>
+            <div class="promo-channel-list" id="redes-promocion-canales-list"></div>
+          </label>
+          <label class="promo-span-2">
+            <span>Artículos de referencia</span>
+            <input type="hidden" id="redes-promocion-articulos" />
+            <div class="promo-ref-picker">
+              <button id="redes-promocion-articulos-pick" type="button">Seleccionar artículos</button>
+              <button id="redes-promocion-articulos-clear" type="button">Limpiar</button>
+            </div>
+            <div class="promo-ref-list" id="redes-promocion-articulos-list">
+              <span>Sin artículos seleccionados</span>
+            </div>
+          </label>
+          <label class="promo-span-4">
+            <span>Observaciones</span>
+            <textarea id="redes-promocion-descripcion" rows="3" placeholder="Condiciones o aclaraciones internas"></textarea>
+          </label>
+          <section class="promo-calculator promo-span-4" aria-label="Calculador de ganancia estimada">
+            <div class="promo-calculator-head">
+              <label>
+                <span>Monto de compra estimado</span>
+                <input type="number" id="redes-promocion-monto-estimado" min="0" step="0.01" value="100000" />
+              </label>
+              <div class="promo-calculator-total">
+                <span>Ganancia final estimada</span>
+                <strong id="redes-promocion-calc-ganancia-final">$0</strong>
+                <small id="redes-promocion-calc-margen-final">0% sobre compra</small>
+              </div>
+            </div>
+            <div class="promo-calculator-grid">
+              <div>
+                <span>Cliente paga</span>
+                <strong id="redes-promocion-calc-cliente-paga">$0</strong>
+              </div>
+              <div>
+                <span>Costo mercadería</span>
+                <strong id="redes-promocion-calc-costo">$0</strong>
+              </div>
+              <div>
+                <span>Descuento</span>
+                <strong id="redes-promocion-calc-descuento">$0</strong>
+              </div>
+              <div>
+                <span>Comisión empleados</span>
+                <strong id="redes-promocion-calc-comision-empleados">$0</strong>
+              </div>
+              <div>
+                <span>Comisión cobro</span>
+                <strong id="redes-promocion-calc-comision-cobro">$0</strong>
+              </div>
+              <div>
+                <span>Envío gratis</span>
+                <strong id="redes-promocion-calc-envio">$0</strong>
+              </div>
+              <div class="promo-calculator-wide">
+                <span>Ganancia antes de envío</span>
+                <strong id="redes-promocion-calc-ganancia-antes-envio">$0</strong>
+              </div>
+            </div>
+          </section>
+          <div class="promo-actions promo-span-4">
+            <button id="redes-promocion-calcular-articulos" type="button">Promediar artículos</button>
+            <button id="redes-promocion-calcular" type="button">Calcular</button>
+          </div>
+          <p class="status promo-span-4" id="redes-promocion-form-status"></p>
+        </form>
+        <aside class="promo-result">
+          <div class="promo-result-card">
+            <span>Mínimo para no perder</span>
+            <strong id="redes-promocion-minimo-calculado">$0</strong>
+          </div>
+          <div class="promo-result-card">
+            <span>Mínimo recomendado</span>
+            <strong id="redes-promocion-minimo-recomendado">$0</strong>
+          </div>
+          <div class="promo-result-card">
+            <span>Margen bruto usado</span>
+            <strong id="redes-promocion-margen-bruto">0%</strong>
+          </div>
+          <div class="promo-result-card">
+            <span>Margen antes de envío</span>
+            <strong id="redes-promocion-margen-disponible">0%</strong>
+          </div>
+          <div class="promo-result-card">
+            <span>Resultado estimado</span>
+            <strong id="redes-promocion-resultado">$0</strong>
+          </div>
+        </aside>
+      </div>
+      <section class="promo-history collapsed" id="redes-promociones-history">
+        <button class="promo-history-toggle" id="redes-promociones-toggle" type="button" aria-expanded="false">
+          <span class="promo-history-caret">▾</span>
+          <span>Promociones guardadas</span>
+          <small id="redes-promociones-status"></small>
+        </button>
+        <div class="promo-history-body">
+          <div class="table-wrap">
+            <table class="table" id="redes-promociones-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Nombre</th>
+                  <th>Estado</th>
+                  <th>Vigencia</th>
+                  <th>Promo</th>
+                  <th>Canales</th>
+                  <th>Mínimo</th>
+                  <th>Pedidos</th>
+                  <th>Facturación</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </article>
+  </section>
+
   <section class="view hidden" id="view-control-ordenes">
     <article class="card wide">
       <div class="actions between">
@@ -4843,10 +5062,15 @@
   <div class="modal-overlay" id="redes-articulo-pick-overlay">
     <div class="modal modal-wide">
       <div class="modal-header">
-        <h3>Seleccionar Articulo</h3>
+        <h3 id="redes-articulo-pick-title">Seleccionar Articulo</h3>
         <button id="redes-articulo-pick-close" class="close-btn" type="button">×</button>
       </div>
       <div class="modal-body">
+        <div class="abm-catalog-bar promo-pick-actions hidden" id="redes-articulo-pick-actions">
+          <strong id="redes-articulo-pick-count">0 seleccionados</strong>
+          <button id="redes-articulo-pick-view" type="button">Ver seleccionados</button>
+          <button id="redes-articulo-pick-clear" type="button">Limpiar selección</button>
+        </div>
         <div class="table-wrap">
           <table class="table" id="redes-articulo-pick-table">
             <thead>

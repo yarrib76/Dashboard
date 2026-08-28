@@ -2314,6 +2314,7 @@ const ROLE_PERMISSIONS = [
   'control-ordenes',
   'redes',
   'redes-publicaciones',
+  'redes-promociones',
   'ecommerce',
   'ecommerce-imagenweb',
   'ecommerce-panel',
@@ -2387,6 +2388,7 @@ function normalizeEcommercePermissions(permissions = {}, hasEcommerceSubPerms = 
 function normalizeRedesPermissions(permissions = {}, hasRedesSubPerms = true) {
   if (hasRedesSubPerms || permissions.redes !== true) return permissions;
   permissions['redes-publicaciones'] = true;
+  permissions['redes-promociones'] = true;
   return permissions;
 }
 
@@ -2409,7 +2411,9 @@ async function getPermissionsForUser(userId) {
   const hasEcommerceSubPerms = ECOMMERCE_SUB_PERMISSIONS.some((permission) =>
     Object.prototype.hasOwnProperty.call(permissions, permission)
   );
-  const hasRedesSubPerms = Object.prototype.hasOwnProperty.call(permissions, 'redes-publicaciones');
+  const hasRedesSubPerms =
+    Object.prototype.hasOwnProperty.call(permissions, 'redes-publicaciones') ||
+    Object.prototype.hasOwnProperty.call(permissions, 'redes-promociones');
   normalizeDashboardPermissions(permissions, hasDashboardSubPerms);
   normalizeDashboardComparativoPermissions(permissions);
   normalizeEcommercePermissions(permissions, hasEcommerceSubPerms);
@@ -3787,6 +3791,7 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
          ctrl.estado,
          ctrl.empaquetado,
          ctrl.pagado,
+         ctrl.promocion_id,
          ctrl.id_cliente,
          COALESCE(comentarios.total, 0) AS notas_count,
          CASE
@@ -3830,6 +3835,7 @@ app.get('/api/panel-control/pedidos/:vendedora/lista', requireAuth, async (req, 
       empaquetado: row.empaquetado,
       vencido: row.vencido,
       pagado: row.pagado,
+      promocionId: row.promocion_id,
       id_cliente: row.id_cliente,
       notas_count: row.notas_count,
       cliente: `${row.nombre || ''} ${row.apellido || ''}`.trim(),
@@ -4109,6 +4115,7 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
         ctrl.estado,
         ctrl.empaquetado,
         ctrl.pagado,
+        ctrl.promocion_id,
         ctrl.id_cliente,
         COALESCE(comentarios.total, 0) AS notas_count,
         CASE
@@ -4251,6 +4258,7 @@ app.get('/api/pedidos/todos/lista', requireAuth, async (req, res) => {
       empaquetado: row.empaquetado,
       vencido: row.vencido,
       pagado: row.pagado,
+      promocionId: row.promocion_id,
       id_cliente: row.id_cliente,
       notas_count: row.notas_count,
       notasCount: row.notas_count,
@@ -4703,6 +4711,26 @@ app.delete('/api/pedidos/comentarios/:id', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al eliminar comentario', error: error.message });
+  }
+});
+
+app.patch('/api/pedidos/promocion', requireAuth, async (req, res) => {
+  try {
+    const { id, promocion_id = null } = req.body || {};
+    const pedidoId = Number(id);
+    const promocionId = Number(promocion_id) || null;
+    if (!pedidoId) return res.status(400).json({ message: 'id requerido' });
+    if (promocionId) await assertPromocionActiva(pool, promocionId);
+    await pool.query(
+      `UPDATE controlpedidos
+       SET promocion_id = ?
+       WHERE id = ?
+       LIMIT 1`,
+      [promocionId, pedidoId]
+    );
+    res.json({ ok: true, promocion_id: promocionId });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar promocion', error: error.message });
   }
 });
 
@@ -12738,6 +12766,430 @@ app.delete(
   }
 );
 
+function calculatePromocion(payload = {}) {
+  const gananciaFactor = Math.max(0, Number(payload.gananciaFactor) || 0);
+  const descuentoPct = Math.max(0, Number(payload.descuentoPct) || 0);
+  const envioGratis = Number(payload.envioGratis) === 1 || payload.envioGratis === true;
+  const costoEnvioEstimado = envioGratis ? Math.max(0, Number(payload.costoEnvioEstimado) || 0) : 0;
+  const comisionEmpleadosPct = Math.max(0, Number(payload.comisionEmpleadosPct) || 0);
+  const comisionCobroPct = Math.max(0, Number(payload.comisionCobroPct) || 0);
+  const margenObjetivoPct = Math.max(0, Number(payload.margenObjetivoPct) || 0);
+  const minimoPublicado = Math.max(0, Number(payload.minimoPublicado) || 0);
+  const margenBrutoPct = gananciaFactor > 0 ? ((gananciaFactor - 1) / gananciaFactor) * 100 : 0;
+  const margenDisponiblePct = margenBrutoPct - descuentoPct - comisionEmpleadosPct - comisionCobroPct - margenObjetivoPct;
+  const minimoCalculado =
+    costoEnvioEstimado > 0 && margenDisponiblePct > 0 ? costoEnvioEstimado / (margenDisponiblePct / 100) : 0;
+  const baseEvaluada = minimoPublicado > 0 ? minimoPublicado : minimoCalculado;
+  const gananciaEstimada =
+    baseEvaluada * ((margenBrutoPct - descuentoPct - comisionEmpleadosPct - comisionCobroPct) / 100) -
+    costoEnvioEstimado;
+  return {
+    margenBrutoPct: round2(margenBrutoPct),
+    margenDisponiblePct: round2(margenDisponiblePct),
+    minimoCalculado: round2(Math.max(0, minimoCalculado)),
+    minimoRecomendado: round2(minimoCalculado > 0 ? Math.ceil(minimoCalculado / 1000) * 1000 : 0),
+    gananciaEstimada: round2(gananciaEstimada),
+    rentable: margenDisponiblePct > 0 && (!minimoPublicado || gananciaEstimada >= 0),
+  };
+}
+
+function mapPromocionRow(row = {}) {
+  const canales = String(row.canales || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const canalIds = String(row.canalIds || '')
+    .split(',')
+    .map((item) => Number(item))
+    .filter(Number.isFinite);
+  return {
+    id: Number(row.id) || 0,
+    codigo: row.codigo || '',
+    nombre: row.nombre || '',
+    descripcion: row.descripcion || '',
+    descuentoPct: Number(row.descuentoPct) || 0,
+    envioGratis: Number(row.envioGratis) === 1,
+    costoEnvioEstimado: Number(row.costoEnvioEstimado) || 0,
+    gananciaFactor: Number(row.gananciaFactor) || 0,
+    margenBrutoPct: Number(row.margenBrutoPct) || 0,
+    comisionEmpleadosPct: Number(row.comisionEmpleadosPct) || 0,
+    comisionCobroPct: Number(row.comisionCobroPct) || 0,
+    margenObjetivoPct: Number(row.margenObjetivoPct) || 0,
+    minimoCalculado: Number(row.minimoCalculado) || 0,
+    minimoRecomendado: Number(row.minimoRecomendado) || 0,
+    minimoPublicado: Number(row.minimoPublicado) || 0,
+    fechaInicio: row.fechaInicio || '',
+    fechaFin: row.fechaFin || '',
+    estado: row.estado || 'borrador',
+    canales,
+    canalIds,
+    pedidosCount: Number(row.pedidosCount) || 0,
+    facturacionAsociada: Number(row.facturacionAsociada) || 0,
+    actualizadoEn: row.actualizadoEn || '',
+  };
+}
+
+function normalizePromocionEstado(value) {
+  const estado = String(value || '').trim().toLowerCase();
+  return ['borrador', 'activa', 'finalizada', 'pausada'].includes(estado) ? estado : 'borrador';
+}
+
+async function fetchPromociones(conn, onlyActive = false) {
+  const where = onlyActive
+    ? `WHERE p.estado = 'activa'
+       AND (p.fecha_inicio IS NULL OR p.fecha_inicio <= CURDATE())
+       AND (p.fecha_fin IS NULL OR p.fecha_fin >= CURDATE())`
+    : '';
+  const [rows] = await conn.query(
+    `SELECT
+       p.id,
+       p.codigo,
+       p.nombre,
+       p.descripcion,
+       p.descuento_pct AS descuentoPct,
+       p.envio_gratis AS envioGratis,
+       p.costo_envio_estimado AS costoEnvioEstimado,
+       p.ganancia_factor AS gananciaFactor,
+       p.margen_bruto_pct AS margenBrutoPct,
+       p.comision_empleados_pct AS comisionEmpleadosPct,
+       p.comision_cobro_pct AS comisionCobroPct,
+       p.margen_objetivo_pct AS margenObjetivoPct,
+       p.minimo_calculado AS minimoCalculado,
+       p.minimo_recomendado AS minimoRecomendado,
+       p.minimo_publicado AS minimoPublicado,
+       DATE_FORMAT(p.fecha_inicio, '%Y-%m-%d') AS fechaInicio,
+       DATE_FORMAT(p.fecha_fin, '%Y-%m-%d') AS fechaFin,
+       p.estado,
+       DATE_FORMAT(p.actualizado_en, '%Y-%m-%d %H:%i:%s') AS actualizadoEn,
+       COALESCE(canales.canales, '') AS canales,
+       COALESCE(canales.canalIds, '') AS canalIds,
+       COALESCE(pedidos.pedidosCount, 0) AS pedidosCount,
+       COALESCE(pedidos.facturacionAsociada, 0) AS facturacionAsociada
+     FROM ${DB_NAME}.redes_promociones p
+     LEFT JOIN (
+       SELECT
+         pc.promocion_id,
+         GROUP_CONCAT(rp.nombre ORDER BY rp.nombre SEPARATOR ', ') AS canales,
+         GROUP_CONCAT(rp.id ORDER BY rp.nombre SEPARATOR ',') AS canalIds
+       FROM ${DB_NAME}.redes_promocion_canales pc
+       INNER JOIN ${DB_NAME}.redes_plataformas rp ON rp.id = pc.canal_id
+       GROUP BY pc.promocion_id
+     ) canales ON canales.promocion_id = p.id
+     LEFT JOIN (
+       SELECT
+         promocion_id,
+         COUNT(*) AS pedidosCount,
+         SUM(COALESCE(total, 0)) AS facturacionAsociada
+       FROM ${DB_NAME}.controlpedidos
+       WHERE promocion_id IS NOT NULL
+       GROUP BY promocion_id
+     ) pedidos ON pedidos.promocion_id = p.id
+     ${where}
+     ORDER BY p.fecha_inicio DESC, p.id DESC`
+  );
+  return (rows || []).map(mapPromocionRow);
+}
+
+async function fetchPromocionDetalle(conn, id) {
+  const rows = await fetchPromociones(conn, false);
+  return rows.find((row) => Number(row.id) === Number(id)) || null;
+}
+
+async function assertPromocionCanales(conn, canalIds) {
+  if (!canalIds.length) {
+    const error = new Error('Selecciona al menos un canal');
+    error.status = 400;
+    throw error;
+  }
+  const placeholders = canalIds.map(() => '?').join(',');
+  const [rows] = await conn.query(
+    `SELECT id FROM ${DB_NAME}.redes_plataformas WHERE activo = 1 AND id IN (${placeholders})`,
+    canalIds
+  );
+  if ((rows || []).length !== canalIds.length) {
+    const error = new Error('Uno o mas canales son invalidos');
+    error.status = 400;
+    throw error;
+  }
+}
+
+async function assertPromocionActiva(conn, promocionId) {
+  if (!promocionId) return null;
+  const [[row]] = await conn.query(
+    `SELECT id
+     FROM ${DB_NAME}.redes_promociones
+     WHERE id = ?
+       AND estado = 'activa'
+       AND (fecha_inicio IS NULL OR fecha_inicio <= CURDATE())
+       AND (fecha_fin IS NULL OR fecha_fin >= CURDATE())
+     LIMIT 1`,
+    [promocionId]
+  );
+  if (!row) {
+    const error = new Error('Promocion invalida o no activa');
+    error.status = 400;
+    throw error;
+  }
+  return Number(row.id);
+}
+
+app.get('/api/redes/promociones', requireAuth, requirePermission('redes-promociones'), async (_req, res) => {
+  try {
+    const data = await fetchPromociones(pool, false);
+    res.json({ total: data.length, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar promociones', error: error.message });
+  }
+});
+
+app.get('/api/redes/promociones/activas', requireAuth, async (req, res) => {
+  try {
+    const includeIds = String(req.query.includeIds || req.query.includeId || '')
+      .split(',')
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const data = await fetchPromociones(pool, true);
+    const existing = new Set(data.map((row) => Number(row.id)));
+    for (const id of includeIds) {
+      if (existing.has(id)) continue;
+      const row = await fetchPromocionDetalle(pool, id);
+      if (row) {
+        data.push({ ...row, noDisponible: true });
+        existing.add(id);
+      }
+    }
+    res.json({ total: data.length, data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar promociones activas', error: error.message });
+  }
+});
+
+app.post('/api/redes/promociones/calcular', requireAuth, requirePermission('redes-promociones'), async (req, res) => {
+  res.json({ data: calculatePromocion(req.body || {}) });
+});
+
+app.post('/api/redes/promociones/calcular-articulos', requireAuth, requirePermission('redes-promociones'), async (req, res) => {
+  try {
+    const articulos = normalizeRedesArticulos(req.body?.articulos);
+    if (!articulos.length) return res.status(400).json({ message: 'Ingresa al menos un articulo' });
+    const placeholders = articulos.map(() => '?').join(',');
+    const [rows] = await pool.query(
+      `SELECT
+         art.Articulo AS articulo,
+         art.Detalle AS detalle,
+         art.PrecioManual AS precioManual,
+         art.PrecioConvertido AS precioConvertido,
+         art.Moneda AS moneda,
+         art.Ganancia AS gananciaArticulo,
+         art.Proveedor AS proveedor,
+         prov.Ganancia AS gananciaProveedor
+       FROM ${DB_NAME}.articulos art
+       LEFT JOIN ${DB_NAME}.proveedores prov ON prov.Nombre = art.Proveedor
+       WHERE art.Articulo IN (${placeholders})
+       ORDER BY Articulo`,
+      articulos
+    );
+    const data = (rows || []).map((row) => {
+      const precioManual = Number(row.precioManual) || 0;
+      const gananciaArticulo = Number(row.gananciaArticulo) || 0;
+      const gananciaProveedor = Number(row.gananciaProveedor) || 0;
+      const gananciaUsada = precioManual !== 0 ? gananciaArticulo : gananciaProveedor;
+      return {
+        articulo: row.articulo,
+        detalle: row.detalle,
+        modo: precioManual !== 0 ? 'manual' : String(row.moneda || '').toUpperCase() === 'ARG' ? 'pesos' : 'dolares',
+        proveedor: row.proveedor,
+        gananciaArticulo,
+        gananciaProveedor,
+        gananciaUsada,
+      };
+    });
+    const ganancias = data.map((row) => Number(row.gananciaUsada)).filter((value) => Number.isFinite(value) && value > 0);
+    const promedio = ganancias.length ? ganancias.reduce((acc, value) => acc + value, 0) / ganancias.length : 0;
+    res.json({ data: { articulos: data, promedioGanancia: round2(promedio), encontrados: rows.length } });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al calcular ganancia por articulos', error: error.message });
+  }
+});
+
+app.get('/api/redes/promociones/catalogos', requireAuth, requirePermission('redes-promociones'), async (_req, res) => {
+  try {
+    const [canales] = await pool.query(
+      `SELECT id, nombre
+       FROM ${DB_NAME}.redes_plataformas
+       WHERE activo = 1
+       ORDER BY nombre`
+    );
+    res.json({ canales: canales || [], estados: ['borrador', 'activa', 'pausada', 'finalizada'] });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar catalogos de promociones', error: error.message });
+  }
+});
+
+app.get('/api/redes/promociones/:id', requireAuth, requirePermission('redes-promociones'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'id invalido' });
+    const data = await fetchPromocionDetalle(pool, id);
+    if (!data) return res.status(404).json({ message: 'Promocion no encontrada' });
+    res.json({ data });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al cargar promocion', error: error.message });
+  }
+});
+
+app.post('/api/redes/promociones', requireAuth, requirePermission('redes-promociones'), async (req, res) => {
+  let conn;
+  try {
+    const body = req.body || {};
+    const codigo = String(body.codigo || '').trim().toUpperCase();
+    const nombre = String(body.nombre || '').trim();
+    const descripcion = String(body.descripcion || '').trim();
+    const estado = normalizePromocionEstado(body.estado);
+    const fechaInicio = String(body.fechaInicio || '').trim() || null;
+    const fechaFin = String(body.fechaFin || '').trim() || null;
+    const canalIds = normalizeRedesIds(body.canalIds);
+    const calc = calculatePromocion(body);
+    if (!codigo) return res.status(400).json({ message: 'Codigo requerido' });
+    if (!nombre) return res.status(400).json({ message: 'Nombre requerido' });
+    if (fechaInicio && !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio)) return res.status(400).json({ message: 'Fecha inicio invalida' });
+    if (fechaFin && !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin)) return res.status(400).json({ message: 'Fecha fin invalida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await assertPromocionCanales(conn, canalIds);
+    const [result] = await conn.query(
+      `INSERT INTO ${DB_NAME}.redes_promociones
+       (codigo, nombre, descripcion, descuento_pct, envio_gratis, costo_envio_estimado, ganancia_factor,
+        margen_bruto_pct, comision_empleados_pct, comision_cobro_pct, margen_objetivo_pct,
+        minimo_calculado, minimo_recomendado, minimo_publicado, fecha_inicio, fecha_fin, estado, creado_por, actualizado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        codigo,
+        nombre,
+        descripcion || null,
+        toSafeDecimal(body.descuentoPct, 0, 0, 100),
+        body.envioGratis ? 1 : 0,
+        toSafeDecimal(body.costoEnvioEstimado, 0),
+        toSafeDecimal(body.gananciaFactor, 0),
+        calc.margenBrutoPct,
+        toSafeDecimal(body.comisionEmpleadosPct, 0, 0, 100),
+        toSafeDecimal(body.comisionCobroPct, 0, 0, 100),
+        toSafeDecimal(body.margenObjetivoPct, 0, 0, 100),
+        calc.minimoCalculado,
+        calc.minimoRecomendado,
+        toSafeDecimal(body.minimoPublicado, 0),
+        fechaInicio,
+        fechaFin,
+        estado,
+        req.user?.id || null,
+        req.user?.id || null,
+      ]
+    );
+    const promocionId = result.insertId;
+    for (const canalId of canalIds) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_promocion_canales (promocion_id, canal_id) VALUES (?, ?)`,
+        [promocionId, canalId]
+      );
+    }
+    await conn.commit();
+    const data = await fetchPromocionDetalle(pool, promocionId);
+    res.status(201).json({ ok: true, data });
+  } catch (error) {
+    if (conn) await conn.rollback().catch(() => {});
+    res.status(error.status || 500).json({ message: error.message || 'Error al crear promocion' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/redes/promociones/:id', requireAuth, requirePermission('redes-promociones'), async (req, res) => {
+  let conn;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'id invalido' });
+    const body = req.body || {};
+    const codigo = String(body.codigo || '').trim().toUpperCase();
+    const nombre = String(body.nombre || '').trim();
+    const descripcion = String(body.descripcion || '').trim();
+    const estado = normalizePromocionEstado(body.estado);
+    const fechaInicio = String(body.fechaInicio || '').trim() || null;
+    const fechaFin = String(body.fechaFin || '').trim() || null;
+    const canalIds = normalizeRedesIds(body.canalIds);
+    const calc = calculatePromocion(body);
+    if (!codigo) return res.status(400).json({ message: 'Codigo requerido' });
+    if (!nombre) return res.status(400).json({ message: 'Nombre requerido' });
+    if (fechaInicio && !/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio)) return res.status(400).json({ message: 'Fecha inicio invalida' });
+    if (fechaFin && !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin)) return res.status(400).json({ message: 'Fecha fin invalida' });
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [[actual]] = await conn.query(`SELECT id FROM ${DB_NAME}.redes_promociones WHERE id = ? FOR UPDATE`, [id]);
+    if (!actual) {
+      await conn.rollback();
+      return res.status(404).json({ message: 'Promocion no encontrada' });
+    }
+    await assertPromocionCanales(conn, canalIds);
+    await conn.query(
+      `UPDATE ${DB_NAME}.redes_promociones
+       SET codigo = ?,
+           nombre = ?,
+           descripcion = ?,
+           descuento_pct = ?,
+           envio_gratis = ?,
+           costo_envio_estimado = ?,
+           ganancia_factor = ?,
+           margen_bruto_pct = ?,
+           comision_empleados_pct = ?,
+           comision_cobro_pct = ?,
+           margen_objetivo_pct = ?,
+           minimo_calculado = ?,
+           minimo_recomendado = ?,
+           minimo_publicado = ?,
+           fecha_inicio = ?,
+           fecha_fin = ?,
+           estado = ?,
+           actualizado_por = ?
+       WHERE id = ?`,
+      [
+        codigo,
+        nombre,
+        descripcion || null,
+        toSafeDecimal(body.descuentoPct, 0, 0, 100),
+        body.envioGratis ? 1 : 0,
+        toSafeDecimal(body.costoEnvioEstimado, 0),
+        toSafeDecimal(body.gananciaFactor, 0),
+        calc.margenBrutoPct,
+        toSafeDecimal(body.comisionEmpleadosPct, 0, 0, 100),
+        toSafeDecimal(body.comisionCobroPct, 0, 0, 100),
+        toSafeDecimal(body.margenObjetivoPct, 0, 0, 100),
+        calc.minimoCalculado,
+        calc.minimoRecomendado,
+        toSafeDecimal(body.minimoPublicado, 0),
+        fechaInicio,
+        fechaFin,
+        estado,
+        req.user?.id || null,
+        id,
+      ]
+    );
+    await conn.query(`DELETE FROM ${DB_NAME}.redes_promocion_canales WHERE promocion_id = ?`, [id]);
+    for (const canalId of canalIds) {
+      await conn.query(
+        `INSERT INTO ${DB_NAME}.redes_promocion_canales (promocion_id, canal_id) VALUES (?, ?)`,
+        [id, canalId]
+      );
+    }
+    await conn.commit();
+    const data = await fetchPromocionDetalle(pool, id);
+    res.json({ ok: true, data });
+  } catch (error) {
+    if (conn) await conn.rollback().catch(() => {});
+    res.status(error.status || 500).json({ message: error.message || 'Error al actualizar promocion' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/mercaderia/top', async (req, res) => {
   try {
     const hoy = new Date();
@@ -14688,6 +15140,7 @@ app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
            ctrl.vendedora,
            ctrl.total,
            ctrl.ordenweb,
+           ctrl.promocion_id AS promocionId,
            CONCAT(c.nombre, ' ', c.apellido) AS cliente
          FROM ${DB_NAME}.controlpedidos ctrl
          LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
@@ -14710,6 +15163,7 @@ app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
          ctrl.vendedora,
          ctrl.total,
          ctrl.ordenweb,
+         ctrl.promocion_id AS promocionId,
          CONCAT(c.nombre, ' ', c.apellido) AS cliente
        FROM ${DB_NAME}.controlpedidos ctrl
        LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
@@ -14784,8 +15238,9 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
   let connection;
   try {
     const nroPedido = Number(req.params.nro);
-    const { cliente_id, vendedora, ordenWeb = 0, items = [] } = req.body || {};
+    const { cliente_id, vendedora, ordenWeb = 0, items = [], promocion_id = null } = req.body || {};
     const clienteId = Number(cliente_id) || 1;
+    const promocionId = Number(promocion_id) || null;
     if (!nroPedido) {
       return res.status(400).json({ message: 'nroPedido requerido' });
     }
@@ -14798,12 +15253,16 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
     const [[existsRow]] = await connection.query(
-      `SELECT nropedido FROM ${DB_NAME}.controlpedidos WHERE nropedido = ? LIMIT 1 FOR UPDATE`,
+      `SELECT nropedido, promocion_id FROM ${DB_NAME}.controlpedidos WHERE nropedido = ? LIMIT 1 FOR UPDATE`,
       [nroPedido]
     );
     if (!existsRow) {
       await connection.rollback();
       return res.status(404).json({ message: 'Pedido no encontrado' });
+    }
+    const currentPromocionId = Number(existsRow.promocion_id) || null;
+    if (promocionId && promocionId !== currentPromocionId) {
+      await assertPromocionActiva(connection, promocionId);
     }
     const fecha = formatDateTimeLocal(new Date());
     const cajera = req.user?.name || '';
@@ -14853,10 +15312,11 @@ app.put('/api/pedidos/:nro', requireAuth, async (req, res) => {
            ordenWeb = ?,
            local = ?,
            instancia = ?,
+           promocion_id = ?,
            ultactualizacion = ?
        WHERE nropedido = ?
        LIMIT 1`,
-      [clienteId, vendedora, total, ordenWeb, local, instancia, fecha, nroPedido]
+      [clienteId, vendedora, total, ordenWeb, local, instancia, promocionId, fecha, nroPedido]
     );
     await connection.query(`DELETE FROM ${DB_NAME}.pedidotemp WHERE NroPedido = ?`, [nroPedido]);
     for (const item of processedItems) {
@@ -14899,11 +15359,12 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
   let connection;
   let idempotencyKey = '';
   try {
-    const { cliente_id, vendedora, ordenWeb = 0, items = [], nroPedido } = req.body || {};
+    const { cliente_id, vendedora, ordenWeb = 0, items = [], nroPedido, promocion_id = null } = req.body || {};
     idempotencyKey = normalizeIdempotencyKey(
       req.body?.idempotency_key || req.get('x-idempotency-key') || ''
     );
     const clienteId = Number(cliente_id) || 1;
+    const promocionId = Number(promocion_id) || null;
     if (!vendedora) {
       return res.status(400).json({ message: 'vendedora requerida' });
     }
@@ -14916,6 +15377,7 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
     }
     connection = await pool.getConnection();
     await connection.beginTransaction();
+    if (promocionId) await assertPromocionActiva(connection, promocionId);
     if (idempotencyKey) {
       const [[existingPedido]] = await connection.query(
         `SELECT nropedido
@@ -14994,9 +15456,9 @@ app.post('/api/pedidos', requireAuth, async (req, res) => {
     total = computePedidoSubtotal(processedItems);
     await connection.query(
       `INSERT INTO ${DB_NAME}.controlpedidos
-       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, instancia, idempotency_key)
-       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?)`,
-      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, instancia, idempotencyKey || null]
+       (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb, empaquetado, local, instancia, promocion_id, idempotency_key)
+       VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?, ?, ?)`,
+      [clienteId, pedidoNumero, vendedora, cajera, fecha, total, ordenWeb, local, instancia, promocionId, idempotencyKey || null]
     );
     for (const item of processedItems) {
       await connection.query(

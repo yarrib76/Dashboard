@@ -407,8 +407,12 @@ let ecommerceTnMeta = null;
 let ecommerceAsigRows = [];
 let ecommerceAsigVendedoras = [];
 let redesPublicacionesLoaded = false;
+let redesPromocionesLoaded = false;
 let redesPublicacionesTable = null;
+let redesPromocionesTable = null;
 let redesArticuloPickTable = null;
+let redesArticuloPickMode = 'publicacion';
+let redesPromoArticuloRefs = [];
 let redesPublicacionArticulosTable = null;
 let redesArticulosViewTable = null;
 let redesCatalogosLoaded = false;
@@ -532,6 +536,7 @@ const viewMercaderiaCatalogo = document.getElementById('view-mercaderia-catalogo
 const viewAbm = document.getElementById('view-abm');
 const viewControlOrdenes = document.getElementById('view-control-ordenes');
 const viewRedesPublicaciones = document.getElementById('view-redes-publicaciones');
+const viewRedesPromociones = document.getElementById('view-redes-promociones');
 const viewEcommerceImagenweb = document.getElementById('view-ecommerce-imagenweb');
 const viewEcommercePanel = document.getElementById('view-ecommerce-panel');
 const viewEcommercePanelDetail = document.getElementById('view-ecommerce-panel-detail');
@@ -620,6 +625,10 @@ const mercCatalogoDescOverlay = document.getElementById('merc-catalogo-desc-over
 const mercCatalogoDescClose = document.getElementById('merc-catalogo-desc-close');
 const mercCatalogoDescTitle = document.getElementById('merc-catalogo-desc-title');
 const mercCatalogoDescText = document.getElementById('merc-catalogo-desc-text');
+const redesPromoArticulosOverlay = document.getElementById('redes-promo-articulos-overlay');
+const redesPromoArticulosClose = document.getElementById('redes-promo-articulos-close');
+const redesPromoArticulosSelectedList = document.getElementById('redes-promo-articulos-selected-list');
+const redesPromoArticulosStatus = document.getElementById('redes-promo-articulos-status');
 const mercArtProvTitle = document.getElementById('merc-art-prov-title');
 const mercArtProvRefreshBtn = document.getElementById('merc-art-prov-refresh');
 const mercArtProvExportBtn = document.getElementById('merc-art-prov-export');
@@ -656,14 +665,66 @@ const redesPublicacionFormStatus = document.getElementById('redes-publicacion-fo
 const redesPublicacionStatus = document.getElementById('redes-publicacion-status');
 const redesArticuloPickOverlay = document.getElementById('redes-articulo-pick-overlay');
 const redesArticuloPickClose = document.getElementById('redes-articulo-pick-close');
+const redesArticuloPickTitle = document.getElementById('redes-articulo-pick-title');
 const redesArticuloPickTableEl = document.getElementById('redes-articulo-pick-table');
 const redesArticuloPickStatus = document.getElementById('redes-articulo-pick-status');
 const redesArticuloPickLoading = document.getElementById('redes-articulo-pick-loading');
+const redesArticuloPickActions = document.getElementById('redes-articulo-pick-actions');
+const redesArticuloPickView = document.getElementById('redes-articulo-pick-view');
+const redesArticuloPickClear = document.getElementById('redes-articulo-pick-clear');
+const redesArticuloPickCount = document.getElementById('redes-articulo-pick-count');
 const redesArticulosOverlay = document.getElementById('redes-articulos-overlay');
 const redesArticulosTitle = document.getElementById('redes-articulos-title');
 const redesArticulosClose = document.getElementById('redes-articulos-close');
 const redesArticulosTableEl = document.getElementById('redes-articulos-table');
 const redesArticulosStatus = document.getElementById('redes-articulos-status');
+const redesPromocionNewBtn = document.getElementById('redes-promocion-new');
+const redesPromocionForm = document.getElementById('redes-promocion-form');
+const redesPromocionId = document.getElementById('redes-promocion-id');
+const redesPromocionNombre = document.getElementById('redes-promocion-nombre');
+const redesPromocionCodigo = document.getElementById('redes-promocion-codigo');
+const redesPromocionEstado = document.getElementById('redes-promocion-estado');
+const redesPromocionFechaInicio = document.getElementById('redes-promocion-fecha-inicio');
+const redesPromocionFechaFin = document.getElementById('redes-promocion-fecha-fin');
+const redesPromocionDescuento = document.getElementById('redes-promocion-descuento');
+const redesPromocionGanancia = document.getElementById('redes-promocion-ganancia');
+const redesPromocionComisionEmpleados = document.getElementById('redes-promocion-comision-empleados');
+const redesPromocionComisionCobro = document.getElementById('redes-promocion-comision-cobro');
+const redesPromocionEnvioGratis = document.getElementById('redes-promocion-envio-gratis');
+const redesPromocionCostoEnvio = document.getElementById('redes-promocion-costo-envio');
+const redesPromocionMargenObjetivo = document.getElementById('redes-promocion-margen-objetivo');
+const redesPromocionMinimoPublicado = document.getElementById('redes-promocion-minimo-publicado');
+const redesPromocionCanales = document.getElementById('redes-promocion-canales');
+const redesPromocionCanalesList = document.getElementById('redes-promocion-canales-list');
+const redesPromocionArticulos = document.getElementById('redes-promocion-articulos');
+const redesPromocionArticulosPick = document.getElementById('redes-promocion-articulos-pick');
+const redesPromocionArticulosClear = document.getElementById('redes-promocion-articulos-clear');
+const redesPromocionArticulosList = document.getElementById('redes-promocion-articulos-list');
+const redesPromocionDescripcion = document.getElementById('redes-promocion-descripcion');
+const redesPromocionCalcularArticulos = document.getElementById('redes-promocion-calcular-articulos');
+const redesPromocionCalcular = document.getElementById('redes-promocion-calcular');
+const redesPromocionSave = document.getElementById('redes-promocion-save');
+const redesPromocionCancel = document.getElementById('redes-promocion-cancel');
+const redesPromocionFormStatus = document.getElementById('redes-promocion-form-status');
+const redesPromocionesStatus = document.getElementById('redes-promociones-status');
+const redesPromocionesHistory = document.getElementById('redes-promociones-history');
+const redesPromocionesToggle = document.getElementById('redes-promociones-toggle');
+const redesPromocionesTableEl = document.getElementById('redes-promociones-table');
+const redesPromocionMinimoCalculado = document.getElementById('redes-promocion-minimo-calculado');
+const redesPromocionMinimoRecomendado = document.getElementById('redes-promocion-minimo-recomendado');
+const redesPromocionMargenBruto = document.getElementById('redes-promocion-margen-bruto');
+const redesPromocionMargenDisponible = document.getElementById('redes-promocion-margen-disponible');
+const redesPromocionResultado = document.getElementById('redes-promocion-resultado');
+const redesPromocionMontoEstimado = document.getElementById('redes-promocion-monto-estimado');
+const redesPromocionCalcClientePaga = document.getElementById('redes-promocion-calc-cliente-paga');
+const redesPromocionCalcCosto = document.getElementById('redes-promocion-calc-costo');
+const redesPromocionCalcDescuento = document.getElementById('redes-promocion-calc-descuento');
+const redesPromocionCalcComisionEmpleados = document.getElementById('redes-promocion-calc-comision-empleados');
+const redesPromocionCalcComisionCobro = document.getElementById('redes-promocion-calc-comision-cobro');
+const redesPromocionCalcEnvio = document.getElementById('redes-promocion-calc-envio');
+const redesPromocionCalcGananciaAntesEnvio = document.getElementById('redes-promocion-calc-ganancia-antes-envio');
+const redesPromocionCalcGananciaFinal = document.getElementById('redes-promocion-calc-ganancia-final');
+const redesPromocionCalcMargenFinal = document.getElementById('redes-promocion-calc-margen-final');
 const statPendientesControl = document.getElementById('stat-pendientes-control');
 const statSinTransporteControl = document.getElementById('stat-sin-transporte-control');
 const statVencidosControl = document.getElementById('stat-vencidos-control');
@@ -742,6 +803,7 @@ const pedidoArticuloFoto = document.getElementById('pedido-articulo-foto');
 const pedidoDescuentoCheck = document.getElementById('pedido-descuento-check');
 const pedidoDescuentoSelect = document.getElementById('pedido-descuento-select');
 const pedidoRecargoSelect = document.getElementById('pedido-recargo-select');
+const pedidoPromocionSelect = document.getElementById('pedido-promocion-select');
 const pedidoDescuentoTotalInput = document.getElementById('pedido-descuento-total');
 const pedidoCorreoInput = document.getElementById('pedido-correo');
 const pedidoTotalCorreoInput = document.getElementById('pedido-total-correo');
@@ -1595,6 +1657,7 @@ let pedidoCardsServerStart = 0;
 let pedidoCardsServerDone = false;
 let pedidoCardsServerLoading = false;
 let pedidoCardsServerSearch = '';
+let pedidoPromocionesActivas = [];
 let abmProvidersLoaded = false;
 let abmCreateProvidersLoaded = false;
 let abmCurrentArticulo = null;
@@ -2492,6 +2555,7 @@ async function loadPedidoExistente(nroPedido) {
       pedidoClienteInput.value = row.id_cliente ? `${row.id_cliente} - ${row.cliente || ''}` : row.cliente || '';
     if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = row.vendedora || '';
     if (pedidoOrdenWebInput) pedidoOrdenWebInput.value = row.ordenweb || 0;
+    await loadPedidoPromocionesActivas(row.promocionId || '');
     const itemsRes = await fetchJSON(`/api/pedidos/items?nropedido=${encodeURIComponent(nroPedido)}`);
     pedidoNuevoItems = (itemsRes.data || []).map((item) => {
       const cantidad = Number(item.cantidad) || 0;
@@ -3115,6 +3179,7 @@ function resetPedidoNuevoForm() {
   if (pedidoDescuentoCheck) pedidoDescuentoCheck.checked = false;
   if (pedidoDescuentoSelect) pedidoDescuentoSelect.value = '0';
   if (pedidoRecargoSelect) pedidoRecargoSelect.value = '0';
+  if (pedidoPromocionSelect) pedidoPromocionSelect.value = '';
   if (pedidoCorreoInput) pedidoCorreoInput.value = '';
   if (pedidoTotalCorreoInput) pedidoTotalCorreoInput.value = '';
   if (pedidoTotalInput) pedidoTotalInput.value = '';
@@ -3252,6 +3317,7 @@ async function refreshFacturacionArticuloRow(articulo) {
 async function initPedidoNuevo() {
   if (!pedidoNuevoSaveBtn) return;
   await loadVendedoras(pedidoVendedoraSelect, pedidoNuevoStatus);
+  await loadPedidoPromocionesActivas();
 
   if (pedidoClienteInput) {
     pedidoClienteInput.addEventListener('input', () => {
@@ -3385,6 +3451,7 @@ async function initPedidoNuevo() {
       const nroPedido = Number(pedidoNumeroInput?.value) || 0;
       const vendedora = pedidoVendedoraSelect?.value || '';
       const ordenWeb = Number(pedidoOrdenWebInput?.value) || 0;
+      const promocionId = Number(pedidoPromocionSelect?.value) || null;
       if (!vendedora) {
         setStatusMessage(pedidoNuevoStatus, 'Vendedora obligatoria.', 'error');
         return;
@@ -3407,6 +3474,7 @@ async function initPedidoNuevo() {
           nroPedido,
           vendedora,
           ordenWeb,
+          promocion_id: promocionId,
           items: pedidoNuevoItems,
           idempotency_key: idempotencyKey,
         };
@@ -3427,6 +3495,7 @@ async function initPedidoNuevo() {
         if (pedidoClienteInput) pedidoClienteInput.value = '';
         if (pedidoClienteId) pedidoClienteId.value = '';
         if (pedidoOrdenWebInput) pedidoOrdenWebInput.value = '';
+        if (pedidoPromocionSelect) pedidoPromocionSelect.value = '';
         if (pedidoNumeroInput) pedidoNumeroInput.value = '';
         if (pedidoVendedoraSelect) pedidoVendedoraSelect.value = '';
       } catch (error) {
@@ -7635,7 +7704,16 @@ async function loadRedesArticuloPickTable() {
           {
             data: null,
             orderable: false,
-            render: (_data, _type, row) => renderRedesThumb(row.imageSrc, row.articulo),
+            render: (_data, _type, row) => {
+              const articulo = String(row.articulo || '');
+              const selected = redesArticuloPickMode === 'promocion' && redesPromoArticuloRefs.includes(articulo);
+              if (redesArticuloPickMode === 'promocion') {
+                return `<input type="checkbox" class="redes-pick-toggle" data-articulo="${escapeAttr(articulo)}"${
+                  selected ? ' checked' : ''
+                } />`;
+              }
+              return renderRedesThumb(row.imageSrc, row.articulo);
+            },
           },
           { data: 'articulo' },
           { data: 'detalle' },
@@ -7643,8 +7721,13 @@ async function loadRedesArticuloPickTable() {
           {
             data: null,
             orderable: false,
-            render: (_data, _type, row) =>
-              `<button type="button" class="abm-link-btn redes-pick-add" data-articulo="${escapeAttr(row.articulo)}">Agregar</button>`,
+            render: (_data, _type, row) => {
+              const articulo = String(row.articulo || '');
+              if (redesArticuloPickMode === 'promocion') {
+                return renderRedesThumb(row.imageSrc, row.articulo);
+              }
+              return `<button type="button" class="abm-link-btn redes-pick-add" data-articulo="${escapeAttr(articulo)}">Agregar</button>`;
+            },
           },
         ],
         pageLength: 10,
@@ -7652,9 +7735,15 @@ async function loadRedesArticuloPickTable() {
         deferRender: true,
         order: [[1, 'asc']],
         autoWidth: false,
+        rowCallback: (tr, row) => {
+          const selected = redesArticuloPickMode === 'promocion' && redesPromoArticuloRefs.includes(String(row.articulo || ''));
+          tr.classList.toggle('is-promo-pick-selected', selected);
+        },
       });
+      redesArticuloPickTable.on('draw', syncRedesArticuloPickVisualState);
     }
     if (redesArticuloPickTable) redesArticuloPickTable.search('').draw();
+    syncRedesArticuloPickVisualState();
     if (redesArticuloPickStatus) redesArticuloPickStatus.textContent = rows.length ? `Total articulos: ${rows.length}` : 'Sin resultados';
   } catch (error) {
     if (redesArticuloPickStatus) redesArticuloPickStatus.textContent = error.message || 'Error al cargar articulos.';
@@ -7665,8 +7754,33 @@ async function loadRedesArticuloPickTable() {
 
 async function openRedesArticuloPick() {
   if (!redesArticuloPickOverlay) return;
+  redesArticuloPickMode = 'publicacion';
+  if (redesArticuloPickTitle) redesArticuloPickTitle.textContent = 'Seleccionar Articulo';
+  if (redesArticuloPickActions) redesArticuloPickActions.classList.add('hidden');
+  if (redesArticuloPickTableEl) {
+    const headers = redesArticuloPickTableEl.querySelectorAll('thead th');
+    if (headers[0]) headers[0].textContent = 'Foto';
+    if (headers[4]) headers[4].textContent = 'Accion';
+  }
   redesArticuloPickOverlay.classList.add('open');
   await loadRedesArticuloPickTable();
+}
+
+async function openRedesPromoArticuloPick() {
+  if (!redesArticuloPickOverlay) return;
+  redesArticuloPickMode = 'promocion';
+  if (redesArticuloPickTitle) redesArticuloPickTitle.textContent = 'Seleccionar artículos de referencia';
+  if (redesArticuloPickActions) redesArticuloPickActions.classList.remove('hidden');
+  if (redesArticuloPickTableEl) {
+    const headers = redesArticuloPickTableEl.querySelectorAll('thead th');
+    if (headers[0]) headers[0].textContent = 'Catálogo';
+    if (headers[4]) headers[4].textContent = 'Foto';
+  }
+  updateRedesArticuloPickCount();
+  redesArticuloPickOverlay.classList.add('open');
+  await loadRedesArticuloPickTable();
+  syncRedesArticuloPickVisualState();
+  setRedesArticuloPickStatus();
 }
 
 function closeRedesArticuloPick() {
@@ -7789,6 +7903,13 @@ function initRedesPublicaciones() {
       const btn = event.target.closest('.redes-pick-add');
       if (!btn || !redesArticuloPickTable) return;
       const articulo = btn.dataset.articulo;
+      if (redesArticuloPickMode === 'promocion') {
+        togglePromoArticuloRef(articulo);
+        redesArticuloPickTable.draw(false);
+        syncRedesArticuloPickVisualState();
+        setRedesArticuloPickStatus();
+        return;
+      }
       let selected = null;
       redesArticuloPickTable.rows().every(function findRow() {
         const row = this.data();
@@ -7797,7 +7918,37 @@ function initRedesPublicaciones() {
       if (selected) setRedesArticuloForm(selected);
       closeRedesArticuloPick();
     });
+    redesArticuloPickTableEl.addEventListener('change', (event) => {
+      const toggle = event.target.closest('.redes-pick-toggle');
+      if (!toggle || redesArticuloPickMode !== 'promocion') return;
+      setPromoArticuloRefSelected(toggle.dataset.articulo, toggle.checked);
+      syncRedesArticuloPickVisualState();
+      renderRedesPromoArticulosSelected();
+      setRedesArticuloPickStatus();
+    });
   }
+  safeOn(redesArticuloPickView, 'click', openRedesPromoArticulosSelected);
+  safeOn(redesArticuloPickClear, 'click', () => {
+    setPromoArticuloRefs([]);
+    updateRedesArticuloPickCount();
+    if (redesArticuloPickTable) redesArticuloPickTable.draw(false);
+    syncRedesArticuloPickVisualState();
+    renderRedesPromoArticulosSelected();
+    setRedesArticuloPickStatus();
+  });
+  safeOn(redesPromoArticulosClose, 'click', () => closeOverlay(redesPromoArticulosOverlay));
+  safeOn(redesPromoArticulosOverlay, 'click', (event) => {
+    if (event.target === redesPromoArticulosOverlay) closeOverlay(redesPromoArticulosOverlay);
+  });
+  safeOn(redesPromoArticulosSelectedList, 'click', (event) => {
+    const btn = event.target.closest('.redes-promo-articulo-remove');
+    if (!btn) return;
+    setPromoArticuloRefs(redesPromoArticuloRefs.filter((item) => item !== btn.dataset.articulo));
+    renderRedesPromoArticulosSelected();
+    if (redesArticuloPickTable) redesArticuloPickTable.draw(false);
+    syncRedesArticuloPickVisualState();
+    setRedesArticuloPickStatus();
+  });
   if (redesArticulosClose) redesArticulosClose.addEventListener('click', () => closeOverlay(redesArticulosOverlay));
   if (redesArticulosOverlay) {
     redesArticulosOverlay.addEventListener('click', (event) => {
@@ -7814,6 +7965,542 @@ function initRedesPublicaciones() {
       const btn = event.target.closest('.redes-articulos-delete');
       if (btn) deleteRedesArticulo(Number(btn.dataset.publicacionId), btn.dataset.articulo);
     });
+  }
+}
+
+function getPromoSelectedCanales() {
+  return Array.from(redesPromocionCanales?.selectedOptions || [])
+    .map((option) => Number(option.value))
+    .filter(Number.isFinite);
+}
+
+function renderPromoCanalesList() {
+  if (!redesPromocionCanalesList || !redesPromocionCanales) return;
+  const selected = new Set(getPromoSelectedCanales().map((value) => String(value)));
+  redesPromocionCanalesList.innerHTML = Array.from(redesPromocionCanales.options || [])
+    .map((option) => {
+      const value = String(option.value || '');
+      const isSelected = selected.has(value);
+      return `
+        <button type="button" class="promo-channel-option${isSelected ? ' selected' : ''}" data-value="${escapeAttr(value)}">
+          <span>${isSelected ? '✓' : ''}</span>
+          <strong>${escapeAttr(option.textContent || '')}</strong>
+        </button>
+      `;
+    })
+    .join('');
+}
+
+function setPromoSelectedCanales(values = []) {
+  const selected = new Set((Array.isArray(values) ? values : []).map((value) => String(value)));
+  Array.from(redesPromocionCanales?.options || []).forEach((option) => {
+    option.selected = selected.has(String(option.value));
+  });
+  renderPromoCanalesList();
+}
+
+function syncPromoArticuloRefsInput() {
+  if (redesPromocionArticulos) redesPromocionArticulos.value = redesPromoArticuloRefs.join(', ');
+}
+
+function renderPromoArticuloRefs() {
+  if (!redesPromocionArticulosList) return;
+  if (!redesPromoArticuloRefs.length) {
+    redesPromocionArticulosList.innerHTML = '<span>Sin artículos seleccionados</span>';
+    return;
+  }
+  redesPromocionArticulosList.innerHTML = redesPromoArticuloRefs
+    .map(
+      (articulo) => `
+        <button type="button" class="promo-ref-item" data-articulo="${escapeAttr(articulo)}">
+          <span>${escapeAttr(articulo)}</span>
+          <strong>×</strong>
+        </button>
+      `
+    )
+    .join('');
+}
+
+function renderRedesPromoArticulosSelected() {
+  if (!redesPromoArticulosSelectedList) return;
+  if (!redesPromoArticuloRefs.length) {
+    redesPromoArticulosSelectedList.innerHTML = '<p class="status">No hay artículos seleccionados.</p>';
+    return;
+  }
+  redesPromoArticulosSelectedList.innerHTML = redesPromoArticuloRefs
+    .map((articulo) => {
+      const row = redesArticuloPickTable
+        ?.rows()
+        .data()
+        .toArray()
+        .find((item) => String(item.articulo) === String(articulo));
+      return `
+        <div class="abm-catalog-selected-item">
+          <div>
+            <strong>${escapeAttr(articulo)}</strong>
+            <span>${escapeAttr(row?.detalle || '')}</span>
+          </div>
+          <button type="button" class="redes-promo-articulo-remove" data-articulo="${escapeAttr(articulo)}">Quitar</button>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function openRedesPromoArticulosSelected() {
+  renderRedesPromoArticulosSelected();
+  if (redesPromoArticulosStatus) {
+    redesPromoArticulosStatus.textContent = redesPromoArticuloRefs.length
+      ? `${redesPromoArticuloRefs.length} artículo${redesPromoArticuloRefs.length === 1 ? '' : 's'} seleccionado${redesPromoArticuloRefs.length === 1 ? '' : 's'}.`
+      : '';
+  }
+  redesPromoArticulosOverlay?.classList.add('open');
+}
+
+function setPromoArticuloRefs(values = []) {
+  const unique = [];
+  (Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .forEach((value) => {
+      if (!unique.includes(value)) unique.push(value);
+    });
+  redesPromoArticuloRefs = unique;
+  syncPromoArticuloRefsInput();
+  renderPromoArticuloRefs();
+  updateRedesArticuloPickCount();
+  syncRedesArticuloPickVisualState();
+}
+
+function togglePromoArticuloRef(articulo) {
+  const value = String(articulo || '').trim();
+  if (!value) return;
+  if (redesPromoArticuloRefs.includes(value)) {
+    setPromoArticuloRefs(redesPromoArticuloRefs.filter((item) => item !== value));
+  } else {
+    setPromoArticuloRefs([...redesPromoArticuloRefs, value]);
+  }
+}
+
+function setPromoArticuloRefSelected(articulo, selected) {
+  const value = String(articulo || '').trim();
+  if (!value) return;
+  const exists = redesPromoArticuloRefs.includes(value);
+  if (selected && !exists) {
+    setPromoArticuloRefs([...redesPromoArticuloRefs, value]);
+  } else if (!selected && exists) {
+    setPromoArticuloRefs(redesPromoArticuloRefs.filter((item) => item !== value));
+  } else {
+    updateRedesArticuloPickCount();
+    syncRedesArticuloPickVisualState();
+  }
+}
+
+function syncRedesArticuloPickVisualState() {
+  if (!redesArticuloPickTableEl) return;
+  const selected = new Set(redesPromoArticuloRefs.map((item) => String(item)));
+  redesArticuloPickTableEl.querySelectorAll('.redes-pick-toggle').forEach((input) => {
+    const checked = selected.has(String(input.dataset.articulo || ''));
+    input.checked = checked;
+    input.closest('tr')?.classList.toggle('is-promo-pick-selected', checked);
+  });
+}
+
+function setRedesArticuloPickStatus() {
+  if (!redesArticuloPickStatus || redesArticuloPickMode !== 'promocion') return;
+  redesArticuloPickStatus.textContent = redesPromoArticuloRefs.length
+    ? `Seleccionados: ${redesPromoArticuloRefs.length}`
+    : 'Sin artículos seleccionados.';
+}
+
+function updateRedesArticuloPickCount() {
+  const count = redesPromoArticuloRefs.length;
+  if (!redesArticuloPickCount) return;
+  redesArticuloPickCount.textContent = count === 1 ? '1 seleccionado' : `${count} seleccionados`;
+  if (redesArticuloPickActions) redesArticuloPickActions.classList.toggle('is-active', count > 0);
+  if (redesArticuloPickView) redesArticuloPickView.disabled = count === 0;
+  if (redesArticuloPickClear) redesArticuloPickClear.disabled = count === 0;
+}
+
+function getPromoPayload() {
+  return {
+    codigo: redesPromocionCodigo?.value || '',
+    nombre: redesPromocionNombre?.value || '',
+    descripcion: redesPromocionDescripcion?.value || '',
+    estado: redesPromocionEstado?.value || 'borrador',
+    fechaInicio: redesPromocionFechaInicio?.value || '',
+    fechaFin: redesPromocionFechaFin?.value || '',
+    descuentoPct: Number(redesPromocionDescuento?.value) || 0,
+    envioGratis: Boolean(redesPromocionEnvioGratis?.checked),
+    costoEnvioEstimado: Number(redesPromocionCostoEnvio?.value) || 0,
+    gananciaFactor: Number(redesPromocionGanancia?.value) || 0,
+    comisionEmpleadosPct: Number(redesPromocionComisionEmpleados?.value) || 0,
+    comisionCobroPct: Number(redesPromocionComisionCobro?.value) || 0,
+    margenObjetivoPct: Number(redesPromocionMargenObjetivo?.value) || 0,
+    minimoPublicado: Number(redesPromocionMinimoPublicado?.value) || 0,
+    canalIds: getPromoSelectedCanales(),
+  };
+}
+
+function renderPromoCalc(calc = {}) {
+  if (redesPromocionMinimoCalculado) redesPromocionMinimoCalculado.textContent = formatMoney(calc.minimoCalculado || 0);
+  if (redesPromocionMinimoRecomendado) redesPromocionMinimoRecomendado.textContent = formatMoney(calc.minimoRecomendado || 0);
+  if (redesPromocionMargenBruto) redesPromocionMargenBruto.textContent = `${(Number(calc.margenBrutoPct) || 0).toFixed(2)}%`;
+  if (redesPromocionMargenDisponible) {
+    const value = Number(calc.margenDisponiblePct) || 0;
+    redesPromocionMargenDisponible.textContent = `${value.toFixed(2)}%`;
+    redesPromocionMargenDisponible.classList.toggle('promo-danger', value <= 0);
+  }
+  if (redesPromocionResultado) {
+    const value = Number(calc.gananciaEstimada) || 0;
+    redesPromocionResultado.textContent = formatMoney(value);
+    redesPromocionResultado.classList.toggle('promo-danger', value < 0);
+  }
+}
+
+function renderPromoScenario(payload = {}) {
+  const montoLista = Math.max(0, Number(redesPromocionMontoEstimado?.value) || 0);
+  const gananciaFactor = Math.max(0, Number(payload.gananciaFactor) || 0);
+  const descuento = montoLista * ((Number(payload.descuentoPct) || 0) / 100);
+  const clientePaga = Math.max(0, montoLista - descuento);
+  const costoMercaderia = gananciaFactor > 0 ? montoLista / gananciaFactor : 0;
+  const comisionEmpleados = montoLista * ((Number(payload.comisionEmpleadosPct) || 0) / 100);
+  const comisionCobro = montoLista * ((Number(payload.comisionCobroPct) || 0) / 100);
+  const costoEnvio = payload.envioGratis ? Math.max(0, Number(payload.costoEnvioEstimado) || 0) : 0;
+  const gananciaAntesEnvio = clientePaga - costoMercaderia - comisionEmpleados - comisionCobro;
+  const gananciaFinal = gananciaAntesEnvio - costoEnvio;
+  const margenFinal = montoLista > 0 ? (gananciaFinal / montoLista) * 100 : 0;
+
+  if (redesPromocionCalcClientePaga) redesPromocionCalcClientePaga.textContent = formatMoney(clientePaga);
+  if (redesPromocionCalcCosto) redesPromocionCalcCosto.textContent = formatMoney(costoMercaderia);
+  if (redesPromocionCalcDescuento) redesPromocionCalcDescuento.textContent = formatMoney(descuento);
+  if (redesPromocionCalcComisionEmpleados) redesPromocionCalcComisionEmpleados.textContent = formatMoney(comisionEmpleados);
+  if (redesPromocionCalcComisionCobro) redesPromocionCalcComisionCobro.textContent = formatMoney(comisionCobro);
+  if (redesPromocionCalcEnvio) redesPromocionCalcEnvio.textContent = formatMoney(costoEnvio);
+  if (redesPromocionCalcGananciaAntesEnvio) {
+    redesPromocionCalcGananciaAntesEnvio.textContent = formatMoney(gananciaAntesEnvio);
+    redesPromocionCalcGananciaAntesEnvio.classList.toggle('promo-danger', gananciaAntesEnvio < 0);
+  }
+  if (redesPromocionCalcGananciaFinal) {
+    redesPromocionCalcGananciaFinal.textContent = formatMoney(gananciaFinal);
+    redesPromocionCalcGananciaFinal.classList.toggle('promo-danger', gananciaFinal < 0);
+  }
+  if (redesPromocionCalcMargenFinal) {
+    redesPromocionCalcMargenFinal.textContent = `${margenFinal.toFixed(2)}% sobre compra`;
+    redesPromocionCalcMargenFinal.classList.toggle('promo-danger', margenFinal < 0);
+  }
+}
+
+function calculatePromoLocal() {
+  const payload = getPromoPayload();
+  const gananciaFactor = Math.max(0, Number(payload.gananciaFactor) || 0);
+  const margenBrutoPct = gananciaFactor > 0 ? ((gananciaFactor - 1) / gananciaFactor) * 100 : 0;
+  const costoEnvio = payload.envioGratis ? Math.max(0, Number(payload.costoEnvioEstimado) || 0) : 0;
+  const margenDisponiblePct =
+    margenBrutoPct -
+    payload.descuentoPct -
+    payload.comisionEmpleadosPct -
+    payload.comisionCobroPct -
+    payload.margenObjetivoPct;
+  const minimoCalculado = costoEnvio > 0 && margenDisponiblePct > 0 ? costoEnvio / (margenDisponiblePct / 100) : 0;
+  const base = payload.minimoPublicado > 0 ? payload.minimoPublicado : minimoCalculado;
+  const gananciaEstimada =
+    base * ((margenBrutoPct - payload.descuentoPct - payload.comisionEmpleadosPct - payload.comisionCobroPct) / 100) -
+    costoEnvio;
+  renderPromoCalc({
+    margenBrutoPct,
+    margenDisponiblePct,
+    minimoCalculado,
+    minimoRecomendado: minimoCalculado > 0 ? Math.ceil(minimoCalculado / 1000) * 1000 : 0,
+    gananciaEstimada,
+  });
+  renderPromoScenario(payload);
+}
+
+function resetPromocionForm() {
+  if (redesPromocionId) redesPromocionId.value = '';
+  if (redesPromocionNombre) redesPromocionNombre.value = '';
+  if (redesPromocionCodigo) redesPromocionCodigo.value = '';
+  if (redesPromocionEstado) redesPromocionEstado.value = 'borrador';
+  if (redesPromocionFechaInicio) redesPromocionFechaInicio.value = getRedesTodayValue();
+  if (redesPromocionFechaFin) redesPromocionFechaFin.value = '';
+  if (redesPromocionDescuento) redesPromocionDescuento.value = '0';
+  if (redesPromocionGanancia) redesPromocionGanancia.value = '1.8';
+  if (redesPromocionComisionEmpleados) redesPromocionComisionEmpleados.value = '1.5';
+  if (redesPromocionComisionCobro) redesPromocionComisionCobro.value = '0';
+  if (redesPromocionEnvioGratis) redesPromocionEnvioGratis.checked = false;
+  if (redesPromocionCostoEnvio) redesPromocionCostoEnvio.value = '0';
+  if (redesPromocionMargenObjetivo) redesPromocionMargenObjetivo.value = '0';
+  if (redesPromocionMinimoPublicado) redesPromocionMinimoPublicado.value = '0';
+  if (redesPromocionMontoEstimado) redesPromocionMontoEstimado.value = '100000';
+  setPromoArticuloRefs([]);
+  if (redesPromocionDescripcion) redesPromocionDescripcion.value = '';
+  setPromoSelectedCanales([]);
+  setStatusMessage(redesPromocionFormStatus, '');
+  calculatePromoLocal();
+}
+
+async function loadPromocionCatalogos() {
+  if (!redesPromocionCanales) return;
+  const res = await fetchJSON('/api/redes/promociones/catalogos');
+  const canales = Array.isArray(res.canales) ? res.canales : [];
+  redesPromocionCanales.innerHTML = canales
+    .map((row) => `<option value="${escapeAttr(row.id)}">${escapeAttr(row.nombre)}</option>`)
+    .join('');
+  renderPromoCanalesList();
+}
+
+function fillPromocionForm(row = {}) {
+  if (redesPromocionId) redesPromocionId.value = row.id || '';
+  if (redesPromocionNombre) redesPromocionNombre.value = row.nombre || '';
+  if (redesPromocionCodigo) redesPromocionCodigo.value = row.codigo || '';
+  if (redesPromocionEstado) redesPromocionEstado.value = row.estado || 'borrador';
+  if (redesPromocionFechaInicio) redesPromocionFechaInicio.value = row.fechaInicio || '';
+  if (redesPromocionFechaFin) redesPromocionFechaFin.value = row.fechaFin || '';
+  if (redesPromocionDescuento) redesPromocionDescuento.value = row.descuentoPct ?? 0;
+  if (redesPromocionGanancia) redesPromocionGanancia.value = row.gananciaFactor ?? 1.8;
+  if (redesPromocionComisionEmpleados) redesPromocionComisionEmpleados.value = row.comisionEmpleadosPct ?? 1.5;
+  if (redesPromocionComisionCobro) redesPromocionComisionCobro.value = row.comisionCobroPct ?? 0;
+  if (redesPromocionEnvioGratis) redesPromocionEnvioGratis.checked = !!row.envioGratis;
+  if (redesPromocionCostoEnvio) redesPromocionCostoEnvio.value = row.costoEnvioEstimado ?? 0;
+  if (redesPromocionMargenObjetivo) redesPromocionMargenObjetivo.value = row.margenObjetivoPct ?? 0;
+  if (redesPromocionMinimoPublicado) redesPromocionMinimoPublicado.value = row.minimoPublicado ?? 0;
+  if (redesPromocionDescripcion) redesPromocionDescripcion.value = row.descripcion || '';
+  setPromoArticuloRefs(
+    String(row.articulosReferencia || redesPromocionArticulos?.value || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+  setPromoSelectedCanales(row.canalIds || []);
+  calculatePromoLocal();
+  setStatusMessage(redesPromocionFormStatus, row.id ? `Editando ${row.codigo || row.nombre}.` : '', 'ok');
+  redesPromocionNombre?.focus();
+}
+
+async function renderPromocionesTable(rows = []) {
+  if (!redesPromocionesTableEl) return;
+  const dtRows = rows.map((row) => ({
+    ...row,
+    vigencia: `${row.fechaInicio || '-'} a ${row.fechaFin || '-'}`,
+    promoLabel: `${Number(row.descuentoPct) || 0}%${row.envioGratis ? ' + envío' : ''}`,
+    minimoLabel: `${formatMoney(row.minimoPublicado || row.minimoRecomendado || row.minimoCalculado || 0)}`,
+  }));
+  if (redesPromocionesTable) {
+    redesPromocionesTable.clear();
+    redesPromocionesTable.rows.add(dtRows);
+    redesPromocionesTable.draw();
+    return;
+  }
+  const dtAvailable = window.DataTable || (await ensureDataTable());
+  if (dtAvailable) {
+    redesPromocionesTable = new DataTable('#redes-promociones-table', {
+      data: dtRows,
+      columns: [
+        { data: 'codigo' },
+        { data: 'nombre' },
+        { data: 'estado' },
+        { data: 'vigencia' },
+        { data: 'promoLabel' },
+        { data: 'canales', render: (value) => (Array.isArray(value) ? value.join(', ') : '') },
+        { data: 'minimoLabel' },
+        { data: 'pedidosCount' },
+        { data: 'facturacionAsociada', render: (value) => formatMoney(value || 0) },
+        {
+          data: null,
+          orderable: false,
+          render: (_data, _type, row) =>
+            `<button type="button" class="abm-link-btn redes-promocion-edit" data-id="${escapeAttr(row.id)}">Modificar</button>`,
+        },
+      ],
+      pageLength: 10,
+      lengthMenu: [10, 25, 50],
+      order: [[3, 'desc']],
+      autoWidth: false,
+    });
+  }
+}
+
+function togglePromocionesHistory(forceOpen) {
+  if (!redesPromocionesHistory) return;
+  const shouldOpen =
+    typeof forceOpen === 'boolean' ? forceOpen : redesPromocionesHistory.classList.contains('collapsed');
+  redesPromocionesHistory.classList.toggle('collapsed', !shouldOpen);
+  if (redesPromocionesToggle) redesPromocionesToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+  if (shouldOpen && redesPromocionesTable) {
+    setTimeout(() => {
+      redesPromocionesTable.columns?.adjust?.().draw?.(false);
+    }, 0);
+  }
+}
+
+async function loadRedesPromociones(force = false) {
+  if (!redesPromocionesTableEl) return;
+  if (redesPromocionesLoaded && !force) return;
+  try {
+    setStatusMessage(redesPromocionesStatus, 'Cargando...');
+    await loadPromocionCatalogos();
+    const res = await fetchJSON('/api/redes/promociones');
+    const rows = Array.isArray(res.data) ? res.data : [];
+    await renderPromocionesTable(rows);
+    redesPromocionesLoaded = true;
+    setStatusMessage(redesPromocionesStatus, rows.length ? `Total promociones: ${rows.length}` : 'Sin promociones.');
+  } catch (error) {
+    setStatusMessage(redesPromocionesStatus, error.message || 'Error al cargar promociones.', 'error');
+  }
+}
+
+async function savePromocion(event) {
+  event?.preventDefault();
+  const payload = getPromoPayload();
+  const id = Number(redesPromocionId?.value) || 0;
+  if (!payload.nombre.trim()) {
+    setStatusMessage(redesPromocionFormStatus, 'Nombre requerido.', 'error');
+    return;
+  }
+  if (!payload.codigo.trim()) {
+    setStatusMessage(redesPromocionFormStatus, 'Código requerido.', 'error');
+    return;
+  }
+  if (!payload.canalIds.length) {
+    setStatusMessage(redesPromocionFormStatus, 'Selecciona al menos un canal.', 'error');
+    return;
+  }
+  try {
+    if (redesPromocionSave) redesPromocionSave.disabled = true;
+    setStatusMessage(redesPromocionFormStatus, 'Guardando...');
+    const res = await fetchJSON(id ? `/api/redes/promociones/${encodeURIComponent(id)}` : '/api/redes/promociones', {
+      method: id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    fillPromocionForm(res.data || {});
+    await loadRedesPromociones(true);
+    await loadPedidoPromocionesActivas();
+    setStatusMessage(redesPromocionFormStatus, 'Promoción guardada.', 'ok');
+  } catch (error) {
+    setStatusMessage(redesPromocionFormStatus, error.message || 'No se pudo guardar.', 'error');
+  } finally {
+    if (redesPromocionSave) redesPromocionSave.disabled = false;
+  }
+}
+
+async function calcularPromedioPromoArticulos() {
+  const articulos = String(redesPromocionArticulos?.value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!articulos.length) {
+    setStatusMessage(redesPromocionFormStatus, 'Ingresa artículos separados por coma.', 'error');
+    return;
+  }
+  try {
+    setStatusMessage(redesPromocionFormStatus, 'Calculando promedio...');
+    const res = await fetchJSON('/api/redes/promociones/calcular-articulos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articulos }),
+    });
+    const promedio = Number(res.data?.promedioGanancia) || 0;
+    if (promedio && redesPromocionGanancia) {
+      redesPromocionGanancia.value = String(promedio);
+      calculatePromoLocal();
+    }
+    setStatusMessage(
+      redesPromocionFormStatus,
+      promedio ? `Promedio calculado: ${promedio}. Confirmá si querés usarlo.` : 'No se pudo calcular un promedio.',
+      promedio ? 'ok' : 'error'
+    );
+  } catch (error) {
+    setStatusMessage(redesPromocionFormStatus, error.message || 'No se pudo calcular promedio.', 'error');
+  }
+}
+
+async function initRedesPromociones() {
+  if (!viewRedesPromociones) return;
+  safeOn(redesPromocionForm, 'submit', savePromocion);
+  safeOn(redesPromocionNewBtn, 'click', resetPromocionForm);
+  safeOn(redesPromocionCancel, 'click', resetPromocionForm);
+  safeOn(redesPromocionesToggle, 'click', async () => {
+    togglePromocionesHistory();
+    await loadRedesPromociones();
+  });
+  safeOn(redesPromocionCanalesList, 'click', (event) => {
+    const btn = event.target.closest('.promo-channel-option');
+    if (!btn || !redesPromocionCanales) return;
+    const option = Array.from(redesPromocionCanales.options || []).find((item) => item.value === btn.dataset.value);
+    if (!option) return;
+    option.selected = !option.selected;
+    renderPromoCanalesList();
+  });
+  safeOn(redesPromocionArticulosPick, 'click', openRedesPromoArticuloPick);
+  safeOn(redesPromocionArticulosClear, 'click', () => {
+    setPromoArticuloRefs([]);
+    setStatusMessage(redesPromocionFormStatus, '');
+  });
+  safeOn(redesPromocionArticulosList, 'click', (event) => {
+    const btn = event.target.closest('.promo-ref-item');
+    if (!btn) return;
+    setPromoArticuloRefs(redesPromoArticuloRefs.filter((item) => item !== btn.dataset.articulo));
+  });
+  safeOn(redesPromocionCalcular, 'click', calculatePromoLocal);
+  safeOn(redesPromocionCalcularArticulos, 'click', calcularPromedioPromoArticulos);
+  [
+    redesPromocionDescuento,
+    redesPromocionGanancia,
+    redesPromocionComisionEmpleados,
+    redesPromocionComisionCobro,
+    redesPromocionEnvioGratis,
+    redesPromocionCostoEnvio,
+    redesPromocionMargenObjetivo,
+    redesPromocionMinimoPublicado,
+    redesPromocionMontoEstimado,
+  ].forEach((el) => safeOn(el, 'input', calculatePromoLocal));
+  safeOn(redesPromocionesTableEl, 'click', async (event) => {
+    const btn = event.target.closest('.redes-promocion-edit');
+    if (!btn) return;
+    try {
+      await loadPromocionCatalogos();
+      const res = await fetchJSON(`/api/redes/promociones/${encodeURIComponent(btn.dataset.id)}`);
+      fillPromocionForm(res.data || {});
+    } catch (error) {
+      setStatusMessage(redesPromocionesStatus, error.message || 'No se pudo cargar la promoción.', 'error');
+    }
+  });
+  await loadPromocionCatalogos().catch(() => {});
+  resetPromocionForm();
+}
+
+async function loadPedidoPromocionesActivas(selectedValue = '', includeIds = []) {
+  try {
+    const ids = new Set(
+      [selectedValue, ...(Array.isArray(includeIds) ? includeIds : [])]
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    );
+    const params = new URLSearchParams();
+    if (ids.size) params.set('includeIds', Array.from(ids).join(','));
+    const url = `/api/redes/promociones/activas${params.toString() ? `?${params.toString()}` : ''}`;
+    const res = await fetchJSON(url);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    pedidoPromocionesActivas = rows;
+    if (pedidoPromocionSelect) {
+      pedidoPromocionSelect.innerHTML =
+        '<option value="">Sin promoción</option>' +
+        rows
+          .filter((row) => !row.noDisponible || String(row.id) === String(selectedValue))
+          .map((row) => {
+            const label = `${row.codigo || row.id} - ${row.nombre || ''}${row.noDisponible ? ' (no disponible)' : ''}`.trim();
+            return `<option value="${escapeAttr(row.id)}">${escapeAttr(label)}</option>`;
+          })
+          .join('');
+      if (selectedValue) pedidoPromocionSelect.value = String(selectedValue);
+    }
+    return rows;
+  } catch (_error) {
+    pedidoPromocionesActivas = [];
+    if (pedidoPromocionSelect) pedidoPromocionSelect.innerHTML = '<option value="">Sin promoción</option>';
+    return [];
   }
 }
 
@@ -10857,6 +11544,7 @@ function buildPedidoCard(row) {
   const estado = mapEstado(row.estado, row.empaquetado);
   const transporte = row.transporte || '';
   const instancia = row.instancia ?? '';
+  const promocionId = row.promocionId || '';
   const notaCount = Number(row.notasCount) || 0;
   if (row?.id) {
     pedidoTransporteCache.set(Number(row.id), row.transporte || '');
@@ -10980,6 +11668,14 @@ function buildPedidoCard(row) {
         </div>
       </div>
       <div>
+        <div class="pedido-card-label">Promoción</div>
+        <div class="pedido-card-value">
+          <select class="pedido-promocion-card-select${getPedidoSelectClass()}"${getPedidoSelectStyle()} data-id="${escapeAttr(
+            row.id
+          )}" data-prev="${escapeAttr(promocionId)}">${buildPedidoPromocionOptions(promocionId)}</select>
+        </div>
+      </div>
+      <div>
         <div class="pedido-card-label">Estado</div>
         <div class="pedido-card-value">${escapeAttr(estado)}</div>
       </div>
@@ -11069,6 +11765,10 @@ async function loadPedidosTodosCards(reset = false) {
   try {
     const res = await fetchJSON(`/api/pedidos/todos/lista?${params.toString()}`);
     const rows = Array.isArray(res.data) ? res.data : [];
+    await loadPedidoPromocionesActivas(
+      '',
+      rows.map((row) => row.promocionId || row.promocion_id)
+    );
     if (reset) {
       pedidoCardsRowsCache = rows;
       resetPedidoCards();
@@ -11136,6 +11836,19 @@ function buildTransporteOptions(currentValue) {
     }),
   ].join('');
   return options;
+}
+
+function buildPedidoPromocionOptions(currentValue) {
+  const current = String(currentValue || '');
+  const options = [`<option value=""${current ? '' : ' selected'}>Sin promoción</option>`];
+  pedidoPromocionesActivas.forEach((row) => {
+    const value = String(row.id || '');
+    if (!value) return;
+    if (row.noDisponible && current !== value) return;
+    const label = `${row.codigo || row.id} - ${row.nombre || ''}${row.noDisponible ? ' (no disponible)' : ''}`.trim();
+    options.push(`<option value="${escapeAttr(value)}"${current === value ? ' selected' : ''}>${escapeAttr(label)}</option>`);
+  });
+  return options.join('');
 }
 
 function getTransporteState(select) {
@@ -11235,6 +11948,51 @@ async function savePedidoTransporte(id, transporte, select) {
       pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar transporte.';
     }
     return false;
+  }
+}
+
+function setPedidoCardPromocionValue(id, promocionId) {
+  const key = Number(id);
+  if (!key) return;
+  const update = (row) => {
+    if (Number(row.id) === key) row.promocionId = promocionId || '';
+  };
+  pedidoCardsRowsCache.forEach(update);
+  pedidoCardsFilteredRows.forEach(update);
+}
+
+async function savePedidoPromocion(id, promocionId, select) {
+  if (!id) return false;
+  const value = Number(promocionId) || null;
+  if (select) select.disabled = true;
+  try {
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Actualizando promoción...';
+    const res = await fetch('/api/pedidos/promocion', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id, promocion_id: value }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'No se pudo actualizar promoción.');
+    }
+    setPedidoCardPromocionValue(id, value || '');
+    if (select) {
+      select.dataset.prev = value ? String(value) : '';
+      select.innerHTML = buildPedidoPromocionOptions(value || '');
+      select.value = value ? String(value) : '';
+    }
+    if (pedidosVendedoraListaStatus) pedidosVendedoraListaStatus.textContent = 'Promoción actualizada.';
+    return true;
+  } catch (error) {
+    if (select) select.value = select.dataset.prev || '';
+    if (pedidosVendedoraListaStatus) {
+      pedidosVendedoraListaStatus.textContent = error.message || 'Error al actualizar promoción.';
+    }
+    return false;
+  } finally {
+    if (select) select.disabled = false;
   }
 }
 
@@ -11652,6 +12410,12 @@ function initAbm() {
     pedidoCardsEl.addEventListener('change', async (e) => {
       const select = e.target.closest('.pedido-transporte-select');
       const instanciaSelect = e.target.closest('.pedido-instancia-select');
+      const promocionSelect = e.target.closest('.pedido-promocion-card-select');
+      if (promocionSelect) {
+        const id = Number(promocionSelect.dataset.id);
+        await savePedidoPromocion(id, promocionSelect.value || '', promocionSelect);
+        return;
+      }
       if (select) {
         const id = Number(select.dataset.id);
         const transporte = select.value || '';
@@ -16061,6 +16825,7 @@ function renderPedidosVendedoraLista(rows) {
     vencido: row.vencido ?? 0,
     id_cliente: row.id_cliente,
     pagado: row.pagado ?? 0,
+    promocionId: row.promocionId || row.promocion_id || '',
     notasCount: Number(row.notas_count) || 0,
   }));
   data.forEach((row) => {
@@ -16643,6 +17408,10 @@ async function loadPedidosVendedoraLista(tipo) {
       `/api/panel-control/pedidos/${encodeURIComponent(pedidosVendedoraActual)}/lista?tipo=${encodeURIComponent(tipo)}`
     );
     const rows = Array.isArray(res.data) ? res.data : [];
+    await loadPedidoPromocionesActivas(
+      '',
+      rows.map((row) => row.promocionId || row.promocion_id)
+    );
     renderPedidosVendedoraLista(rows);
     if (pedidosVendedoraListaStatus) {
       pedidosVendedoraListaStatus.textContent = rows.length ? `Pedidos: ${rows.length}` : 'Sin resultados.';
@@ -16664,6 +17433,7 @@ async function loadPedidosTodosLista(tipo) {
     pedidoCardsServerSearch = '';
     pedidoCardsFilterTerm = '';
     if (pedidoCardsSearchInput) pedidoCardsSearchInput.value = '';
+    await loadPedidoPromocionesActivas();
     await loadPedidosTodosCards(true);
     updatePedidoCardsVisibility();
     return;
@@ -18708,6 +19478,7 @@ function resolvePermissionKey(target) {
   if (target === 'ecommerce-ordenes-tn') return 'ecommerce-ordenes-tn';
   if (target === 'ecommerce-asignacion-pedidos') return 'ecommerce-asignacion-pedidos';
   if (target === 'redes-publicaciones') return 'redes-publicaciones';
+  if (target === 'redes-promociones') return 'redes-promociones';
   if (target && target.startsWith('ecommerce')) return 'ecommerce';
   return target;
 }
@@ -18825,6 +19596,7 @@ function getFirstAllowedView(perms = {}) {
       'pedidos-todos',
       'pedidos-nuevo',
       'redes-publicaciones',
+      'redes-promociones',
       'mercaderia',
       'mercaderia-articulos-proveedor',
       'mercaderia-fotos',
@@ -18917,7 +19689,9 @@ async function loadCurrentUser() {
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-mis') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-admin') ||
       Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'fidelizacion-dashboard');
-    const hasRedesSubPerms = Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'redes-publicaciones');
+    const hasRedesSubPerms =
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'redes-publicaciones') ||
+      Object.prototype.hasOwnProperty.call(data?.permissions || {}, 'redes-promociones');
     normalizeEcommercePermissions(currentPermissions, hasEcommerceSubPerms);
     normalizeRedesPermissions(currentPermissions, hasRedesSubPerms);
     normalizeFidelizacionPermissions(
@@ -20474,6 +21248,7 @@ const permissionGroups = [
         { key: 'salon', label: 'Salon' },
         { key: 'redes', label: 'Redes' },
         { key: 'redes-publicaciones', label: 'Redes - Publicaciones' },
+        { key: 'redes-promociones', label: 'Redes - Promociones' },
         { key: 'fidelizacion-menu', label: 'Menu Fidelizacion' },
         { key: 'fidelizacion-panel', label: 'Fidelizacion - Panel' },
         { key: 'fidelizacion-mis', label: 'Fidelizacion - Mis Fidelizaciones' },
@@ -20614,6 +21389,7 @@ function normalizeEcommercePermissions(perms = {}, hasSubPerms = true) {
 function normalizeRedesPermissions(perms = {}, hasSubPerms = true) {
   if (hasSubPerms || !perms.redes) return perms;
   perms['redes-publicaciones'] = true;
+  perms['redes-promociones'] = true;
   return perms;
 }
 
@@ -20684,7 +21460,7 @@ async function loadRolePermissions(roleId) {
       ) {
         hasEcommerceSubPerms = true;
       }
-      if (row.permiso === 'redes-publicaciones') {
+      if (row.permiso === 'redes-publicaciones' || row.permiso === 'redes-promociones') {
         hasRedesSubPerms = true;
       }
       if (
@@ -20745,7 +21521,7 @@ function renderPermissions() {
     'clientes-menu': ['clientes', 'clientes-reportes'],
     'fidelizacion-menu': ['fidelizacion-panel', 'fidelizacion-mis', 'fidelizacion-admin', 'fidelizacion-dashboard'],
     'pedidos-menu': ['pedidos', 'pedidos-todos', 'pedidos-nuevo'],
-    redes: ['redes-publicaciones'],
+    redes: ['redes-publicaciones', 'redes-promociones'],
     mercaderia: ['mercaderia-articulos-proveedor', 'mercaderia-fotos', 'mercaderia-catalogo', 'abm', 'control-ordenes'],
     cajas: ['cajas-cierre', 'cajas-nueva-factura'],
     ecommerce: ['ecommerce-imagenweb', 'ecommerce-panel', 'ecommerce-publicaciones', 'ecommerce-ordenes-tn', 'ecommerce-asignacion-pedidos'],
@@ -24655,6 +25431,7 @@ function switchView(target) {
       viewFidelizacionAdmin,
       viewFidelizacionRuns,
       viewRedesPublicaciones,
+      viewRedesPromociones,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -24706,6 +25483,7 @@ function switchView(target) {
       viewFidelizacionAdmin,
       viewFidelizacionRuns,
       viewRedesPublicaciones,
+      viewRedesPromociones,
       viewPedidos,
       viewPedidosTodos,
       viewPedidosNuevo,
@@ -24802,6 +25580,9 @@ function switchView(target) {
   } else if (target === 'redes-publicaciones') {
     viewRedesPublicaciones.classList.remove('hidden');
     loadRedesPublicaciones();
+  } else if (target === 'redes-promociones') {
+    viewRedesPromociones.classList.remove('hidden');
+    loadRedesPromociones();
   } else if (target === 'pedidos') {
       viewPedidos.classList.remove('hidden');
       loadPedidosResumen();
@@ -24933,6 +25714,7 @@ initMercaderiaArticulosProveedor();
 initMercaderiaFotos();
 initMercaderiaCatalogo();
 initRedesPublicaciones();
+initRedesPromociones();
 initAbm();
 initControlOrdenes();
 initEcommerceImagenweb();

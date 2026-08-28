@@ -74,5 +74,5 @@ VALUES ('Reel'), ('Publicacion'), ('Historia')
 ON DUPLICATE KEY UPDATE activo = 1;
 
 INSERT INTO redes_plataformas (nombre)
-VALUES ('Instagram'), ('TikTok')
+VALUES ('Instagram'), ('TikTok'), ('WhatsApp')
 ON DUPLICATE KEY UPDATE activo = 1;
