@@ -10583,7 +10583,7 @@ app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
 app.get('/api/config/usuarios', async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+      `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        ORDER BY name`
     );
@@ -10613,6 +10613,127 @@ app.get('/api/config/vendedoras', async (_req, res) => {
   }
 });
 
+app.post('/api/config/usuarios', async (req, res) => {
+  let conn;
+  try {
+    const {
+      name = '',
+      email = '',
+      password = '',
+      id_roles = null,
+      codigo = '',
+      hora_ingreso = null,
+      hora_egreso = null,
+      crear_vendedora = true,
+    } = req.body || {};
+    const userName = String(name || '').trim();
+    const userEmail = String(email || '').trim().toLowerCase();
+    const userPassword = String(password || '');
+    const roleId = Number(id_roles) || null;
+    const userCode = String(codigo || '').trim();
+
+    if (!userName) return res.status(400).json({ message: 'Nombre requerido' });
+    if (!userEmail) return res.status(400).json({ message: 'Email requerido' });
+    if (!roleId) return res.status(400).json({ message: 'Rol requerido' });
+    if (userPassword.length < 6) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [[roleRow]] = await conn.query(
+      'SELECT id_roles FROM RolesWeb WHERE id_roles = ? LIMIT 1',
+      [roleId]
+    );
+    if (!roleRow) {
+      await conn.rollback();
+      return res.status(400).json({ message: 'Rol invalido' });
+    }
+
+    const [[existingUser]] = await conn.query(
+      'SELECT id FROM users WHERE email = ? LIMIT 1',
+      [userEmail]
+    );
+    if (existingUser) {
+      await conn.rollback();
+      return res.status(409).json({ message: 'Ya existe un usuario con ese email' });
+    }
+
+    if (userCode) {
+      const [[existingCode]] = await conn.query(
+        'SELECT id FROM users WHERE codigo = ? LIMIT 1',
+        [userCode]
+      );
+      if (existingCode) {
+        await conn.rollback();
+        return res.status(409).json({ message: 'Ya existe un usuario con ese codigo' });
+      }
+    }
+
+    let vendedoraId = null;
+    if (crear_vendedora !== false) {
+      const [sellerResult] = await conn.query(
+        `INSERT INTO vendedores (Nombre, Apellido, Telefono, Tipo, \`Password\`)
+         VALUES (?, '', '', 1, NULL)`,
+        [userName]
+      );
+      vendedoraId = sellerResult.insertId || null;
+    }
+
+    const hash = await bcrypt.hash(userPassword, 10);
+    const [userResult] = await conn.query(
+      `INSERT INTO users
+         (name, email, password, created_at, updated_at, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso)
+       VALUES (?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?)`,
+      [
+        userName,
+        userEmail,
+        hash,
+        roleId,
+        userCode || null,
+        vendedoraId,
+        hora_ingreso || null,
+        hora_egreso || null,
+      ]
+    );
+
+    const [[row]] = await conn.query(
+      `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [userResult.insertId]
+    );
+
+    await conn.commit();
+    res.status(201).json({
+      ok: true,
+      user: row
+        ? {
+            ...row,
+            foto: row.foto || '',
+            fotoUrl: buildEmployeePhotoUrl(row.foto) || resolvePublicAssetUrl(row.foto) || null,
+          }
+        : {},
+    });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Ya existe un usuario con ese email' });
+    }
+    res.status(500).json({ message: 'Error al crear usuario', error: error.message });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.put('/api/config/usuarios/:id', async (req, res) => {
   try {
     const userId = Number(req.params.id);
@@ -10621,19 +10742,31 @@ app.put('/api/config/usuarios/:id', async (req, res) => {
       name = '',
       email = '',
       id_roles = null,
+      codigo = '',
       id_vendedoras = null,
       hora_ingreso = null,
       hora_egreso = null,
     } = req.body || {};
+    const userCode = String(codigo || '').trim();
+    if (userCode) {
+      const [[existingCode]] = await pool.query(
+        'SELECT id FROM users WHERE codigo = ? AND id <> ? LIMIT 1',
+        [userCode, userId]
+      );
+      if (existingCode) {
+        return res.status(409).json({ message: 'Ya existe un usuario con ese codigo' });
+      }
+    }
     await pool.query(
       `UPDATE users
-       SET name = ?, email = ?, id_roles = ?, id_vendedoras = ?, hora_ingreso = ?, hora_egreso = ?
+       SET name = ?, email = ?, id_roles = ?, codigo = ?, id_vendedoras = ?, hora_ingreso = ?, hora_egreso = ?
        WHERE id = ?
        LIMIT 1`,
       [
         name,
         email,
         id_roles || null,
+        userCode || null,
         id_vendedoras || null,
         hora_ingreso || null,
         hora_egreso || null,
@@ -10641,7 +10774,7 @@ app.put('/api/config/usuarios/:id', async (req, res) => {
       ]
     );
     const [[row]] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+      `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -10658,6 +10791,9 @@ app.put('/api/config/usuarios/:id', async (req, res) => {
         : {},
     });
   } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Ya existe un usuario con ese email' });
+    }
     res.status(500).json({ message: 'Error al actualizar usuario', error: error.message });
   }
 });
@@ -10699,7 +10835,7 @@ app.post('/api/config/usuarios/:id/foto', async (req, res) => {
     await removeManagedEmployeePhoto(currentUser.foto);
 
     const [[row]] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+      `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        WHERE id = ?
        LIMIT 1`,
@@ -10753,7 +10889,7 @@ app.delete('/api/config/usuarios/:id/foto', async (req, res) => {
     await pool.query('UPDATE users SET foto = NULL WHERE id = ? LIMIT 1', [userId]);
 
     const [[row]] = await pool.query(
-      `SELECT id, name, email, id_roles, id_vendedoras, hora_ingreso, hora_egreso, foto
+      `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
        FROM users
        WHERE id = ?
        LIMIT 1`,

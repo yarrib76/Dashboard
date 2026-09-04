@@ -170,6 +170,7 @@ const cleanupScheduleLastMessage = document.getElementById('cleanup-schedule-las
 const usersList = document.getElementById('users-list');
 const usersTitle = document.getElementById('users-title');
 const usersStatus = document.getElementById('users-status');
+const usersAdd = document.getElementById('users-add');
 const usersSave = document.getElementById('users-save');
 const usersSearch = document.getElementById('users-search');
 const usersPrev = document.getElementById('users-prev');
@@ -180,12 +181,15 @@ const userNameInput = document.getElementById('user-name-input');
 const userEmailInput = document.getElementById('user-email-input');
 const userRoleSelect = document.getElementById('user-role-select');
 const userVendedoraSelect = document.getElementById('user-vendedora-select');
+const userCodeInput = document.getElementById('user-code-input');
 const userHoraIngreso = document.getElementById('user-hora-ingreso');
 const userHoraEgreso = document.getElementById('user-hora-egreso');
 const userPhotoPreview = document.getElementById('user-photo-preview');
 const userPhotoInput = document.getElementById('user-photo-input');
 const userPhotoUpload = document.getElementById('user-photo-upload');
 const userPhotoRemove = document.getElementById('user-photo-remove');
+const userCreatePassInput = document.getElementById('user-create-pass-input');
+const userCreatePassConfirm = document.getElementById('user-create-pass-confirm');
 const userPassInput = document.getElementById('user-pass-input');
 const userPassConfirm = document.getElementById('user-pass-confirm');
 const userPassSave = document.getElementById('user-pass-save');
@@ -21315,6 +21319,7 @@ let taskSchedulePollTimer = null;
 let cleanupScheduleLoaded = false;
 const usersPageSize = 10;
 const discontinuedRoleId = 4;
+const NEW_USER_ID = '__new_user__';
 const USER_PHOTO_PLACEHOLDER = '/sinfoto.png';
 const dashboardReportPermissions = [
   'dashboard-encuestas',
@@ -21875,7 +21880,7 @@ function showTaskSchedulePanel(panelKey) {
 
 function initConfigTabs() {
   const tabs = document.querySelectorAll('#config-tabs .tab');
-  const panels = document.querySelectorAll('.tab-panel');
+  const panels = document.querySelectorAll('#view-configuracion > .card > .tab-panel');
   if (!tabs.length) return;
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -21909,8 +21914,49 @@ async function loadUsers() {
   usersData = usersRes.data || [];
   rolesOptions = rolesRes.data || [];
   vendedorasOptions = vendRes.data || [];
-  currentUserId = usersData[0]?.id ? String(usersData[0].id) : '';
+  if (!usersData.some((u) => String(u.id) === currentUserId)) {
+    currentUserId = usersData[0]?.id ? String(usersData[0].id) : '';
+  }
   usersStatus.textContent = '';
+}
+
+function buildNewUserDraft() {
+  return {
+    id: NEW_USER_ID,
+    name: '',
+    email: '',
+    id_roles: rolesOptions[0]?.id || '',
+    codigo: '',
+    id_vendedoras: '',
+    hora_ingreso: '',
+    hora_egreso: '',
+    foto: '',
+    fotoUrl: null,
+    isNew: true,
+  };
+}
+
+function showUserEditTab() {
+  const tabs = document.querySelectorAll('.user-tabs .tab');
+  const editPanel = document.getElementById('tab-user-edit');
+  const passPanel = document.getElementById('tab-user-pass');
+  tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.tab !== 'user-pass'));
+  editPanel?.classList.add('active');
+  passPanel?.classList.remove('active');
+}
+
+function showUserCreateMode() {
+  const existingDraft = usersData.find((u) => String(u.id) === NEW_USER_ID);
+  if (!existingDraft) usersData.unshift(buildNewUserDraft());
+  currentUserId = NEW_USER_ID;
+  usersPage = 1;
+  usersSearchTerm = '';
+  if (usersSearch) usersSearch.value = '';
+  if (usersStatusFilter) usersStatusFilter.value = 'todos';
+  showUserEditTab();
+  renderUsersList();
+  renderUserForm();
+  if (userNameInput) userNameInput.focus();
 }
 
 function renderUsersList() {
@@ -21939,7 +21985,7 @@ function renderUsersList() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `role-item${String(u.id) === currentUserId ? ' active' : ''}`;
-    btn.textContent = u.name || u.email || `Usuario ${u.id}`;
+    btn.textContent = u.isNew ? 'Nuevo usuario' : u.name || u.email || `Usuario ${u.id}`;
     btn.addEventListener('click', () => {
       currentUserId = String(u.id);
       renderUsersList();
@@ -21970,18 +22016,30 @@ function renderSelectOptions(select, items, valueKey, labelKey, includeEmpty = t
 function renderUserForm() {
   const user = usersData.find((u) => String(u.id) === currentUserId);
   if (!user) return;
-  if (usersTitle) usersTitle.textContent = `Detalle - ${user.name || user.email || user.id}`;
+  const isNew = String(user.id) === NEW_USER_ID || user.isNew;
+  if (usersTitle) usersTitle.textContent = isNew ? 'Nuevo usuario' : `Detalle - ${user.name || user.email || user.id}`;
   if (userNameInput) userNameInput.value = user.name || '';
   if (userEmailInput) userEmailInput.value = user.email || '';
   renderSelectOptions(userRoleSelect, rolesOptions, 'id', 'name', false);
   renderSelectOptions(userVendedoraSelect, vendedorasOptions, 'id', 'nombre');
   if (userRoleSelect) userRoleSelect.value = user.id_roles ? String(user.id_roles) : '';
   if (userVendedoraSelect) userVendedoraSelect.value = user.id_vendedoras ? String(user.id_vendedoras) : '';
+  if (userVendedoraSelect) userVendedoraSelect.disabled = isNew;
+  if (userCodeInput) userCodeInput.value = user.codigo || '';
   if (userHoraIngreso) userHoraIngreso.value = user.hora_ingreso || '';
   if (userHoraEgreso) userHoraEgreso.value = user.hora_egreso || '';
   if (userPhotoPreview) userPhotoPreview.src = user.fotoUrl || USER_PHOTO_PLACEHOLDER;
-  if (userPhotoRemove) userPhotoRemove.disabled = !user.foto;
+  if (userPhotoRemove) userPhotoRemove.disabled = isNew || !user.foto;
+  if (userPhotoUpload) userPhotoUpload.disabled = isNew;
+  if (userPhotoInput) userPhotoInput.disabled = isNew;
   if (userPhotoInput) userPhotoInput.value = '';
+  document.querySelectorAll('.user-create-field').forEach((el) => {
+    el.classList.toggle('hidden', !isNew);
+  });
+  if (!isNew) {
+    if (userCreatePassInput) userCreatePassInput.value = '';
+    if (userCreatePassConfirm) userCreatePassConfirm.value = '';
+  }
 }
 
 function mergeUpdatedUser(updatedUser) {
@@ -21990,6 +22048,14 @@ function mergeUpdatedUser(updatedUser) {
   if (idx >= 0) {
     usersData[idx] = { ...usersData[idx], ...updatedUser };
   }
+}
+
+function replaceDraftUser(createdUser) {
+  if (!createdUser || !createdUser.id) return;
+  usersData = usersData.filter((u) => String(u.id) !== NEW_USER_ID);
+  usersData.push(createdUser);
+  usersData.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+  currentUserId = String(createdUser.id);
 }
 
 async function initUsersModule() {
@@ -22001,10 +22067,12 @@ async function initUsersModule() {
   } catch (error) {
     if (usersStatus) usersStatus.textContent = error.message || 'No se pudieron cargar usuarios.';
   }
+  if (usersAdd) usersAdd.addEventListener('click', showUserCreateMode);
   if (usersSave)
     usersSave.addEventListener('click', async () => {
       const user = usersData.find((u) => String(u.id) === currentUserId);
       if (!user) return;
+      const isNew = String(user.id) === NEW_USER_ID || user.isNew;
       try {
         if (usersStatus) usersStatus.textContent = 'Guardando...';
         const payload = {
@@ -22012,19 +22080,49 @@ async function initUsersModule() {
           email: userEmailInput?.value || '',
           id_roles: Number(userRoleSelect?.value) || null,
           id_vendedoras: Number(userVendedoraSelect?.value) || null,
+          codigo: userCodeInput?.value || '',
           hora_ingreso: userHoraIngreso?.value || null,
           hora_egreso: userHoraEgreso?.value || null,
         };
+        if (isNew) {
+          const pass = userCreatePassInput?.value || '';
+          const confirm = userCreatePassConfirm?.value || '';
+          if (!pass || pass.length < 6) {
+            if (usersStatus) usersStatus.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+            return;
+          }
+          if (pass !== confirm) {
+            if (usersStatus) usersStatus.textContent = 'Las contraseñas no coinciden.';
+            return;
+          }
+          const res = await fetch('/api/config/usuarios', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, password: pass, crear_vendedora: true }),
+          });
+          const created = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(created.message || `Error ${res.status}`);
+          }
+          replaceDraftUser(created.user);
+          if (userCreatePassInput) userCreatePassInput.value = '';
+          if (userCreatePassConfirm) userCreatePassConfirm.value = '';
+          const vendRes = await fetchJSON('/api/config/vendedoras');
+          vendedorasOptions = vendRes.data || [];
+          renderUsersList();
+          renderUserForm();
+          if (usersStatus) usersStatus.textContent = 'Usuario creado.';
+          return;
+        }
         const res = await fetch(`/api/config/usuarios/${encodeURIComponent(user.id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        const updated = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          throw new Error(text || `Error ${res.status}`);
+          throw new Error(updated.message || `Error ${res.status}`);
         }
-        const updated = await res.json();
         mergeUpdatedUser(updated.user);
         renderUsersList();
         renderUserForm();
