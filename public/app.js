@@ -19726,6 +19726,7 @@ async function loadCurrentUser() {
       sessionIdleMinutes = Number(data.sessionIdleMinutes) || sessionIdleMinutes;
     }
     initIdleTimeout();
+    document.body.classList.remove('auth-loading');
   } catch (error) {
     window.location.href = '/login';
   }

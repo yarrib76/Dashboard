@@ -150,6 +150,14 @@ body.menu-open .menu-backdrop {
   display: block;
 }
 
+body.auth-loading .menu-toggle,
+body.auth-loading .menu-items,
+body.auth-loading .menu-theme,
+body.auth-loading .menu-item.logout,
+body.auth-loading .view {
+  display: none !important;
+}
+
 .view.hidden {
   display: none;
 }

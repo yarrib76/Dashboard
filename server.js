@@ -6212,7 +6212,7 @@ app.get('/api/me', (req, res) => {
   })();
 });
 
-app.get('/api/roles', async (_req, res) => {
+app.get('/api/roles', requireAuth, requirePermission('configuracion'), async (_req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT id_roles AS id, tipo_role AS name
@@ -6225,7 +6225,7 @@ app.get('/api/roles', async (_req, res) => {
   }
 });
 
-app.get('/api/roles/:id/permissions', async (req, res) => {
+app.get('/api/roles/:id/permissions', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const roleId = Number(req.params.id);
     if (!Number.isFinite(roleId)) return res.status(400).json({ message: 'id_roles invalido' });
@@ -6241,7 +6241,7 @@ app.get('/api/roles/:id/permissions', async (req, res) => {
   }
 });
 
-app.put('/api/roles/:id/permissions', async (req, res) => {
+app.put('/api/roles/:id/permissions', requireAuth, requirePermission('configuracion'), async (req, res) => {
   let conn;
   try {
     const roleId = Number(req.params.id);
@@ -6290,7 +6290,7 @@ app.put('/api/roles/:id/permissions', async (req, res) => {
   }
 });
 
-app.get('/api/config/tiendanube-prompt', requireAuth, async (_req, res) => {
+app.get('/api/config/tiendanube-prompt', requireAuth, requirePermission('configuracion'), async (_req, res) => {
   try {
     const [[row]] = await pool.query(
       `SELECT clave, prompt, actualizado_por, actualizado_en, creado_en
@@ -6304,7 +6304,7 @@ app.get('/api/config/tiendanube-prompt', requireAuth, async (_req, res) => {
   }
 });
 
-app.put('/api/config/tiendanube-prompt', requireAuth, async (req, res) => {
+app.put('/api/config/tiendanube-prompt', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const prompt = String(req.body?.prompt || '');
     await pool.query(
@@ -6453,7 +6453,7 @@ function hasSyncJobRunning() {
   return Array.from(ecommerceSyncJobs.values()).some((job) => job?.status === 'running');
 }
 
-app.get('/api/config/ecommerce-import-schedule', requireAuth, async (_req, res) => {
+app.get('/api/config/ecommerce-import-schedule', requireAuth, requirePermission('configuracion'), async (_req, res) => {
   try {
     const data = await getEcommerceImportScheduleConfig();
     res.json({ data });
@@ -6488,7 +6488,7 @@ async function getEcommerceCleanupScheduleConfig() {
   return normalizeCleanupScheduleConfig(task);
 }
 
-app.get('/api/config/ecommerce-cleanup-schedule', requireAuth, async (_req, res) => {
+app.get('/api/config/ecommerce-cleanup-schedule', requireAuth, requirePermission('configuracion'), async (_req, res) => {
   try {
     const data = await getEcommerceCleanupScheduleConfig();
     res.json({ data });
@@ -6497,7 +6497,7 @@ app.get('/api/config/ecommerce-cleanup-schedule', requireAuth, async (_req, res)
   }
 });
 
-app.put('/api/config/ecommerce-cleanup-schedule', requireAuth, async (req, res) => {
+app.put('/api/config/ecommerce-cleanup-schedule', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const enabled = req.body?.enabled === true || req.body?.enabled === 1 || req.body?.enabled === '1' ? 1 : 0;
     const mantenerUltimas = Number.parseInt(req.body?.mantenerUltimas ?? req.body?.mantener_ultimas ?? 5, 10);
@@ -6533,7 +6533,7 @@ app.put('/api/config/ecommerce-cleanup-schedule', requireAuth, async (req, res) 
   }
 });
 
-app.put('/api/config/ecommerce-import-schedule', requireAuth, async (req, res) => {
+app.put('/api/config/ecommerce-import-schedule', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const enabled = req.body?.enabled === true || req.body?.enabled === 1 || req.body?.enabled === '1' ? 1 : 0;
     const tipoBajada = String(req.body?.tipoBajada || req.body?.tipo_bajada || 'todo').trim();
@@ -6563,7 +6563,7 @@ app.put('/api/config/ecommerce-import-schedule', requireAuth, async (req, res) =
   }
 });
 
-app.post('/api/config/ecommerce-import-schedule/run', requireAuth, async (req, res) => {
+app.post('/api/config/ecommerce-import-schedule/run', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const tipoBajada = String(req.body?.tipoBajada || req.body?.tipo_bajada || '').trim();
     if (tipoBajada && !['todo', 'visible'].includes(tipoBajada)) {
@@ -10580,7 +10580,7 @@ app.get('/api/fidelizacion/reportes/mios', async (req, res) => {
   }
 });
 
-app.get('/api/config/usuarios', async (_req, res) => {
+app.get('/api/config/usuarios', requireAuth, requirePermission('configuracion'), async (_req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT id, name, email, id_roles, codigo, id_vendedoras, hora_ingreso, hora_egreso, foto
@@ -10613,7 +10613,7 @@ app.get('/api/config/vendedoras', async (_req, res) => {
   }
 });
 
-app.post('/api/config/usuarios', async (req, res) => {
+app.post('/api/config/usuarios', requireAuth, requirePermission('configuracion'), async (req, res) => {
   let conn;
   try {
     const {
@@ -10734,7 +10734,7 @@ app.post('/api/config/usuarios', async (req, res) => {
   }
 });
 
-app.put('/api/config/usuarios/:id', async (req, res) => {
+app.put('/api/config/usuarios/:id', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
@@ -10798,7 +10798,7 @@ app.put('/api/config/usuarios/:id', async (req, res) => {
   }
 });
 
-app.post('/api/config/usuarios/:id/foto', async (req, res) => {
+app.post('/api/config/usuarios/:id/foto', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
@@ -10869,7 +10869,7 @@ app.post('/api/config/usuarios/:id/foto', async (req, res) => {
   }
 });
 
-app.delete('/api/config/usuarios/:id/foto', async (req, res) => {
+app.delete('/api/config/usuarios/:id/foto', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
@@ -10911,7 +10911,7 @@ app.delete('/api/config/usuarios/:id/foto', async (req, res) => {
   }
 });
 
-app.put('/api/config/usuarios/:id/password', async (req, res) => {
+app.put('/api/config/usuarios/:id/password', requireAuth, requirePermission('configuracion'), async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!Number.isFinite(userId)) return res.status(400).json({ message: 'id invalido' });
