@@ -2918,6 +2918,14 @@ async function loadFacturaArticuloBySku(rawValue) {
 }
 
 async function addPedidoNuevoItem() {
+  const nroPedido = Number(pedidoNumeroInput?.value) || 0;
+  if (!nroPedido) {
+    const message = 'No hay un pedido asignado para poder agregar articulos. Cree un nuevo pedido o seleccione uno existente.';
+    alert(message);
+    setStatusMessage(pedidoNuevoStatus, message, 'error');
+    if (pedidoNumeroInput) pedidoNumeroInput.focus();
+    return;
+  }
   const articulo = (pedidoItemArticuloInput?.value || '').split(' - ')[0].trim();
   const cantidad = Number(pedidoItemCantidadInput?.value) || 0;
   if (!articulo || cantidad <= 0) {
