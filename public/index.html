@@ -928,7 +928,7 @@
         <div class="actions inline compact clients-controls">
         <label class="client-inline">
           <span>Buscar</span>
-          <input type="search" id="buscar-clientes" placeholder="Nombre, email o teléfono" />
+          <input type="search" id="buscar-clientes" placeholder="Nombre, email, teléfono o código vivo" />
         </label>
         <button id="clientes-new" type="button">Nuevo Cliente</button>
         <button id="refresh-clientes" type="button">Actualizar</button>
@@ -940,6 +940,7 @@
             <tr>
               <th data-sort="nombre">Nombre</th>
               <th data-sort="apellido">Apellido</th>
+              <th>Código vivo</th>
               <th data-sort="mail">Email</th>
               <th data-sort="telefono">Teléfono</th>
               <th data-sort="updated_at">Actualizado</th>
@@ -3483,7 +3484,22 @@
               <option value="No Responde">No Responde</option>
             </select>
           </label>
-          <div class="actions inline">
+          <div class="clientes-tiktok-panel">
+            <div class="clientes-tiktok-field">
+              <label>
+                <span>Código vivo</span>
+                <input type="text" id="clientes-new-codigovivo" readonly data-autofill-blocked="1" />
+              </label>
+              <button type="button" id="clientes-new-generar-codigo">Generar código</button>
+            </div>
+            <label>
+              <span>Seña TikTok (opcional)</span>
+              <input type="number" id="clientes-new-sena" min="0" step="0.01" placeholder="Monto recibido" autocomplete="off" />
+            </label>
+            <button type="button" id="clientes-new-generar-pedido">Generar pedido TikTok</button>
+            <p class="status clientes-tiktok-status" id="clientes-new-tiktok-status"></p>
+          </div>
+          <div class="actions inline clientes-form-actions">
             <button type="submit">Guardar</button>
             <button type="button" id="clientes-new-cancel">Cancelar</button>
           </div>
@@ -3611,13 +3627,14 @@
       </div>
       <div class="modal-body">
         <div class="modal-controls">
-          <input type="search" id="pedido-buscar-search" placeholder="Buscar por pedido o cliente..." />
+          <input type="search" id="pedido-buscar-search" placeholder="Buscar por pedido, cliente o código vivo..." />
         </div>
         <div class="table-wrap">
           <table class="table" id="pedido-buscar-table">
             <thead>
               <tr>
                 <th>Pedido</th>
+                <th>Código vivo</th>
                 <th>Cliente</th>
                 <th>Total</th>
                 <th>Vendedora</th>

@@ -663,6 +663,85 @@ async function reserveReplicaTnPedidoNumber(conn) {
   throw new Error('No se pudo reservar un nroPedido libre');
 }
 
+function normalizeCodigoVivo(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+async function reserveCodigoVivo(conn) {
+  const [[serie]] = await conn.query(
+    `SELECT id, prefijo, ultimo_numero
+     FROM ${DB_NAME}.codigovivo_series
+     WHERE activa = 1
+     LIMIT 1
+     FOR UPDATE`
+  );
+  if (!serie) throw new Error('No hay una serie de codigo vivo activa');
+  const prefijo = String(serie.prefijo || '').trim().toUpperCase();
+  const numero = (Number(serie.ultimo_numero) || 0) + 1;
+  if (!/^[A-Z]{1,3}$/.test(prefijo)) throw new Error('El prefijo de codigo vivo no es valido');
+  await conn.query(
+    `UPDATE ${DB_NAME}.codigovivo_series SET ultimo_numero = ? WHERE id = ?`,
+    [numero, serie.id]
+  );
+  return `${prefijo}${numero}`;
+}
+
+async function assertCodigoVivoGenerado(conn, value) {
+  const codigo = normalizeCodigoVivo(value);
+  const match = codigo.match(/^([A-Z]{1,3})([1-9]\d*)$/);
+  if (!match) throw new Error('Codigo vivo invalido');
+  const prefijo = match[1];
+  const numero = Number(match[2]);
+  const [[serie]] = await conn.query(
+    `SELECT ultimo_numero FROM ${DB_NAME}.codigovivo_series WHERE prefijo = ? LIMIT 1`,
+    [prefijo]
+  );
+  if (!serie || numero > Number(serie.ultimo_numero || 0)) {
+    throw new Error('El codigo vivo no fue generado por el sistema');
+  }
+  return codigo;
+}
+
+async function createTikTokPedido(conn, { clienteId, idempotencyKey, sena, userId }) {
+  if (idempotencyKey) {
+    const [[existing]] = await conn.query(
+      `SELECT id, nropedido FROM ${DB_NAME}.controlpedidos WHERE idempotency_key = ? LIMIT 1`,
+      [idempotencyKey]
+    );
+    if (existing) {
+      return {
+        id: Number(existing.id) || 0,
+        nroPedido: Number(existing.nropedido) || 0,
+        idempotentReplay: true,
+      };
+    }
+  }
+  const nroPedido = await reserveReplicaTnPedidoNumber(conn);
+  const fecha = formatDateTimeLocal(new Date());
+  const [result] = await conn.query(
+    `INSERT INTO ${DB_NAME}.controlpedidos
+     (id_cliente, nropedido, vendedora, cajera, fecha, estado, total, ordenWeb,
+      empaquetado, instancia, idempotency_key)
+     VALUES (?, ?, 'TikTok', 'TikTok', ?, 1, 0, 0, 0, 0, ?)`,
+    [clienteId, nroPedido, fecha, idempotencyKey || null]
+  );
+  const pedidoId = Number(result.insertId) || 0;
+  const nota = String(sena || '').trim().slice(0, 100);
+  if (nota && userId) {
+    await conn.query(
+      `INSERT INTO ${DB_NAME}.ComentariosPedidos
+       (users_id, controlpedidos_id, comentario, fecha)
+       VALUES (?, ?, ?, ?)`,
+      [userId, pedidoId, `Seña TikTok: ${nota}`, fecha]
+    );
+    await conn.query(
+      `UPDATE ${DB_NAME}.controlpedidos SET fecha_ultima_nota = ? WHERE id = ? LIMIT 1`,
+      [fecha, pedidoId]
+    );
+  }
+  return { id: pedidoId, nroPedido, idempotentReplay: false };
+}
+
 async function createReplicaTnPedido(conn, rawOrder, tnubeConnection) {
   const order = {
     ...rawOrder,
@@ -5121,9 +5200,9 @@ app.get('/api/clientes', async (req, res) => {
       terms.forEach((t) => {
         const like = `%${t}%`;
         filters.push(
-          '(c.nombre LIKE ? OR c.apellido LIKE ? OR c.mail LIKE ? OR c.telefono LIKE ? OR c.apodo LIKE ?)'
+          '(c.nombre LIKE ? OR c.apellido LIKE ? OR c.mail LIKE ? OR c.telefono LIKE ? OR c.apodo LIKE ? OR c.codigovivo LIKE ?)'
         );
-        params.push(like, like, like, like, like);
+        params.push(like, like, like, like, like, like);
       });
     }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
@@ -5142,6 +5221,7 @@ app.get('/api/clientes', async (req, res) => {
          c.id_clientes AS id,
          c.nombre,
          c.apellido,
+         c.codigovivo,
          c.mail,
          c.telefono,
          c.encuesta,
@@ -14990,6 +15070,7 @@ app.post('/api/facturacion/clientes', requireAuth, async (req, res) => {
 });
 
 app.post('/api/clientes', requireAuth, async (req, res) => {
+  let connection;
   try {
     const {
       nombre = '',
@@ -15003,27 +15084,35 @@ app.post('/api/clientes', requireAuth, async (req, res) => {
       mail = '',
       telefono = '',
       encuesta = 'Ninguna',
+      codigovivo = '',
     } = req.body || {};
     if (!nombre || !apellido || !mail || !cod_postal) {
       return res
         .status(400)
         .json({ message: 'Nombre, apellido, mail y codigo postal son requeridos' });
     }
-    const [existsRows] = await pool.query(
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [existsRows] = await connection.query(
       `SELECT mail FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
       [mail]
     );
     if (existsRows.length) {
+      await connection.rollback();
       return res.status(409).json({ message: 'El cliente ya existe' });
     }
-    await pool.query(
+    const codigoVivoNormalizado = codigovivo
+      ? await assertCodigoVivoGenerado(connection, codigovivo)
+      : null;
+    const [result] = await connection.query(
       `INSERT INTO ${DB_NAME}.clientes
-       (nombre, apellido, apodo, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+       (nombre, apellido, apodo, codigovivo, direccion, mail, telefono, cuit, localidad, CodigoPostal, id_provincia, encuesta, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
       [
         nombre,
         apellido,
         apodo,
+        codigoVivoNormalizado,
         direccion,
         mail,
         telefono,
@@ -15034,9 +15123,85 @@ app.post('/api/clientes', requireAuth, async (req, res) => {
         encuesta,
       ]
     );
-    res.json({ ok: true });
+    await connection.commit();
+    res.json({ ok: true, id: Number(result.insertId) || 0, codigovivo: codigoVivoNormalizado });
   } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'El mail o codigo vivo ya esta asignado' });
+    }
     res.status(500).json({ message: 'Error al crear cliente', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.post('/api/clientes/codigo-vivo/reservar', requireAuth, async (_req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const codigovivo = await reserveCodigoVivo(connection);
+    await connection.commit();
+    res.json({ ok: true, codigovivo });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al generar codigo vivo', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.post('/api/clientes/:id/codigo-vivo', requireAuth, async (req, res) => {
+  let connection;
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Cliente invalido' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[cliente]] = await connection.query(
+      `SELECT codigovivo FROM ${DB_NAME}.clientes WHERE id_clientes = ? LIMIT 1 FOR UPDATE`,
+      [id]
+    );
+    if (!cliente) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Cliente no encontrado' });
+    }
+    if (cliente.codigovivo) {
+      await connection.commit();
+      return res.json({ ok: true, codigovivo: cliente.codigovivo, alreadyAssigned: true });
+    }
+    const codigovivo = await reserveCodigoVivo(connection);
+    await connection.query(
+      `UPDATE ${DB_NAME}.clientes SET codigovivo = ?, updated_at = NOW()
+       WHERE id_clientes = ? AND codigovivo IS NULL`,
+      [codigovivo, id]
+    );
+    await connection.commit();
+    res.json({ ok: true, codigovivo });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    res.status(500).json({ message: 'Error al asignar codigo vivo', error: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
@@ -15045,7 +15210,7 @@ app.get('/api/clientes/:id', requireAuth, async (req, res) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: 'Cliente invalido' });
     const [rows] = await pool.query(
-      `SELECT id_clientes, nombre, apellido, apodo, cuit, direccion, localidad, id_provincia,
+      `SELECT id_clientes, nombre, apellido, apodo, codigovivo, cuit, direccion, localidad, id_provincia,
               CodigoPostal, mail, telefono, encuesta
        FROM ${DB_NAME}.clientes
        WHERE id_clientes = ? LIMIT 1`,
@@ -15110,6 +15275,194 @@ app.patch('/api/clientes/:id', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar cliente', error: error.message });
+  }
+});
+
+app.post('/api/clientes/:id/pedido-tiktok', requireAuth, async (req, res) => {
+  let connection;
+  const idempotencyKey = normalizeIdempotencyKey(
+    req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+  );
+  try {
+    const clienteId = Number(req.params.id);
+    if (!clienteId) return res.status(400).json({ message: 'Cliente invalido' });
+    if (!idempotencyKey) return res.status(400).json({ message: 'Clave de operacion requerida' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[cliente]] = await connection.query(
+      `SELECT id_clientes, codigovivo
+       FROM ${DB_NAME}.clientes
+       WHERE id_clientes = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [clienteId]
+    );
+    if (!cliente) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Cliente no encontrado' });
+    }
+    if (!cliente.codigovivo) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'El cliente no tiene codigo vivo' });
+    }
+    const pedido = await createTikTokPedido(connection, {
+      clienteId,
+      idempotencyKey,
+      sena: req.body?.sena,
+      userId: req.user?.id,
+    });
+    await connection.commit();
+    res.json({ ok: true, clienteId, codigovivo: cliente.codigovivo, ...pedido });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    if (idempotencyKey && error?.code === 'ER_DUP_ENTRY') {
+      const [[existing]] = await pool.query(
+        `SELECT id, nropedido FROM ${DB_NAME}.controlpedidos WHERE idempotency_key = ? LIMIT 1`,
+        [idempotencyKey]
+      );
+      if (existing) {
+        return res.json({
+          ok: true,
+          clienteId: Number(req.params.id) || 0,
+          id: Number(existing.id) || 0,
+          nroPedido: Number(existing.nropedido) || 0,
+          idempotentReplay: true,
+        });
+      }
+    }
+    res.status(500).json({ message: 'Error al crear pedido TikTok', error: error.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
+app.post('/api/clientes/tiktok/pedido', requireAuth, async (req, res) => {
+  let connection;
+  const idempotencyKey = normalizeIdempotencyKey(
+    req.body?.idempotency_key || req.get('x-idempotency-key') || ''
+  );
+  try {
+    const {
+      nombre = '',
+      apellido = '',
+      apodo = '',
+      codigovivo = '',
+      cuit = null,
+      direccion = '',
+      localidad = '',
+      provincia_id = null,
+      cod_postal = '',
+      mail = '',
+      telefono = '',
+      encuesta = 'Ninguna',
+      sena = '',
+    } = req.body || {};
+    if (!nombre || !apellido || !mail || !cod_postal) {
+      return res
+        .status(400)
+        .json({ message: 'Nombre, apellido, mail y codigo postal son requeridos' });
+    }
+    if (!codigovivo) return res.status(400).json({ message: 'Codigo vivo requerido' });
+    if (!idempotencyKey) return res.status(400).json({ message: 'Clave de operacion requerida' });
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    const [[existingPedido]] = await connection.query(
+      `SELECT cp.id, cp.nropedido, cp.id_cliente, c.codigovivo
+       FROM ${DB_NAME}.controlpedidos cp
+       LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = cp.id_cliente
+       WHERE cp.idempotency_key = ?
+       LIMIT 1`,
+      [idempotencyKey]
+    );
+    if (existingPedido) {
+      await connection.commit();
+      return res.json({
+        ok: true,
+        clienteId: Number(existingPedido.id_cliente) || 0,
+        codigovivo: existingPedido.codigovivo || '',
+        id: Number(existingPedido.id) || 0,
+        nroPedido: Number(existingPedido.nropedido) || 0,
+        idempotentReplay: true,
+      });
+    }
+    const [[mailRow]] = await connection.query(
+      `SELECT id_clientes FROM ${DB_NAME}.clientes WHERE mail = ? LIMIT 1`,
+      [mail]
+    );
+    if (mailRow) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'El cliente ya existe' });
+    }
+    const codigoVivoNormalizado = await assertCodigoVivoGenerado(connection, codigovivo);
+    const [clienteResult] = await connection.query(
+      `INSERT INTO ${DB_NAME}.clientes
+       (nombre, apellido, apodo, codigovivo, direccion, mail, telefono, cuit, localidad,
+        CodigoPostal, id_provincia, encuesta, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [
+        nombre,
+        apellido,
+        apodo,
+        codigoVivoNormalizado,
+        direccion,
+        mail,
+        telefono,
+        cuit,
+        localidad,
+        cod_postal,
+        provincia_id,
+        encuesta,
+      ]
+    );
+    const clienteId = Number(clienteResult.insertId) || 0;
+    const pedido = await createTikTokPedido(connection, {
+      clienteId,
+      idempotencyKey,
+      sena,
+      userId: req.user?.id,
+    });
+    await connection.commit();
+    res.json({ ok: true, clienteId, codigovivo: codigoVivoNormalizado, ...pedido });
+  } catch (error) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (_err) {
+        /* ignore */
+      }
+    }
+    if (error?.code === 'ER_DUP_ENTRY' && idempotencyKey) {
+      const [[existing]] = await pool.query(
+        `SELECT cp.id, cp.nropedido, cp.id_cliente, c.codigovivo
+         FROM ${DB_NAME}.controlpedidos cp
+         LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = cp.id_cliente
+         WHERE cp.idempotency_key = ?
+         LIMIT 1`,
+        [idempotencyKey]
+      );
+      if (existing) {
+        return res.json({
+          ok: true,
+          clienteId: Number(existing.id_cliente) || 0,
+          codigovivo: existing.codigovivo || '',
+          id: Number(existing.id) || 0,
+          nroPedido: Number(existing.nropedido) || 0,
+          idempotentReplay: true,
+        });
+      }
+    }
+    if (error?.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'El mail o codigo vivo ya esta asignado' });
+    }
+    res.status(500).json({ message: 'Error al guardar cliente y crear pedido TikTok', error: error.message });
+  } finally {
+    if (connection) connection.release();
   }
 });
 
@@ -15277,6 +15630,7 @@ app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
            ctrl.total,
            ctrl.ordenweb,
            ctrl.promocion_id AS promocionId,
+           c.codigovivo,
            CONCAT(c.nombre, ' ', c.apellido) AS cliente
          FROM ${DB_NAME}.controlpedidos ctrl
          LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente
@@ -15290,8 +15644,10 @@ app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
     }
     const like = `%${search}%`;
     const baseWhere = `WHERE ctrl.estado = 1 AND (ctrl.instancia = 2 OR ctrl.ordenweb = 0 OR ctrl.ordenweb IS NULL)`;
-    const where = search ? `${baseWhere} AND (ctrl.nropedido LIKE ? OR CONCAT(c.nombre, ' ', c.apellido) LIKE ?)` : baseWhere;
-    const params = search ? [like, like] : [];
+    const where = search
+      ? `${baseWhere} AND (ctrl.nropedido LIKE ? OR CONCAT(c.nombre, ' ', c.apellido) LIKE ? OR c.codigovivo LIKE ?)`
+      : baseWhere;
+    const params = search ? [like, like, like] : [];
     const [rows] = await pool.query(
       `SELECT
          ctrl.nropedido,
@@ -15300,6 +15656,7 @@ app.get('/api/pedidos/buscar', requireAuth, async (req, res) => {
          ctrl.total,
          ctrl.ordenweb,
          ctrl.promocion_id AS promocionId,
+         c.codigovivo,
          CONCAT(c.nombre, ' ', c.apellido) AS cliente
        FROM ${DB_NAME}.controlpedidos ctrl
        LEFT JOIN ${DB_NAME}.clientes c ON c.id_clientes = ctrl.id_cliente

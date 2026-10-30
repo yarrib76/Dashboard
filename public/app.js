@@ -247,6 +247,11 @@ const clientesNewProvincia = document.getElementById('clientes-new-region');
 const clientesNewCodPostal = document.getElementById('clientes-new-zip');
 const clientesNewCuit = document.getElementById('clientes-new-cuit');
 const clientesNewEncuesta = document.getElementById('clientes-new-encuesta');
+const clientesNewCodigoVivo = document.getElementById('clientes-new-codigovivo');
+const clientesNewGenerarCodigo = document.getElementById('clientes-new-generar-codigo');
+const clientesNewSena = document.getElementById('clientes-new-sena');
+const clientesNewGenerarPedido = document.getElementById('clientes-new-generar-pedido');
+const clientesNewTikTokStatus = document.getElementById('clientes-new-tiktok-status');
 const clientesReportesCorte = document.getElementById('clientes-reportes-corte');
 const clientesReportesRefresh = document.getElementById('clientes-reportes-refresh');
 const clientesReportesTipoVenta = document.getElementById('clientes-reportes-tipo-venta');
@@ -362,6 +367,9 @@ let pedidoTicketCurrentFecha = '';
 let pedidoTicketItemsCache = [];
 let clientesNewMode = 'create';
 let clientesEditId = null;
+let clientesTikTokPedidoCreado = false;
+let clientesTikTokProcesando = false;
+let clientesTikTokIdempotencyKey = '';
 let clientesReportesLoaded = false;
 let clientesReportesData = null;
 let clientesReportesSearchTimer = null;
@@ -2533,6 +2541,7 @@ async function loadPedidosBuscarTable(query) {
         (row) => `
         <tr>
           <td>${row.nropedido}</td>
+          <td>${escapeAttr(row.codigovivo || '')}</td>
           <td>${row.cliente || ''}</td>
           <td>${formatMoney(row.total || 0)}</td>
           <td>${row.vendedora || ''}</td>
@@ -13884,6 +13893,7 @@ function renderClientes(rows) {
     tr.innerHTML = `
       <td>${row.nombre || ''}</td>
       <td>${row.apellido || ''}</td>
+      <td>${escapeAttr(row.codigovivo || '')}</td>
       <td>${row.mail || ''}</td>
       <td>${row.telefono || ''}</td>
       <td>${formatDate(row.updated_at)}</td>
@@ -13931,6 +13941,10 @@ function renderClientesCards(rows) {
         <div>
           <span class="abm-card-label">Telefono</span>
           <span class="abm-card-value">${telefono}</span>
+        </div>
+        <div>
+          <span class="abm-card-label">Código vivo</span>
+          <span class="abm-card-value">${escapeAttr(row.codigovivo || '-')}</span>
         </div>
         <div>
           <span class="abm-card-label">Actualizado</span>
@@ -20546,7 +20560,143 @@ function resetClientesNewForm() {
   if (clientesNewForm) clientesNewForm.reset();
   if (clientesNewEncuesta) clientesNewEncuesta.value = 'Ninguna';
   if (clientesNewDireccion) clientesNewDireccion.textContent = '';
+  clientesTikTokPedidoCreado = false;
+  clientesTikTokProcesando = false;
+  clientesTikTokIdempotencyKey = '';
+  setStatusMessage(clientesNewTikTokStatus, '');
   setClientesNewProvinciaDefault();
+  updateClientesTikTokActions();
+}
+
+function updateClientesTikTokActions() {
+  const hasCodigo = Boolean(clientesNewCodigoVivo?.value?.trim());
+  if (clientesNewGenerarCodigo) {
+    clientesNewGenerarCodigo.disabled = clientesTikTokProcesando || hasCodigo;
+  }
+  if (clientesNewGenerarPedido) {
+    clientesNewGenerarPedido.disabled =
+      clientesTikTokProcesando || clientesTikTokPedidoCreado || !hasCodigo;
+  }
+}
+
+function buildClienteFormPayload() {
+  return {
+    nombre: clientesNewNombre?.value?.trim() || '',
+    apellido: clientesNewApellido?.value?.trim() || '',
+    apodo: clientesNewApodo?.value?.trim() || '',
+    codigovivo: clientesNewCodigoVivo?.value?.trim() || '',
+    mail: clientesNewMail?.value?.trim() || '',
+    telefono: clientesNewTelefono?.value?.trim() || '',
+    direccion: cleanDireccionValue(),
+    localidad: clientesNewLocalidad?.value?.trim() || '',
+    provincia_id: clientesNewProvincia?.value
+      ? Number(clientesNewProvincia.value)
+      : null,
+    cod_postal: clientesNewCodPostal?.value?.trim() || '',
+    cuit: clientesNewCuit?.value?.trim() || null,
+    encuesta: clientesNewEncuesta?.value || 'Ninguna',
+  };
+}
+
+function validateClienteFormPayload(payload) {
+  if (payload.nombre && payload.apellido && payload.mail && payload.cod_postal) return true;
+  setStatusMessage(
+    clientesNewStatus,
+    'Nombre, apellido, mail y codigo postal son requeridos.',
+    'error'
+  );
+  return false;
+}
+
+async function generarClienteCodigoVivo() {
+  if (clientesTikTokProcesando || clientesNewCodigoVivo?.value?.trim()) return;
+  clientesTikTokProcesando = true;
+  updateClientesTikTokActions();
+  setStatusMessage(clientesNewTikTokStatus, 'Generando código...');
+  try {
+    const url =
+      clientesNewMode === 'edit' && clientesEditId
+        ? `/api/clientes/${encodeURIComponent(clientesEditId)}/codigo-vivo`
+        : '/api/clientes/codigo-vivo/reservar';
+    const res = await fetchJSON(url, { method: 'POST' });
+    if (clientesNewCodigoVivo) clientesNewCodigoVivo.value = res?.codigovivo || '';
+    setStatusMessage(
+      clientesNewTikTokStatus,
+      clientesNewMode === 'edit'
+        ? `Código ${res?.codigovivo || ''} asignado al cliente.`
+        : `Código ${res?.codigovivo || ''} generado. Guardá el cliente para asignarlo.`,
+      'ok'
+    );
+  } catch (error) {
+    setStatusMessage(
+      clientesNewTikTokStatus,
+      error.message || 'Error al generar código vivo.',
+      'error'
+    );
+  } finally {
+    clientesTikTokProcesando = false;
+    updateClientesTikTokActions();
+  }
+}
+
+async function generarClientePedidoTikTok() {
+  if (clientesTikTokProcesando || clientesTikTokPedidoCreado) return;
+  const payload = buildClienteFormPayload();
+  if (!payload.codigovivo) {
+    setStatusMessage(clientesNewTikTokStatus, 'Primero generá el código vivo.', 'error');
+    return;
+  }
+  const isNew = clientesNewMode !== 'edit' || !clientesEditId;
+  if (isNew) {
+    if (!validateClienteFormPayload(payload)) return;
+    const shouldContinue = confirm(
+      'El cliente todavía no fue guardado. Para generar el pedido TikTok primero debemos guardar sus datos. ¿Deseás guardar el cliente y crear el pedido?'
+    );
+    if (!shouldContinue) return;
+  }
+  clientesTikTokProcesando = true;
+  updateClientesTikTokActions();
+  setStatusMessage(clientesNewTikTokStatus, 'Generando pedido TikTok...');
+  const idempotencyKey = clientesTikTokIdempotencyKey || generateIdempotencyKey();
+  clientesTikTokIdempotencyKey = idempotencyKey;
+  try {
+    const url = isNew
+      ? '/api/clientes/tiktok/pedido'
+      : `/api/clientes/${encodeURIComponent(clientesEditId)}/pedido-tiktok`;
+    const body = isNew
+      ? { ...payload, sena: clientesNewSena?.value?.trim() || '', idempotency_key: idempotencyKey }
+      : { sena: clientesNewSena?.value?.trim() || '', idempotency_key: idempotencyKey };
+    const res = await fetchJSON(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-idempotency-key': idempotencyKey,
+      },
+      body: JSON.stringify(body),
+    });
+    clientesTikTokPedidoCreado = true;
+    if (isNew) {
+      clientesEditId = Number(res?.clienteId) || null;
+      setClientesNewMode('edit');
+      const nombreLabel = `${payload.nombre} ${payload.apellido}`.trim();
+      if (clientesNewTitle) clientesNewTitle.textContent = `Editar Cliente: ${nombreLabel}`;
+      loadClientes(1);
+    }
+    setStatusMessage(
+      clientesNewTikTokStatus,
+      `Pedido TikTok ${res?.nroPedido || ''} generado para ${res?.codigovivo || payload.codigovivo}.`,
+      'ok'
+    );
+  } catch (error) {
+    setStatusMessage(
+      clientesNewTikTokStatus,
+      error.message || 'Error al generar pedido TikTok.',
+      'error'
+    );
+  } finally {
+    clientesTikTokProcesando = false;
+    updateClientesTikTokActions();
+  }
 }
 
 function blockClientesAutofill() {
@@ -20639,6 +20789,7 @@ async function openClientesEditModal(id) {
         : 'Editar Cliente';
     }
     if (clientesNewApodo) clientesNewApodo.value = data.apodo || '';
+    if (clientesNewCodigoVivo) clientesNewCodigoVivo.value = data.codigovivo || '';
     if (clientesNewCuit) clientesNewCuit.value = data.cuit || '';
     if (clientesNewDireccion) clientesNewDireccion.textContent = data.direccion || '';
     if (clientesNewLocalidad) clientesNewLocalidad.value = data.localidad || '';
@@ -20649,6 +20800,7 @@ async function openClientesEditModal(id) {
     if (clientesNewMail) clientesNewMail.value = data.mail || '';
     if (clientesNewTelefono) clientesNewTelefono.value = data.telefono || '';
     if (clientesNewEncuesta) clientesNewEncuesta.value = data.encuesta || 'Ninguna';
+    updateClientesTikTokActions();
   } catch (error) {
     setStatusMessage(
       clientesNewStatus,
@@ -20661,29 +20813,8 @@ async function openClientesEditModal(id) {
 
 async function submitClientesNewForm(event) {
   event.preventDefault();
-  const payload = {
-    nombre: clientesNewNombre?.value?.trim() || '',
-    apellido: clientesNewApellido?.value?.trim() || '',
-    apodo: clientesNewApodo?.value?.trim() || '',
-    mail: clientesNewMail?.value?.trim() || '',
-    telefono: clientesNewTelefono?.value?.trim() || '',
-    direccion: cleanDireccionValue(),
-    localidad: clientesNewLocalidad?.value?.trim() || '',
-    provincia_id: clientesNewProvincia?.value
-      ? Number(clientesNewProvincia.value)
-      : null,
-    cod_postal: clientesNewCodPostal?.value?.trim() || '',
-    cuit: clientesNewCuit?.value?.trim() || null,
-    encuesta: clientesNewEncuesta?.value || 'Ninguna',
-  };
-  if (!payload.nombre || !payload.apellido || !payload.mail || !payload.cod_postal) {
-    setStatusMessage(
-      clientesNewStatus,
-      'Nombre, apellido, mail y codigo postal son requeridos.',
-      'error'
-    );
-    return;
-  }
+  const payload = buildClienteFormPayload();
+  if (!validateClienteFormPayload(payload)) return;
   setStatusMessage(clientesNewStatus, 'Guardando...');
   try {
     const url =
@@ -20847,6 +20978,8 @@ function initClientes() {
     }
   });
   safeOn(clientesNewForm, 'submit', submitClientesNewForm);
+  safeOn(clientesNewGenerarCodigo, 'click', generarClienteCodigoVivo);
+  safeOn(clientesNewGenerarPedido, 'click', generarClientePedidoTikTok);
   safeOn(clientesNewDireccion, 'keydown', (event) => {
     if (event.key === 'Enter') event.preventDefault();
   });
