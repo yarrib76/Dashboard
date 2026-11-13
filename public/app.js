@@ -10531,12 +10531,11 @@ async function loadEcommercePubPickTable() {
     renderEcommercePubDatalist(ecommercePubArticulosList, rows);
     renderEcommercePubDatalist(ecommercePubVariantesList, rows);
     if (ecommercePublicacionPickTable) {
-      ecommercePublicacionPickTable.search('');
+      const currentSearch = getEcommercePubPickSearchInput()?.value || '';
       ecommercePublicacionPickTable.clear();
       ecommercePublicacionPickTable.rows.add(rows);
-      ecommercePublicacionPickTable.draw();
+      ecommercePublicacionPickTable.search(currentSearch).draw();
       requestAnimationFrame(() => {
-        clearEcommercePubPickSearch();
         focusEcommercePubPickSearch();
       });
     } else if (window.DataTable) {
@@ -10603,13 +10602,10 @@ async function openEcommercePubPick(target) {
   openOverlay(ecommercePubPickOverlay);
   clearEcommercePubPickSearch();
   await loadEcommercePubPickTable();
-  clearEcommercePubPickSearch();
   requestAnimationFrame(() => {
-    clearEcommercePubPickSearch();
     focusEcommercePubPickSearch();
   });
   setTimeout(() => {
-    clearEcommercePubPickSearch();
     focusEcommercePubPickSearch();
   }, 150);
 }
