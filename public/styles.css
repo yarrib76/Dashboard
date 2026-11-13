@@ -5212,9 +5212,57 @@ body.theme-light .pedido-notas-badge {
 }
 
 @media (max-width: 760px) {
+  #clientes-new-overlay {
+    align-items: flex-start;
+    padding: 8px;
+  }
+
+  #clientes-new-overlay .modal {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px;
+  }
+
+  #clientes-new-overlay .modal-header {
+    flex: 0 0 auto;
+  }
+
+  #clientes-new-overlay .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 12px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  #clientes-new-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .clientes-tiktok-panel,
   .clientes-tiktok-field {
     grid-template-columns: 1fr;
+  }
+
+  .clientes-tiktok-panel {
+    padding: 10px;
+  }
+
+  .clientes-tiktok-panel button {
+    width: 100%;
+  }
+
+  .clientes-form-actions {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .clientes-form-actions button {
+    flex: 1 1 0;
+    min-width: 0;
   }
 }
 
