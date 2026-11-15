@@ -10710,6 +10710,8 @@ async function deleteEcommercePreviewImage() {
 function openEcommerceImagePicker(target) {
   if (!ecommercePubImageInput) return;
   ecommercePublicacionImageTarget = target;
+  ecommercePubImageInput.multiple = target?.type === 'producto';
+  if (target?.type === 'producto' && ecommercePubImagesStatus) ecommercePubImagesStatus.textContent = '';
   ecommercePubImageInput.value = '';
   ecommercePubImageInput.click();
 }
@@ -11405,19 +11407,36 @@ function initEcommercePublicaciones() {
   }
   if (ecommercePubImageInput) {
     ecommercePubImageInput.addEventListener('change', async () => {
-      const file = ecommercePubImageInput.files?.[0];
+      const files = Array.from(ecommercePubImageInput.files || []);
       const target = ecommercePublicacionImageTarget;
-      if (!file || !target) return;
+      if (!files.length || !target) return;
       if (target.type === 'producto') {
-        const existing = ecommercePublicacionProductImages.find((item) => Number(item.posicion) === Number(target.posicion));
-        if (existing) await deleteEcommerceImage(existing).catch(() => {});
-        ecommercePublicacionProductImages = ecommercePublicacionProductImages.filter(
-          (item) => Number(item.posicion) !== Number(target.posicion)
+        const targetPosition = Number(target.posicion);
+        const occupiedPositions = new Set(
+          ecommercePublicacionProductImages.map((item) => Number(item.posicion))
         );
-        ecommercePublicacionProductImages.push(makeStagedImage(file, target.posicion));
+        const availablePositions = [
+          targetPosition,
+          ...Array.from({ length: 8 - targetPosition }, (_, index) => targetPosition + index + 1),
+          ...Array.from({ length: targetPosition - 1 }, (_, index) => index + 1),
+        ].filter((pos) => pos >= 1 && pos <= 8 && !occupiedPositions.has(pos));
+        const filesToAdd = files.slice(0, availablePositions.length);
+
+        filesToAdd.forEach((file, index) => {
+          ecommercePublicacionProductImages.push(makeStagedImage(file, availablePositions[index]));
+        });
         ecommercePublicacionProductImages.sort((a, b) => Number(a.posicion) - Number(b.posicion));
+        if (ecommercePubImagesStatus) {
+          const omitted = files.length - filesToAdd.length;
+          ecommercePubImagesStatus.textContent = omitted
+            ? `Se agregaron ${filesToAdd.length} imagenes. ${omitted} no entraron porque el limite es de 8.`
+            : filesToAdd.length > 1
+              ? `Se agregaron ${filesToAdd.length} imagenes.`
+              : '';
+        }
         renderEcommerceImages();
       } else if (target.type === 'variante') {
+        const file = files[0];
         const row = ecommercePublicacionVariantes[target.index];
         if (row) {
           if (row.image) await deleteEcommerceImage(row.image).catch(() => {});
